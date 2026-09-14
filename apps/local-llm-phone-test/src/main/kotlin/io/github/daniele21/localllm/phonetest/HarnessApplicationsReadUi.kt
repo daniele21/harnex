@@ -299,23 +299,23 @@ private fun HarnessAssignmentRow(assignment: HarnessAssignmentSummary, onClick: 
 }
 
 internal fun HarnessApplicationStatus.label(): String = when (this) {
-    HarnessApplicationStatus.AUTHORIZED -> "Enabled"
-    HarnessApplicationStatus.PENDING -> "Pending"
-    HarnessApplicationStatus.DISABLED -> "Disabled"
-    HarnessApplicationStatus.IDENTITY_CHANGED -> "Identity changed"
+    HarnessApplicationStatus.AUTHORIZED -> "Connected"
+    HarnessApplicationStatus.PENDING -> "Needs approval"
+    HarnessApplicationStatus.DISABLED -> "Paused"
+    HarnessApplicationStatus.IDENTITY_CHANGED -> "Review identity"
     HarnessApplicationStatus.UNAVAILABLE -> "Unavailable"
 }
 
 internal fun HarnessApplicationStatus.tone(): HarnessStatusTone = when (this) {
     HarnessApplicationStatus.AUTHORIZED -> HarnessStatusTone.SUCCESS
-    HarnessApplicationStatus.PENDING -> HarnessStatusTone.INFO
+    HarnessApplicationStatus.PENDING -> HarnessStatusTone.WARNING
     HarnessApplicationStatus.DISABLED -> HarnessStatusTone.NEUTRAL
     HarnessApplicationStatus.IDENTITY_CHANGED -> HarnessStatusTone.WARNING
     HarnessApplicationStatus.UNAVAILABLE -> HarnessStatusTone.ERROR
 }
 
 internal fun HarnessAssignmentStatus.label(): String = when (this) {
-    HarnessAssignmentStatus.ACTIVE -> "Active"
+    HarnessAssignmentStatus.ACTIVE -> "Configured"
     HarnessAssignmentStatus.DISABLED -> "Disabled"
     HarnessAssignmentStatus.SETUP_REQUIRED -> "Setup required"
     HarnessAssignmentStatus.UNAVAILABLE -> "Unavailable"
