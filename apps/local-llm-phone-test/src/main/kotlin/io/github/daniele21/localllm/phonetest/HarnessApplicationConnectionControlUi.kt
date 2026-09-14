@@ -16,6 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import io.github.daniele21.localllm.ui.designsystem.HarnessCard
 import io.github.daniele21.localllm.ui.designsystem.HarnessMinimumTouchTarget
+import io.github.daniele21.localllm.ui.designsystem.HarnessPrimaryButton
+import io.github.daniele21.localllm.ui.designsystem.HarnessStatusBadge
+import io.github.daniele21.localllm.ui.designsystem.HarnessStatusTone
 import io.github.daniele21.localllm.ui.designsystem.LocalHarnessSpacing
 
 @Composable
@@ -24,13 +27,102 @@ internal fun HarnessConnectionControlCard(
     saving: Boolean,
     onConnectionEnabledChanged: (Boolean) -> Unit,
 ) {
-    val authorizationPending =
-        application.status == HarnessApplicationStatus.PENDING ||
-            application.status == HarnessApplicationStatus.IDENTITY_CHANGED
-    val toggleSupported =
-        application.status == HarnessApplicationStatus.AUTHORIZED ||
-            application.status == HarnessApplicationStatus.DISABLED ||
-            authorizationPending
+    when (application.status) {
+        HarnessApplicationStatus.PENDING -> HarnessAuthorizationRequiredCard(
+            application = application,
+            saving = saving,
+            identityChanged = false,
+            onAuthorize = { onConnectionEnabledChanged(true) },
+        )
+
+        HarnessApplicationStatus.IDENTITY_CHANGED -> HarnessAuthorizationRequiredCard(
+            application = application,
+            saving = saving,
+            identityChanged = true,
+            onAuthorize = { onConnectionEnabledChanged(true) },
+        )
+
+        HarnessApplicationStatus.AUTHORIZED,
+        HarnessApplicationStatus.DISABLED,
+        -> HarnessConnectionToggleCard(
+            application = application,
+            saving = saving,
+            onConnectionEnabledChanged = onConnectionEnabledChanged,
+        )
+
+        HarnessApplicationStatus.UNAVAILABLE -> HarnessCard(
+            modifier = Modifier.testTag("application-connection-control"),
+        ) {
+            HarnessStatusBadge("Unavailable", HarnessStatusTone.ERROR)
+            Text("App connection unavailable", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Harnex cannot verify the installed application identity, so access remains blocked.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HarnessAuthorizationRequiredCard(
+    application: HarnessApplicationSummary,
+    saving: Boolean,
+    identityChanged: Boolean,
+    onAuthorize: () -> Unit,
+) {
+    HarnessCard(
+        emphasized = true,
+        modifier = Modifier.testTag("application-connection-control"),
+    ) {
+        HarnessStatusBadge(
+            label = if (identityChanged) "Identity review required" else "Approval required",
+            tone = HarnessStatusTone.WARNING,
+        )
+        Text(
+            if (identityChanged) "Review the new app identity" else "Allow ${application.displayName} to use Harnex",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            if (identityChanged) {
+                "The installed app identity changed. Harnex blocked access until you explicitly approve the exact identity shown below."
+            } else {
+                "Harnex detected this app on the device, but it cannot use the shared runtime until you explicitly approve the exact identity shown below."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(LocalHarnessSpacing.current.xSmall)) {
+            Text(
+                "Package · ${application.packageName}",
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Text(
+                "Signing certificate SHA-256 · ${application.signerSha256}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text(
+            "Assigned use cases stay configured, but they cannot run for this app until approval succeeds.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        HarnessPrimaryButton(
+            text = if (identityChanged) "Review & allow ${application.displayName}" else "Allow ${application.displayName}",
+            modifier = Modifier.fillMaxWidth().testTag("application-connection-authorize"),
+            enabled = !saving,
+            onClick = onAuthorize,
+        )
+    }
+}
+
+@Composable
+private fun HarnessConnectionToggleCard(
+    application: HarnessApplicationSummary,
+    saving: Boolean,
+    onConnectionEnabledChanged: (Boolean) -> Unit,
+) {
     val enabled = application.status == HarnessApplicationStatus.AUTHORIZED
     HarnessCard(modifier = Modifier.testTag("application-connection-control")) {
         Row(
@@ -42,31 +134,24 @@ internal fun HarnessConnectionControlCard(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(LocalHarnessSpacing.current.xSmall),
             ) {
-                Text("Allow app connection", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    when {
-                        enabled -> "This app can authenticate to the shared runtime for its assigned use cases."
-
-                        authorizationPending ->
-                            "Review the package and signer in Technical details, then enable access to authorize this exact app identity."
-
-                        else -> "Access is blocked at the Binder authorization boundary. Configuration is retained."
+                    if (enabled) "Connection enabled" else "Connection paused",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    if (enabled) {
+                        "This exact app identity can authenticate to Harnex for its configured use cases. Turn this off to pause access without removing configuration."
+                    } else {
+                        "Access is paused. Assigned use cases and presets are retained; turn this on to allow the same approved app identity again."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (!toggleSupported) {
-                    Text(
-                        "The installed application identity is unavailable, so access cannot be authorized.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
             }
             Switch(
                 checked = enabled,
                 onCheckedChange = onConnectionEnabledChanged,
-                enabled = toggleSupported && !saving,
+                enabled = !saving,
                 modifier = Modifier.testTag("application-connection-enabled"),
             )
         }
