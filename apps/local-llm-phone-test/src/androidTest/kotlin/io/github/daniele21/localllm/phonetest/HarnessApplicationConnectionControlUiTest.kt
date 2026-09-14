@@ -14,12 +14,58 @@ class HarnessApplicationConnectionControlUiTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun pendingApplicationCanBeExplicitlyAuthorizedFromSwitch() {
+    fun pendingApplicationRequiresExplicitApprovalAction() {
         var requested: Boolean? = null
         composeRule.setContent {
             HarnessTheme(darkTheme = false) {
                 HarnessConnectionControlCard(
-                    application = pendingApplication(),
+                    application = application(HarnessApplicationStatus.PENDING),
+                    saving = false,
+                    onConnectionEnabledChanged = { requested = it },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag("application-connection-authorize")
+            .assertIsEnabled()
+            .performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(true, requested)
+        }
+    }
+
+    @Test
+    fun changedIdentityRequiresExplicitReauthorizationAction() {
+        var requested: Boolean? = null
+        composeRule.setContent {
+            HarnessTheme(darkTheme = false) {
+                HarnessConnectionControlCard(
+                    application = application(HarnessApplicationStatus.IDENTITY_CHANGED),
+                    saving = false,
+                    onConnectionEnabledChanged = { requested = it },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag("application-connection-authorize")
+            .assertIsEnabled()
+            .performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(true, requested)
+        }
+    }
+
+    @Test
+    fun authorizedApplicationUsesConnectionToggleForPausing() {
+        var requested: Boolean? = null
+        composeRule.setContent {
+            HarnessTheme(darkTheme = false) {
+                HarnessConnectionControlCard(
+                    application = application(HarnessApplicationStatus.AUTHORIZED),
                     saving = false,
                     onConnectionEnabledChanged = { requested = it },
                 )
@@ -32,16 +78,16 @@ class HarnessApplicationConnectionControlUiTest {
             .performClick()
 
         composeRule.runOnIdle {
-            assertEquals(true, requested)
+            assertEquals(false, requested)
         }
     }
 
-    private fun pendingApplication() = HarnessApplicationSummary(
-        applicationId = "redactguard",
-        displayName = "RedactGuard",
-        packageName = "io.github.daniele21.redactguard.debug",
+    private fun application(status: HarnessApplicationStatus) = HarnessApplicationSummary(
+        applicationId = "aura-finance",
+        displayName = "Aura Finance",
+        packageName = "com.staituned.aura",
         signerSha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-        status = HarnessApplicationStatus.PENDING,
+        status = status,
         firstSeenAtEpochMs = 1L,
         lastSeenAtEpochMs = 1L,
         assignments = emptyList(),
