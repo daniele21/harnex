@@ -7,16 +7,22 @@ import org.junit.Test
 class HarnessApplicationsReadPresentationTest {
     @Test
     fun `application statuses map to non-color-only labels and semantic tones`() {
-        assertEquals("Enabled", HarnessApplicationStatus.AUTHORIZED.label())
+        assertEquals("Connected", HarnessApplicationStatus.AUTHORIZED.label())
         assertEquals(HarnessStatusTone.SUCCESS, HarnessApplicationStatus.AUTHORIZED.tone())
-        assertEquals("Pending", HarnessApplicationStatus.PENDING.label())
-        assertEquals(HarnessStatusTone.INFO, HarnessApplicationStatus.PENDING.tone())
-        assertEquals("Disabled", HarnessApplicationStatus.DISABLED.label())
+        assertEquals("Needs approval", HarnessApplicationStatus.PENDING.label())
+        assertEquals(HarnessStatusTone.WARNING, HarnessApplicationStatus.PENDING.tone())
+        assertEquals("Paused", HarnessApplicationStatus.DISABLED.label())
         assertEquals(HarnessStatusTone.NEUTRAL, HarnessApplicationStatus.DISABLED.tone())
-        assertEquals("Identity changed", HarnessApplicationStatus.IDENTITY_CHANGED.label())
+        assertEquals("Review identity", HarnessApplicationStatus.IDENTITY_CHANGED.label())
         assertEquals(HarnessStatusTone.WARNING, HarnessApplicationStatus.IDENTITY_CHANGED.tone())
         assertEquals("Unavailable", HarnessApplicationStatus.UNAVAILABLE.label())
         assertEquals(HarnessStatusTone.ERROR, HarnessApplicationStatus.UNAVAILABLE.tone())
+    }
+
+    @Test
+    fun `assignment statuses keep configuration distinct from runtime activation`() {
+        assertEquals("Configured", HarnessAssignmentStatus.ACTIVE.label())
+        assertEquals(HarnessStatusTone.SUCCESS, HarnessAssignmentStatus.ACTIVE.tone())
     }
 
     @Test

@@ -1,0 +1,278 @@
+name: Phone application authorization UI evidence
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - "apps/local-llm-phone-test/src/main/kotlin/io/github/daniele21/localllm/phonetest/HarnessApplicationConnectionControlUi.kt"
+      - "apps/local-llm-phone-test/src/main/kotlin/io/github/daniele21/localllm/phonetest/HarnessApplicationsReadUi.kt"
+      - "apps/local-llm-phone-test/src/androidTest/kotlin/io/github/daniele21/localllm/phonetest/HarnessApplicationConnectionControlUiTest.kt"
+      - ".engineering/e2e.json"
+      - ".github/workflows/phone-application-authorization-ui-evidence.yml"
+  workflow_dispatch:
+    inputs:
+      candidate_ref:
+        description: Branch, tag, or commit to validate
+        type: string
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phone-app-authorization-ui-${{ github.event_name == 'pull_request' && github.event.pull_request.number || inputs.candidate_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application-authorization-ui-evidence:
+    name: App authorization recovery on API 35
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out exact candidate
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          submodules: recursive
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || (github.event_name == 'workflow_dispatch' && inputs.candidate_ref || github.sha) }}
+
+      - name: Record source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/phone-app-authorization-ui"
+          mkdir -p "$evidence"
+          git rev-parse HEAD | tee "$evidence/source-revision.txt"
+
+      - name: Verify llama.cpp pin
+        run: ./scripts/verify-llama-cpp-pin.sh
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Configure Android AVD home
+        shell: bash
+        run: |
+          echo "ANDROID_AVD_HOME=$RUNNER_TEMP/android-avd" >> "$GITHUB_ENV"
+          echo "ANDROID_USER_HOME=$RUNNER_TEMP/android-user" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/android-avd" "$RUNNER_TEMP/android-user"
+
+      - name: Install Android build and emulator components
+        shell: bash
+        run: |
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;28.2.13676358" \
+            "cmake;3.22.1" \
+            "emulator" \
+            "system-images;android-35;google_apis;x86_64"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Build emulator Host and authorization UI instrumentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-configuration-cache \
+            :apps:local-llm-phone-test:assembleEmulatorE2e \
+            :apps:local-llm-phone-test:assembleDebugAndroidTest
+
+      - name: Resolve exact APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_tools="$ANDROID_HOME/build-tools/36.0.0"
+          evidence="$RUNNER_TEMP/phone-app-authorization-ui"
+          mapfile -t host_candidates < <(find apps/local-llm-phone-test/build/outputs/apk -type f -name '*.apk' -path '*emulatorE2e*' | sort)
+          mapfile -t test_candidates < <(find apps/local-llm-phone-test/build/outputs/apk/androidTest -type f -name '*.apk' -path '*debug*' | sort)
+          [[ "${#host_candidates[@]}" -eq 1 ]] || { printf 'Expected one emulator Host APK, found %s\n' "${#host_candidates[@]}" >&2; exit 1; }
+          [[ "${#test_candidates[@]}" -eq 1 ]] || { printf 'Expected one debug AndroidTest APK, found %s\n' "${#test_candidates[@]}" >&2; exit 1; }
+          host_apk="${host_candidates[0]}"
+          test_apk="${test_candidates[0]}"
+          host_package=$("$build_tools/aapt" dump badging "$host_apk" | sed -n "s/package: name='\([^']*\)'.*/\1/p" | head -n 1)
+          test_package=$("$build_tools/aapt" dump badging "$test_apk" | sed -n "s/package: name='\([^']*\)'.*/\1/p" | head -n 1)
+          [[ -n "$host_package" && -n "$test_package" ]] || { echo "Unable to resolve Host/test package identity." >&2; exit 1; }
+          printf '%s\n' "$host_package" | tee "$evidence/host-package.txt"
+          printf '%s\n' "$test_package" | tee "$evidence/test-package.txt"
+          sha256sum "$host_apk" "$test_apk" > "$evidence/apk-sha256.txt"
+          printf 'HOST_APK=%s\n' "$host_apk" >> "$GITHUB_ENV"
+          printf 'TEST_APK=%s\n' "$test_apk" >> "$GITHUB_ENV"
+          printf 'HOST_PACKAGE=%s\n' "$host_package" >> "$GITHUB_ENV"
+          printf 'TEST_PACKAGE=%s\n' "$test_package" >> "$GITHUB_ENV"
+
+      - name: Enable KVM access
+        shell: bash
+        run: |
+          if [[ -e /dev/kvm ]]; then sudo chmod 666 /dev/kvm; fi
+
+      - name: Create and start emulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/phone-app-authorization-ui"
+          emulator_bin="$ANDROID_HOME/emulator/emulator"
+          test -x "$emulator_bin"
+          echo "no" | avdmanager create avd \
+            --force \
+            --name phone-app-authorization-ui-api35 \
+            --package "system-images;android-35;google_apis;x86_64" \
+            --device "pixel_6"
+          nohup "$emulator_bin" \
+            -avd phone-app-authorization-ui-api35 \
+            -port 5554 \
+            -no-window \
+            -no-audio \
+            -no-boot-anim \
+            -gpu swiftshader_indirect \
+            -no-snapshot \
+            > "$evidence/emulator.log" 2>&1 &
+          timeout 180 adb -s emulator-5554 wait-for-device
+          for attempt in $(seq 1 90); do
+            if [[ "$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
+              adb -s emulator-5554 shell settings put global window_animation_scale 0
+              adb -s emulator-5554 shell settings put global transition_animation_scale 0
+              adb -s emulator-5554 shell settings put global animator_duration_scale 0
+              adb -s emulator-5554 shell wm dismiss-keyguard || true
+              exit 0
+            fi
+            sleep 2
+          done
+          adb devices -l >&2 || true
+          cat "$evidence/emulator.log" >&2 || true
+          echo "Error: authorization UI emulator did not finish booting." >&2
+          exit 1
+
+      - name: Install exact Host and test APKs
+        env:
+          ANDROID_SERIAL: emulator-5554
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/phone-app-authorization-ui"
+          adb install --no-streaming -r -t "$HOST_APK" | tee "$evidence/host-install.txt"
+          adb install --no-streaming -r -t "$TEST_APK" | tee "$evidence/test-install.txt"
+          adb shell pm list instrumentation | tee "$evidence/instrumentation.txt"
+          grep -F "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner (target=$HOST_PACKAGE)" "$evidence/instrumentation.txt" >/dev/null || {
+            echo "Installed instrumentation does not target the exact emulator Host package." >&2
+            exit 1
+          }
+
+      - name: Record and run application authorization journey
+        env:
+          ANDROID_SERIAL: emulator-5554
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/phone-app-authorization-ui"
+          media="$evidence/ui-media/application-authorization"
+          video_dir="$media/video"
+          instrumentation_log="$evidence/instrumentation-authorization.log"
+          remote_video="/sdcard/application-authorization-ui.mp4"
+          mkdir -p "$video_dir"
+          adb shell pm clear "$HOST_PACKAGE" >/dev/null
+          adb shell rm -f "$remote_video"
+          adb shell "screenrecord --bit-rate 4000000 --time-limit 60 $remote_video >/dev/null 2>&1 &"
+          for attempt in $(seq 1 20); do
+            [[ -n "$(adb shell pidof screenrecord 2>/dev/null | tr -d '\r')" ]] && break
+            sleep 0.25
+          done
+          [[ -n "$(adb shell pidof screenrecord 2>/dev/null | tr -d '\r')" ]] || { echo "screenrecord did not start" >&2; exit 1; }
+
+          set +e
+          adb shell am instrument -w -r \
+            -e class 'io.github.daniele21.localllm.phonetest.HarnessApplicationConnectionControlUiTest#pendingAuthorizationJourneyTransitionsToConnectedControl' \
+            "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner" \
+            | tee "$instrumentation_log"
+          adb_status=${PIPESTATUS[0]}
+          set -e
+
+          journey_status=0
+          if [[ "$adb_status" -ne 0 ]]; then
+            echo "adb instrumentation command failed with status $adb_status." >&2
+            journey_status=1
+          fi
+          if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_STATUS_CODE: -2' "$instrumentation_log"; then
+            echo "AndroidJUnitRunner reported a test failure." >&2
+            journey_status=1
+          fi
+          if ! grep -Eq '^OK \([0-9]+ tests?\)$' "$instrumentation_log"; then
+            echo "AndroidJUnitRunner did not report a successful JUnit completion." >&2
+            journey_status=1
+          fi
+
+          record_pid="$(adb shell pidof screenrecord 2>/dev/null | tr -d '\r')"
+          if [[ -n "$record_pid" ]]; then adb shell kill -2 "$record_pid" || true; fi
+          sleep 2
+          adb pull "$remote_video" "$video_dir/journey.mp4" >/dev/null
+          adb shell rm -f "$remote_video"
+          [[ "$journey_status" -eq 0 ]] || exit "$journey_status"
+
+      - name: Collect and verify FULL_MEDIA evidence
+        if: always()
+        env:
+          ANDROID_SERIAL: emulator-5554
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/phone-app-authorization-ui"
+          media="$evidence/ui-media/application-authorization"
+          screenshots="$media/screenshots"
+          video="$media/video/journey.mp4"
+          mkdir -p "$screenshots"
+          external_dir="/sdcard/Android/data/$HOST_PACKAGE/files/ui-evidence/application-authorization"
+          adb pull "$external_dir/needs-approval.png" "$screenshots/needs-approval.png" >/dev/null
+          adb pull "$external_dir/connected.png" "$screenshots/connected.png" >/dev/null
+          test -s "$screenshots/needs-approval.png"
+          test -s "$screenshots/connected.png"
+          test -s "$video"
+          file "$screenshots/needs-approval.png" | grep -q 'PNG image data'
+          file "$screenshots/connected.png" | grep -q 'PNG image data'
+          file "$video" | grep -Eq 'ISO Media|MP4'
+          cat > "$media/manifest.txt" <<EOF
+          journey_id=phone-application-authorization-ui
+          source_revision=$(cat "$evidence/source-revision.txt")
+          workflow_run=${GITHUB_RUN_ID:-local}
+          execution_environment=phone-application-authorization-ui-api35-emulator
+          fidelity_class=simulated_or_emulated
+          screenshot_pending=screenshots/needs-approval.png
+          screenshot_connected=screenshots/connected.png
+          video=video/journey.mp4
+          EOF
+
+      - name: Clean emulator resources
+        if: always()
+        env:
+          ANDROID_SERIAL: emulator-5554
+        shell: bash
+        run: |
+          adb shell rm -f /sdcard/application-authorization-ui.mp4 || true
+          adb uninstall "$TEST_PACKAGE" || true
+          adb uninstall "$HOST_PACKAGE" || true
+          adb emu kill || true
+
+      - name: Upload application authorization UI evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phone-app-authorization-ui-evidence-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/phone-app-authorization-ui/**
+            apps/local-llm-phone-test/build/reports/androidTests/**
+            apps/local-llm-phone-test/build/outputs/androidTest-results/**
+          if-no-files-found: error
+          retention-days: 14
