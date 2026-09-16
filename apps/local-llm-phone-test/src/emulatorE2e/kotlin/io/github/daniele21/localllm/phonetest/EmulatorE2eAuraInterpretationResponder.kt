@@ -138,11 +138,9 @@ private object EmulatorE2eAuraDelimitedCellInterpreter {
         )
     }
 
-    private fun matchingDelimiter(headerCell: String, firstDataCell: String): Char? {
-        return delimiterCandidates.firstOrNull { candidate ->
-            val headerCount = headerCell.count { it == candidate }
-            headerCount >= 2 && firstDataCell.count { it == candidate } == headerCount
-        }
+    private fun matchingDelimiter(headerCell: String, firstDataCell: String): Char? = delimiterCandidates.firstOrNull { candidate ->
+        val headerCount = headerCell.count { it == candidate }
+        headerCount >= 2 && firstDataCell.count { it == candidate } == headerCount
     }
 
     private fun hasOuterQuotes(value: String): Boolean = value.startsWith('"') && value.endsWith('"')
@@ -192,5 +190,4 @@ private fun dateParser(value: String?): String? {
     }
 }
 
-private fun cellValue(cells: JSONArray, index: Int): String? =
-    cells.opt(index).takeIf { it != null && it !== JSONObject.NULL }?.toString()
+private fun cellValue(cells: JSONArray, index: Int): String? = cells.opt(index).takeIf { it != null && it !== JSONObject.NULL }?.toString()
