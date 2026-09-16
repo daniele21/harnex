@@ -35,7 +35,7 @@ internal object EmulatorE2eAuraInterpretationResponder {
     }
 
     private fun sourceOrNull(prompt: String): EmulatorE2eAuraInterpretationSource? {
-        val request = runCatching { JSONObject(prompt) }.getOrNull()
+        val request = interpretationRequestOrNull(prompt)
         val sheet = request?.optJSONObject("document")?.optJSONArray("sheets")?.optJSONObject(0)
         val rows = sheet?.optJSONArray("rows")
         val headerRow = rows?.optJSONObject(0)
@@ -60,6 +60,13 @@ internal object EmulatorE2eAuraInterpretationResponder {
             )
         }
     }
+
+    private fun interpretationRequestOrNull(prompt: String): JSONObject? = prompt
+        .lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .mapNotNull { line -> runCatching { JSONObject(line) }.getOrNull() }
+        .lastOrNull { request -> request.optString("task") == "interpret-transaction-source" }
 
     private fun gridInterpretation(source: EmulatorE2eAuraInterpretationSource): String? {
         val parser = dateParser(cellValue(source.firstDataCells, 0))
