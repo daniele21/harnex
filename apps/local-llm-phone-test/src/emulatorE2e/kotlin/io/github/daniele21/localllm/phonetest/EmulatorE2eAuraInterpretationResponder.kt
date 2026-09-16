@@ -18,7 +18,6 @@ internal object EmulatorE2eAuraInterpretationResponder {
     private val isoDate = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
     private val dayMonthSlashDate = Regex("^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$")
     private val dayMonthDashDate = Regex("^[0-9]{1,2}-[0-9]{1,2}-[0-9]{4}$")
-    private val delimiterCandidates = listOf(';', '|', '\t', ',')
 
     fun output(prompt: String): String {
         val source = sourceOrNull(prompt)
@@ -26,7 +25,7 @@ internal object EmulatorE2eAuraInterpretationResponder {
             source == null -> ambiguousInterpretation("layout")
 
             source.headerCells.length() == 1 && source.firstDataCells.length() == 1 ->
-                delimitedCellInterpretation(source) ?: ambiguousInterpretation("layout")
+                EmulatorE2eAuraDelimitedCellInterpreter.interpret(source) ?: ambiguousInterpretation("layout")
 
             source.headerCells.length() >= 3 && source.firstDataCells.length() >= 3 ->
                 gridInterpretation(source) ?: ambiguousInterpretation("date")
@@ -89,90 +88,6 @@ internal object EmulatorE2eAuraInterpretationResponder {
         }
     }
 
-    private fun delimitedCellInterpretation(source: EmulatorE2eAuraInterpretationSource): String? {
-        val shape = delimitedCellShape(
-            headerCell = cellValue(source.headerCells, 0),
-            firstDataCell = cellValue(source.firstDataCells, 0),
-        )
-        val parser = shape?.logicalCells?.firstOrNull()?.let(::dateParser)
-
-        return if (shape == null || parser == null) {
-            null
-        } else {
-            resolvedInterpretation(
-                sheetId = source.sheetId,
-                layout = JSONObject()
-                    .put("kind", "delimited-cell")
-                    .put("sourceColumnIndex", 0)
-                    .put("delimiter", shape.delimiter.toString())
-                    .put("stripOuterQuotes", shape.stripOuterQuotes)
-                    .put("headerRowNumber", source.headerRowNumber)
-                    .put("firstDataRowNumber", source.firstDataRowNumber),
-                dateParser = parser,
-                dateColumnIndex = 0,
-                descriptionColumnIndexes = intArrayOf(1),
-                amount = JSONObject()
-                    .put("strategy", "debit-credit")
-                    .put("debitColumnIndex", 2)
-                    .put("creditColumnIndex", 3),
-            )
-        }
-    }
-
-    private fun delimitedCellShape(headerCell: String?, firstDataCell: String?): EmulatorE2eAuraDelimitedCellShape? {
-        if (headerCell == null || firstDataCell == null) return null
-        val delimiter = matchingDelimiter(headerCell, firstDataCell) ?: return null
-        val stripOuterQuotes = hasOuterQuotes(headerCell)
-        val logicalCells = normalizeDelimitedCell(firstDataCell, stripOuterQuotes).split(delimiter)
-        if (logicalCells.size < 4) return null
-
-        return EmulatorE2eAuraDelimitedCellShape(
-            delimiter = delimiter,
-            stripOuterQuotes = stripOuterQuotes,
-            logicalCells = logicalCells,
-        )
-    }
-
-    private fun matchingDelimiter(headerCell: String, firstDataCell: String): Char? = delimiterCandidates.firstOrNull { candidate ->
-        val headerCount = headerCell.count { it == candidate }
-        headerCount >= 2 && firstDataCell.count { it == candidate } == headerCount
-    }
-
-    private fun hasOuterQuotes(value: String): Boolean = value.startsWith('"') && value.endsWith('"')
-
-    private fun normalizeDelimitedCell(value: String, stripOuterQuotes: Boolean): String =
-        if (stripOuterQuotes && hasOuterQuotes(value)) value.substring(1, value.length - 1) else value
-
-    private fun resolvedInterpretation(
-        sheetId: String,
-        layout: JSONObject,
-        dateParser: String,
-        dateColumnIndex: Int,
-        descriptionColumnIndexes: IntArray,
-        amount: JSONObject,
-    ): String {
-        val descriptionIndexes = JSONArray()
-        descriptionColumnIndexes.forEach { descriptionIndexes.put(it) }
-        return JSONObject()
-            .put("status", "resolved")
-            .put(
-                "plan",
-                JSONObject()
-                    .put("contractVersion", 1)
-                    .put("sheetId", sheetId)
-                    .put("layout", layout)
-                    .put(
-                        "date",
-                        JSONObject()
-                            .put("columnIndex", dateColumnIndex)
-                            .put("parser", dateParser),
-                    )
-                    .put("description", JSONObject().put("columnIndexes", descriptionIndexes))
-                    .put("amount", amount),
-            )
-            .toString()
-    }
-
     private fun ambiguousInterpretation(area: String): String = JSONObject()
         .put("status", "ambiguous")
         .put("ambiguities", JSONArray().put(area))
@@ -188,7 +103,105 @@ internal object EmulatorE2eAuraInterpretationResponder {
             else -> null
         }
     }
-
-    private fun cellValue(cells: JSONArray, index: Int): String? =
-        cells.opt(index).takeIf { it != null && it !== JSONObject.NULL }?.toString()
 }
+
+private object EmulatorE2eAuraDelimitedCellInterpreter {
+    private val delimiterCandidates = listOf(';', '|', '\t', ',')
+
+    fun interpret(source: EmulatorE2eAuraInterpretationSource): String? {
+        val shape = shape(
+            headerCell = cellValue(source.headerCells, 0),
+            firstDataCell = cellValue(source.firstDataCells, 0),
+        )
+        val parser = shape?.logicalCells?.firstOrNull()?.let(::dateParser)
+        if (shape == null || parser == null) return null
+
+        return resolvedInterpretation(
+            sheetId = source.sheetId,
+            layout = JSONObject()
+                .put("kind", "delimited-cell")
+                .put("sourceColumnIndex", 0)
+                .put("delimiter", shape.delimiter.toString())
+                .put("stripOuterQuotes", shape.stripOuterQuotes)
+                .put("headerRowNumber", source.headerRowNumber)
+                .put("firstDataRowNumber", source.firstDataRowNumber),
+            dateParser = parser,
+            dateColumnIndex = 0,
+            descriptionColumnIndexes = intArrayOf(1),
+            amount = JSONObject()
+                .put("strategy", "debit-credit")
+                .put("debitColumnIndex", 2)
+                .put("creditColumnIndex", 3),
+        )
+    }
+
+    private fun shape(headerCell: String?, firstDataCell: String?): EmulatorE2eAuraDelimitedCellShape? {
+        if (headerCell == null || firstDataCell == null) return null
+        val delimiter = matchingDelimiter(headerCell, firstDataCell) ?: return null
+        val stripOuterQuotes = hasOuterQuotes(headerCell)
+        val logicalCells = normalizeCell(firstDataCell, stripOuterQuotes).split(delimiter)
+        if (logicalCells.size < 4) return null
+
+        return EmulatorE2eAuraDelimitedCellShape(
+            delimiter = delimiter,
+            stripOuterQuotes = stripOuterQuotes,
+            logicalCells = logicalCells,
+        )
+    }
+
+    private fun matchingDelimiter(headerCell: String, firstDataCell: String): Char? {
+        return delimiterCandidates.firstOrNull { candidate ->
+            val headerCount = headerCell.count { it == candidate }
+            headerCount >= 2 && firstDataCell.count { it == candidate } == headerCount
+        }
+    }
+
+    private fun hasOuterQuotes(value: String): Boolean = value.startsWith('"') && value.endsWith('"')
+
+    private fun normalizeCell(value: String, stripOuterQuotes: Boolean): String =
+        if (stripOuterQuotes && hasOuterQuotes(value)) value.substring(1, value.length - 1) else value
+
+    private fun dateParser(value: String?): String? {
+        val normalized = value?.trim()
+        return when {
+            normalized == null -> null
+            Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(normalized) -> "iso-date"
+            Regex("^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$").matches(normalized) -> "dmy-slash"
+            Regex("^[0-9]{1,2}-[0-9]{1,2}-[0-9]{4}$").matches(normalized) -> "dmy-dash"
+            else -> null
+        }
+    }
+}
+
+private fun resolvedInterpretation(
+    sheetId: String,
+    layout: JSONObject,
+    dateParser: String,
+    dateColumnIndex: Int,
+    descriptionColumnIndexes: IntArray,
+    amount: JSONObject,
+): String {
+    val descriptionIndexes = JSONArray()
+    descriptionColumnIndexes.forEach { descriptionIndexes.put(it) }
+    return JSONObject()
+        .put("status", "resolved")
+        .put(
+            "plan",
+            JSONObject()
+                .put("contractVersion", 1)
+                .put("sheetId", sheetId)
+                .put("layout", layout)
+                .put(
+                    "date",
+                    JSONObject()
+                        .put("columnIndex", dateColumnIndex)
+                        .put("parser", dateParser),
+                )
+                .put("description", JSONObject().put("columnIndexes", descriptionIndexes))
+                .put("amount", amount),
+        )
+        .toString()
+}
+
+private fun cellValue(cells: JSONArray, index: Int): String? =
+    cells.opt(index).takeIf { it != null && it !== JSONObject.NULL }?.toString()
