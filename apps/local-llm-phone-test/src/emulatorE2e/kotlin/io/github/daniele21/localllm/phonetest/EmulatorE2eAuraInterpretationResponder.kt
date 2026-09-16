@@ -120,35 +120,28 @@ internal object EmulatorE2eAuraInterpretationResponder {
     }
 
     private fun delimitedCellShape(headerCell: String?, firstDataCell: String?): EmulatorE2eAuraDelimitedCellShape? {
-        val delimiter = if (headerCell == null || firstDataCell == null) {
-            null
-        } else {
-            delimiterCandidates.firstOrNull { candidate ->
-                headerCell.count { it == candidate } >= 2 &&
-                    firstDataCell.count { it == candidate } == headerCell.count { it == candidate }
-            }
-        }
-        val stripOuterQuotes = headerCell?.let { it.startsWith('"') && it.endsWith('"') } == true
-        val normalizedFirstData = when {
-            firstDataCell == null -> null
+        if (headerCell == null || firstDataCell == null) return null
+        val delimiter = matchingDelimiter(headerCell, firstDataCell) ?: return null
+        val stripOuterQuotes = hasOuterQuotes(headerCell)
+        val logicalCells = normalizeDelimitedCell(firstDataCell, stripOuterQuotes).split(delimiter)
+        if (logicalCells.size < 4) return null
 
-            stripOuterQuotes && firstDataCell.startsWith('"') && firstDataCell.endsWith('"') ->
-                firstDataCell.substring(1, firstDataCell.length - 1)
-
-            else -> firstDataCell
-        }
-        val logicalCells = if (normalizedFirstData != null && delimiter != null) normalizedFirstData.split(delimiter) else emptyList()
-
-        return if (delimiter == null || logicalCells.size < 4) {
-            null
-        } else {
-            EmulatorE2eAuraDelimitedCellShape(
-                delimiter = delimiter,
-                stripOuterQuotes = stripOuterQuotes,
-                logicalCells = logicalCells,
-            )
-        }
+        return EmulatorE2eAuraDelimitedCellShape(
+            delimiter = delimiter,
+            stripOuterQuotes = stripOuterQuotes,
+            logicalCells = logicalCells,
+        )
     }
+
+    private fun matchingDelimiter(headerCell: String, firstDataCell: String): Char? = delimiterCandidates.firstOrNull { candidate ->
+        val headerCount = headerCell.count { it == candidate }
+        headerCount >= 2 && firstDataCell.count { it == candidate } == headerCount
+    }
+
+    private fun hasOuterQuotes(value: String): Boolean = value.startsWith('"') && value.endsWith('"')
+
+    private fun normalizeDelimitedCell(value: String, stripOuterQuotes: Boolean): String =
+        if (stripOuterQuotes && hasOuterQuotes(value)) value.substring(1, value.length - 1) else value
 
     private fun resolvedInterpretation(
         sheetId: String,
