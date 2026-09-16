@@ -3,6 +3,10 @@ package io.github.daniele21.localllm.phonetest
 import org.json.JSONArray
 import org.json.JSONObject
 
+private val emulatorE2eAuraIsoDate = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+private val emulatorE2eAuraDayMonthSlashDate = Regex("^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$")
+private val emulatorE2eAuraDayMonthDashDate = Regex("^[0-9]{1,2}-[0-9]{1,2}-[0-9]{4}$")
+
 private data class EmulatorE2eAuraInterpretationSource(
     val sheetId: String,
     val headerRowNumber: Int,
@@ -15,10 +19,6 @@ private data class EmulatorE2eAuraDelimitedCellShape(val delimiter: Char, val st
 
 /** Emulator-only deterministic responder for Aura's declarative source-interpretation contract. */
 internal object EmulatorE2eAuraInterpretationResponder {
-    private val isoDate = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
-    private val dayMonthSlashDate = Regex("^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$")
-    private val dayMonthDashDate = Regex("^[0-9]{1,2}-[0-9]{1,2}-[0-9]{4}$")
-
     fun output(prompt: String): String {
         val source = sourceOrNull(prompt)
         return when {
@@ -92,17 +92,6 @@ internal object EmulatorE2eAuraInterpretationResponder {
         .put("status", "ambiguous")
         .put("ambiguities", JSONArray().put(area))
         .toString()
-
-    private fun dateParser(value: String?): String? {
-        val normalized = value?.trim()
-        return when {
-            normalized == null -> null
-            isoDate.matches(normalized) -> "iso-date"
-            dayMonthSlashDate.matches(normalized) -> "dmy-slash"
-            dayMonthDashDate.matches(normalized) -> "dmy-dash"
-            else -> null
-        }
-    }
 }
 
 private object EmulatorE2eAuraDelimitedCellInterpreter {
@@ -160,17 +149,6 @@ private object EmulatorE2eAuraDelimitedCellInterpreter {
 
     private fun normalizeCell(value: String, stripOuterQuotes: Boolean): String =
         if (stripOuterQuotes && hasOuterQuotes(value)) value.substring(1, value.length - 1) else value
-
-    private fun dateParser(value: String?): String? {
-        val normalized = value?.trim()
-        return when {
-            normalized == null -> null
-            Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$").matches(normalized) -> "iso-date"
-            Regex("^[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}$").matches(normalized) -> "dmy-slash"
-            Regex("^[0-9]{1,2}-[0-9]{1,2}-[0-9]{4}$").matches(normalized) -> "dmy-dash"
-            else -> null
-        }
-    }
 }
 
 private fun resolvedInterpretation(
@@ -201,6 +179,17 @@ private fun resolvedInterpretation(
                 .put("amount", amount),
         )
         .toString()
+}
+
+private fun dateParser(value: String?): String? {
+    val normalized = value?.trim()
+    return when {
+        normalized == null -> null
+        emulatorE2eAuraIsoDate.matches(normalized) -> "iso-date"
+        emulatorE2eAuraDayMonthSlashDate.matches(normalized) -> "dmy-slash"
+        emulatorE2eAuraDayMonthDashDate.matches(normalized) -> "dmy-dash"
+        else -> null
+    }
 }
 
 private fun cellValue(cells: JSONArray, index: Int): String? =
