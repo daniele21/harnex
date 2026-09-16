@@ -119,7 +119,7 @@ internal object EmulatorE2eModelAvailabilityGate {
     }
 }
 
-/** Deterministic JSON responder for Aura's constrained schema/category use cases. */
+/** Deterministic JSON responder for Aura's constrained schema/interpretation/category use cases. */
 internal object EmulatorE2eAuraImportResponder {
     private data class SchemaSelection(
         val sheet: String,
@@ -139,6 +139,7 @@ internal object EmulatorE2eAuraImportResponder {
 
     fun outputOrNull(prompt: String): String? = when {
         "\"task\":\"select-transaction-schema\"" in prompt -> schemaOutput(prompt)
+        "\"task\":\"interpret-transaction-source\"" in prompt -> EmulatorE2eAuraInterpretationResponder.output(prompt)
         "\"task\":\"classify-transaction-categories\"" in prompt -> categoryOutput(prompt)
         else -> null
     }
