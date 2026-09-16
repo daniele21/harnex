@@ -11,6 +11,12 @@ private data class EmulatorE2eAuraInterpretationSource(
     val firstDataCells: JSONArray,
 )
 
+private data class EmulatorE2eAuraDelimitedCellShape(
+    val delimiter: Char,
+    val stripOuterQuotes: Boolean,
+    val logicalCells: List<String>,
+)
+
 /** Emulator-only deterministic responder for Aura's declarative source-interpretation contract. */
 internal object EmulatorE2eAuraInterpretationResponder {
     private val isoDate = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
@@ -88,8 +94,36 @@ internal object EmulatorE2eAuraInterpretationResponder {
     }
 
     private fun delimitedCellInterpretation(source: EmulatorE2eAuraInterpretationSource): String? {
-        val headerCell = cellValue(source.headerCells, 0)
-        val firstDataCell = cellValue(source.firstDataCells, 0)
+        val shape = delimitedCellShape(
+            headerCell = cellValue(source.headerCells, 0),
+            firstDataCell = cellValue(source.firstDataCells, 0),
+        )
+        val parser = shape?.logicalCells?.firstOrNull()?.let(::dateParser)
+
+        return if (shape == null || parser == null) {
+            null
+        } else {
+            resolvedInterpretation(
+                sheetId = source.sheetId,
+                layout = JSONObject()
+                    .put("kind", "delimited-cell")
+                    .put("sourceColumnIndex", 0)
+                    .put("delimiter", shape.delimiter.toString())
+                    .put("stripOuterQuotes", shape.stripOuterQuotes)
+                    .put("headerRowNumber", source.headerRowNumber)
+                    .put("firstDataRowNumber", source.firstDataRowNumber),
+                dateParser = parser,
+                dateColumnIndex = 0,
+                descriptionColumnIndexes = intArrayOf(1),
+                amount = JSONObject()
+                    .put("strategy", "debit-credit")
+                    .put("debitColumnIndex", 2)
+                    .put("creditColumnIndex", 3),
+            )
+        }
+    }
+
+    private fun delimitedCellShape(headerCell: String?, firstDataCell: String?): EmulatorE2eAuraDelimitedCellShape? {
         val delimiter = if (headerCell == null || firstDataCell == null) {
             null
         } else {
@@ -108,27 +142,14 @@ internal object EmulatorE2eAuraInterpretationResponder {
             else -> firstDataCell
         }
         val logicalCells = if (normalizedFirstData != null && delimiter != null) normalizedFirstData.split(delimiter) else emptyList()
-        val parser = logicalCells.firstOrNull()?.let(::dateParser)
 
-        return if (delimiter == null || logicalCells.size < 4 || parser == null) {
+        return if (delimiter == null || logicalCells.size < 4) {
             null
         } else {
-            resolvedInterpretation(
-                sheetId = source.sheetId,
-                layout = JSONObject()
-                    .put("kind", "delimited-cell")
-                    .put("sourceColumnIndex", 0)
-                    .put("delimiter", delimiter.toString())
-                    .put("stripOuterQuotes", stripOuterQuotes)
-                    .put("headerRowNumber", source.headerRowNumber)
-                    .put("firstDataRowNumber", source.firstDataRowNumber),
-                dateParser = parser,
-                dateColumnIndex = 0,
-                descriptionColumnIndexes = intArrayOf(1),
-                amount = JSONObject()
-                    .put("strategy", "debit-credit")
-                    .put("debitColumnIndex", 2)
-                    .put("creditColumnIndex", 3),
+            EmulatorE2eAuraDelimitedCellShape(
+                delimiter = delimiter,
+                stripOuterQuotes = stripOuterQuotes,
+                logicalCells = logicalCells,
             )
         }
     }
