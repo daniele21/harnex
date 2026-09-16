@@ -2,9 +2,9 @@ package io.github.daniele21.localllm.phonetest
 
 import android.content.Context
 import io.github.daniele21.localllm.contracts.UseCaseId
-import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.atomic.AtomicBoolean
 
 internal data class EmulatorE2eAuraControlResult(val success: Boolean, val detail: String)
 
@@ -121,7 +121,7 @@ internal object EmulatorE2eModelAvailabilityGate {
     }
 }
 
-/** Deterministic JSON responder for Aura's constrained schema/category use cases. */
+/** Deterministic JSON responder for Aura's constrained schema/interpretation/category use cases. */
 internal object EmulatorE2eAuraImportResponder {
     private data class SchemaSelection(
         val sheet: String,
@@ -229,12 +229,7 @@ internal object EmulatorE2eAuraImportResponder {
         return ambiguousInterpretation("layout")
     }
 
-    private fun gridInterpretation(
-        sheetId: String,
-        headerRowNumber: Int,
-        firstDataRowNumber: Int,
-        firstDataCells: JSONArray,
-    ): String? {
+    private fun gridInterpretation(sheetId: String, headerRowNumber: Int, firstDataRowNumber: Int, firstDataCells: JSONArray): String? {
         val parser = dateParser(firstDataCells.optStringValue(0)) ?: return null
         val amountValue = firstDataCells.optStringValue(2)?.trim()?.replace(',', '.') ?: return null
         val polarity = when {
@@ -308,7 +303,7 @@ internal object EmulatorE2eAuraImportResponder {
         amount: JSONObject,
     ): String {
         val descriptionIndexes = JSONArray()
-        descriptionColumnIndexes.forEach(descriptionIndexes::put)
+        descriptionColumnIndexes.forEach { descriptionIndexes.put(it) }
         return JSONObject()
             .put("status", "resolved")
             .put(
@@ -329,11 +324,10 @@ internal object EmulatorE2eAuraImportResponder {
             .toString()
     }
 
-    private fun ambiguousInterpretation(area: String): String =
-        JSONObject()
-            .put("status", "ambiguous")
-            .put("ambiguities", JSONArray().put(area))
-            .toString()
+    private fun ambiguousInterpretation(area: String): String = JSONObject()
+        .put("status", "ambiguous")
+        .put("ambiguities", JSONArray().put(area))
+        .toString()
 
     private fun dateParser(value: String?): String? {
         val normalized = value?.trim() ?: return null
@@ -345,8 +339,7 @@ internal object EmulatorE2eAuraImportResponder {
         }
     }
 
-    private fun JSONArray.optStringValue(index: Int): String? =
-        opt(index).takeIf { it != null && it !== JSONObject.NULL }?.toString()
+    private fun JSONArray.optStringValue(index: Int): String? = opt(index).takeIf { it != null && it !== JSONObject.NULL }?.toString()
 
     private fun categoryOutput(prompt: String): String {
         val category = categoryId.find(prompt)?.groupValues?.get(1)
