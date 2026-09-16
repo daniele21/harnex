@@ -11,11 +11,7 @@ private data class EmulatorE2eAuraInterpretationSource(
     val firstDataCells: JSONArray,
 )
 
-private data class EmulatorE2eAuraDelimitedCellShape(
-    val delimiter: Char,
-    val stripOuterQuotes: Boolean,
-    val logicalCells: List<String>,
-)
+private data class EmulatorE2eAuraDelimitedCellShape(val delimiter: Char, val stripOuterQuotes: Boolean, val logicalCells: List<String>)
 
 /** Emulator-only deterministic responder for Aura's declarative source-interpretation contract. */
 internal object EmulatorE2eAuraInterpretationResponder {
