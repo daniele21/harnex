@@ -22,10 +22,13 @@ internal object EmulatorE2eAuraInterpretationResponder {
         val source = sourceOrNull(prompt)
         return when {
             source == null -> ambiguousInterpretation("layout")
+
             source.headerCells.length() == 1 && source.firstDataCells.length() == 1 ->
                 delimitedCellInterpretation(source) ?: ambiguousInterpretation("layout")
+
             source.headerCells.length() >= 3 && source.firstDataCells.length() >= 3 ->
                 gridInterpretation(source) ?: ambiguousInterpretation("date")
+
             else -> ambiguousInterpretation("layout")
         }
     }
@@ -98,8 +101,10 @@ internal object EmulatorE2eAuraInterpretationResponder {
         val stripOuterQuotes = headerCell?.let { it.startsWith('"') && it.endsWith('"') } == true
         val normalizedFirstData = when {
             firstDataCell == null -> null
+
             stripOuterQuotes && firstDataCell.startsWith('"') && firstDataCell.endsWith('"') ->
                 firstDataCell.substring(1, firstDataCell.length - 1)
+
             else -> firstDataCell
         }
         val logicalCells = if (normalizedFirstData != null && delimiter != null) normalizedFirstData.split(delimiter) else emptyList()
