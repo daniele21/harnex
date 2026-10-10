@@ -105,11 +105,11 @@
         {
           "name": "android-binder-contract-0.1.0-alpha.11-sources.jar",
           "url": "android-binder-contract-0.1.0-alpha.11-sources.jar",
-          "size": 60611,
-          "sha512": "66a278333669ac88c5dd09cdd0ee27e3fac8cda7e2191e1f0c8cdf190b4730a953d8fffec9b450cd9b0c2a0070607c9d681c598a039677ddde7c0052e1965533",
-          "sha256": "a59dc8a07d3b8126c499caa006ccafa57f1d041be0d3f1b726e905a41bda1e67",
-          "sha1": "6a2dec7b8940035785047a3113701aeb34c857f8",
-          "md5": "63f7ee4f8751312fcd56fef3021e011c"
+          "size": 60504,
+          "sha512": "a6851da76a298f809135af2e1e760f6241fc031be7bc3abf05b2fc54b40cae176716f25ac263f80b27058d1f7358f37b37071ee6895328ed40678ab376349332",
+          "sha256": "38551f0feb6254fe4572492be7a65fa5275b3eeedb7f1f05454b627dcad5f5c6",
+          "sha1": "798a0c9d18fd692a0e6d96bd5fb34eb096ee5cfe",
+          "md5": "ebae3c23124deacd586a041145853276"
         }
       ]
     }
