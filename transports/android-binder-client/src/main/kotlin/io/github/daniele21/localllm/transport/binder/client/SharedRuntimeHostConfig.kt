@@ -14,10 +14,18 @@ class SharedRuntimeHostConfig private constructor(val packageName: String, val s
             require('/' !in normalizedPackage) { "packageName must not contain '/'" }
             require('/' !in normalizedService) { "serviceClassName must not contain '/'" }
 
+            val packageSegment = Regex("[A-Za-z_][A-Za-z0-9_]*")
+            val classSegment = Regex("""[A-Za-z_$][A-Za-z0-9_$]*""")
+            require(normalizedPackage.split('.').all(packageSegment::matches)) {
+                "packageName must be a valid Android package identifier"
+            }
             val qualifiedService = when {
                 normalizedService.startsWith('.') -> normalizedPackage + normalizedService
                 '.' !in normalizedService -> "$normalizedPackage.$normalizedService"
                 else -> normalizedService
+            }
+            require(qualifiedService.split('.').all(classSegment::matches)) {
+                "serviceClassName must be a valid Java class name"
             }
             return SharedRuntimeHostConfig(normalizedPackage, qualifiedService)
         }

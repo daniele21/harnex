@@ -37,6 +37,56 @@ class SharedRuntimeHostConfigTest {
     }
 
     @Test
+    fun `rejects malformed component identifiers before attempting Binder connection`() {
+        val invalidPackages = listOf(
+            ".io.github.example",
+            "io..github.example",
+            "io.github.example.",
+            "io.github.example:remote",
+            "io.github.example-host",
+            "io.github.123host",
+        )
+        invalidPackages.forEach { invalid ->
+            assertThrows(IllegalArgumentException::class.java) {
+                SharedRuntimeHostConfig.create(invalid, "HostService")
+            }
+        }
+
+        val invalidServices = listOf(
+            ".",
+            "io..github.Service",
+            "Host-Service",
+            "io.github.Service:remote",
+            "123Service",
+        )
+        invalidServices.forEach { invalid ->
+            assertThrows(IllegalArgumentException::class.java) {
+                SharedRuntimeHostConfig.create("io.github.example.host", invalid)
+            }
+        }
+    }
+
+    @Test
+    fun `preserves release service class with different debug package suffix`() {
+        val config = SharedRuntimeHostConfig.create(
+            "io.github.daniele21.localllm.phonetest.debug",
+            "io.github.daniele21.localllm.phonetest.HarnessSharedRuntimeService",
+        )
+
+        assertEquals("io.github.daniele21.localllm.phonetest.debug", config.packageName)
+        assertEquals("io.github.daniele21.localllm.phonetest.HarnessSharedRuntimeService", config.serviceClassName)
+    }
+
+    @Test
+    fun `accepts valid nested Java service class identifiers`() {
+        val config = SharedRuntimeHostConfig.create(
+            "io.github.example.host",
+            "io.github.example.host.Outer\$NestedService",
+        )
+        assertEquals("io.github.example.host.Outer\$NestedService", config.serviceClassName)
+    }
+
+    @Test
     fun `rejects blank or non-canonical host identity`() {
         assertThrows(IllegalArgumentException::class.java) {
             SharedRuntimeHostConfig.create("", "SharedRuntimeService")
