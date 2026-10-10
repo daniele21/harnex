@@ -18,6 +18,7 @@ A workstream belongs here only while it is active. It is not a second project-st
 - [`application-control-plane-ux.md`](application-control-plane-ux.md) — coordinates the Applications -> assigned use case -> preset-control UX implementation, including parallel UI/control-plane slices, revision-safe mutations, adaptive/accessibility convergence and effective two-APK evidence.
 - [`control-plane-state-reconciliation.md`](control-plane-state-reconciliation.md) — coordinates startup reconciliation of persisted mandatory built-in control-plane state, conservative upgrade repair, cross-surface consistency and the dependent physical upgrade/two-APK gates.
 - [`background-process-lifecycle-hardening.md`](background-process-lifecycle-hardening.md) — coordinates detached logical inference jobs, Binder reconnect/reconciliation, started/background host execution and process-recovery evidence without coupling UI/transport lifetime to runtime/model lifetime.
+- [`consumer-integration-resilience.md`](consumer-integration-resilience.md) — reduces and hardens external Android app integration using existing SDK/Host ownership, typed failure guidance, golden-path proof and independent-consumer tests.
 
 ## Lifecycle
 

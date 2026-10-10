@@ -221,7 +221,7 @@ Current integration truth, active blockers and exact release state live in [`doc
 | --- | --- |
 | Run Harnex locally | [`docs/android-build-and-run.md`](docs/android-build-and-run.md) |
 | Try Harnex from another Android app | [`samples/hello-harnex`](samples/hello-harnex/README.md) |
-| Integrate an Android consumer app | [`docs/shared-runtime/consumer-android-sdk.md`](docs/shared-runtime/consumer-android-sdk.md) |
+| Integrate an Android consumer app | [`docs/shared-runtime/integrating-consumer.md`](docs/shared-runtime/integrating-consumer.md) |
 | Understand the system architecture | [`docs/architecture.md`](docs/architecture.md) |
 | Understand trust/security decisions | [`docs/adr/README.md`](docs/adr/README.md), [`SECURITY.md`](SECURITY.md) |
 | Work with models and Qwen3.5 | [`docs/qwen35/README.md`](docs/qwen35/README.md) |

@@ -66,6 +66,10 @@ LAS-07 and remaining CRV/SR/Q35/resource claims require representative physical 
 
 OMB-6B/OMB-8, model evaluation, Q35 device tuning, RAM/thermal evidence and LLUP continue independently where ownership does not conflict.
 
+## Parallel consumer integration quality lane
+
+The active [consumer integration resilience workstream](workstreams/consumer-integration-resilience.md) coordinates simpler, safer external-app onboarding against the existing published SDK. It is separate from RA-4/RA-5 runtime hardening and from open PR #562's Host-owned generic-text onboarding. No unvalidated convenience API or implicit automatic retry is assumed; release/physical obligations remain unchanged.
+
 ## Immediate next block
 
 1. integrate release productization into current `dev` with FULL automated validation;
