@@ -41,18 +41,47 @@ def module_build_file(repository_root: Path, module: str) -> Path:
     return kotlin if kotlin.is_file() else module_root / "build.gradle"
 
 
+def is_forbidden_production_edge(source: str, target: str) -> bool:
+    """Guard canonical domain/transport ownership, not app composition roots.
+
+    Contract modules may depend on neutral contracts; concrete Android integration
+    and application/UI dependencies must point inward, never into runtime owners.
+    """
+    owner = source.partition(":")[0]
+    dependency = target.partition(":")[0]
+    infrastructure = {"core", "models", "backends", "transports", "integrations", "observability", "evaluation"}
+
+    if owner not in infrastructure:
+        return False
+    if dependency in {"apps", "ui"}:
+        return True
+    if owner == "core":
+        return dependency in {"backends", "transports", "integrations", "evaluation"}
+    if owner == "transports":
+        return dependency not in {"core", "transports"} or (dependency == "core" and target != "core:contracts")
+    if owner == "integrations":
+        return target not in {"core:contracts", "transports:android-binder-contract"}
+    if owner == "models":
+        return dependency in {"backends", "transports", "integrations", "evaluation", "observability"} or target == "core:runtime-core"
+    if owner == "observability":
+        return dependency in {"backends", "transports", "integrations", "evaluation"} or target == "core:runtime-core"
+    if owner == "evaluation":
+        return dependency in {"backends", "transports", "integrations"}
+    if owner == "backends":
+        return dependency in {"transports", "integrations", "evaluation", "observability"} or target == "core:runtime-core"
+    return False
+
+
 def find_dependency_violations(repository_root: Path, modules: Iterable[str]) -> tuple[DependencyViolation, ...]:
     violations: list[DependencyViolation] = []
     for source in modules:
-        if not source.startswith("core:"):
-            continue
         build_file = module_build_file(repository_root, source)
         if not build_file.is_file():
             continue
         text = build_file.read_text(encoding="utf-8")
         for configuration, raw_target in _PRODUCTION_PROJECT_DEPENDENCY.findall(text):
             target = raw_target.removeprefix(":")
-            if target.startswith("backends:"):
+            if is_forbidden_production_edge(source, target):
                 violations.append(DependencyViolation(source, target, configuration))
     return tuple(sorted(violations))
 

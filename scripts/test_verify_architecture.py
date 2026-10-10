@@ -44,6 +44,68 @@ class ArchitectureFitnessTest(unittest.TestCase):
             )
             self.assertEqual(find_dependency_violations(root, ("core:runtime-core",)), ())
 
+    def test_forbidden_edges_across_owners_are_detected(self) -> None:
+        bad_edges = (
+            ("core:runtime-core", "transports:android-binder-client"),
+            ("transports:android-binder-client", "core:runtime-core"),
+            ("transports:android-binder-contract", "models:model-profile"),
+            ("integrations:android-service-host", "core:runtime-core"),
+            ("models:model-store", "backends:llama-cpp"),
+            ("observability:room-store", "transports:android-binder-client"),
+            ("evaluation:engine", "integrations:android-service-host"),
+            ("backends:llama-cpp", "core:runtime-core"),
+            ("core:backend-spi", "apps:local-llm-phone-test"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for source, target in bad_edges:
+                module = root.joinpath(*source.split(":"))
+                module.mkdir(parents=True)
+                (module / "build.gradle.kts").write_text(
+                    f'dependencies {{ implementation(project(":{target}")) }}\n',
+                    encoding="utf-8",
+                )
+            violations = find_dependency_violations(root, (source for source, _ in bad_edges))
+            self.assertEqual(
+                {(violation.source_module, violation.target_module) for violation in violations},
+                set(bad_edges),
+            )
+
+    def test_valid_current_ownership_edges_remain_allowed(self) -> None:
+        valid_edges = (
+            ("core:runtime-core", "models:model-store"),
+            ("core:backend-spi", "models:model-profile"),
+            ("transports:android-binder-client", "transports:android-binder-contract"),
+            ("transports:in-process", "core:contracts"),
+            ("integrations:android-service-host", "transports:android-binder-contract"),
+            ("models:model-install", "models:model-catalog"),
+            ("observability:health-engine", "models:model-store"),
+            ("evaluation:runtime-adapter", "core:runtime-core"),
+            ("backends:llama-cpp", "models:model-install"),
+            ("apps:local-llm-phone-test", "backends:llama-cpp"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for source, target in valid_edges:
+                module = root.joinpath(*source.split(":"))
+                module.mkdir(parents=True)
+                (module / "build.gradle.kts").write_text(
+                    f'dependencies {{ api(project(":{target}")) }}\n',
+                    encoding="utf-8",
+                )
+            self.assertEqual(find_dependency_violations(root, (source for source, _ in valid_edges)), ())
+
+    def test_production_rule_does_not_scan_test_only_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            module = root / "transports" / "android-binder-client"
+            module.mkdir(parents=True)
+            (module / "build.gradle.kts").write_text(
+                'testImplementation(project(":core:runtime-core"))\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(find_dependency_violations(root, ("transports:android-binder-client",)), ())
+
     def test_any_core_backend_dependency_fails_without_exception(self) -> None:
         violation = DependencyViolation("core:runtime-core", "backends:llama-cpp", "implementation")
         messages = evaluate_dependency_violations((violation,))
