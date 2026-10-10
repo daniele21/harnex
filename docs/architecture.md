@@ -335,3 +335,14 @@ A change that alters module ownership, dependency direction, public contracts, n
 4. updated coding-agent navigation when paths or ownership change.
 
 The repository-wide completion rules are defined in [`definition-of-done.md`](definition-of-done.md).
+
+## Executable ownership boundaries
+
+`scripts/verify_architecture.py` enforces production Gradle project-dependency direction for infrastructure modules and rejects implementation `.cpp` includes. Apps are composition roots and may depend on concrete implementations; lower-level code must not depend on app/UI modules.
+
+- `core/*` may use neutral model/observability contracts, but not concrete backends, transports or Host integration.
+- `transports/*` owns transport and wire adaptation, not model/runtime/persistence policy; `integrations/android-service-host` depends only on the public core and Binder contracts.
+- `models/*`, `observability/*` and `evaluation/*` may depend on their reviewed lower-level contracts; none may reach into Host/UI/app modules.
+- `backends/*` implements the backend SPI and must not depend on the orchestrator or Binder.
+
+These are conservative, executable ownership guards for direct production project dependencies. They do not establish runtime behavior, transitive dependency cleanliness, or architectural correctness on their own. Expand rules only when a real boundary is established and proved by the owning consumers/tests.
