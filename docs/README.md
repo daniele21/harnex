@@ -16,7 +16,7 @@ This is the documentation entry point for users, integrators and contributors. S
 | Understand durable product mission, users, outcomes and decision boundaries | [`product.md`](product.md) | [`.engineering/product.json`](../.engineering/product.json) and `skills/shape-product-change/SKILL.md` for change routing |
 | Run Harnex on Android | [`android-build-and-run.md`](android-build-and-run.md) | [`device-e2e-testing.md`](device-e2e-testing.md) for physical-device validation |
 | Try Harnex from another Android app | [`../samples/hello-harnex`](../samples/hello-harnex/README.md) | [`shared-runtime/consumer-android-sdk.md`](shared-runtime/consumer-android-sdk.md) for the complete public contract |
-| Integrate Harnex into another Android app | [`shared-runtime/consumer-android-sdk.md`](shared-runtime/consumer-android-sdk.md) | [`shared-runtime/README.md`](shared-runtime/README.md) for the Host/Consumer model |
+| Integrate Harnex into another Android app | [`shared-runtime/integrating-consumer.md`](shared-runtime/integrating-consumer.md) | [`shared-runtime/consumer-android-sdk.md`](shared-runtime/consumer-android-sdk.md) for the full contract |
 | Understand the architecture | [`architecture.md`](architecture.md) | [`adr/README.md`](adr/README.md) for durable decisions |
 | Understand model support | [`qwen35/README.md`](qwen35/README.md) | [`curated-model-catalog.md`](curated-model-catalog.md) and model lifecycle docs |
 | Understand security/privacy boundaries | [`architecture.md`](architecture.md) | [`../SECURITY.md`](../SECURITY.md), ADRs and Activity/audit docs |
@@ -33,6 +33,7 @@ This is the documentation entry point for users, integrators and contributors. S
 - [`architecture.md`](architecture.md) — system ownership, runtime/control-plane/backend boundaries.
 - [`adr/README.md`](adr/README.md) — accepted architecture decisions.
 - [`shared-runtime/README.md`](shared-runtime/README.md) — shared Host/Consumer runtime model.
+- [`shared-runtime/integrating-consumer.md`](shared-runtime/integrating-consumer.md) — practical integration steps, connection/setup errors, and lifecycle safety.
 - [`shared-runtime/consumer-android-sdk.md`](shared-runtime/consumer-android-sdk.md) — public Android Consumer SDK and Maven contract.
 - [`api-usage.md`](api-usage.md) — embedded/local runtime API reference.
 - [`features/README.md`](features/README.md) — feature-level specifications.
