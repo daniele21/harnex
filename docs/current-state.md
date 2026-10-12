@@ -68,7 +68,7 @@ OMB-6B/OMB-8, model evaluation, Q35 device tuning, RAM/thermal evidence and LLUP
 
 ## Parallel consumer integration quality lane
 
-The active [consumer integration resilience workstream](workstreams/consumer-integration-resilience.md) coordinates simpler, safer external-app onboarding against the existing published SDK. It is separate from RA-4/RA-5 runtime hardening and from open PR #562's Host-owned generic-text onboarding. No unvalidated convenience API or implicit automatic retry is assumed; release/physical obligations remain unchanged.
+The active [consumer integration resilience workstream](workstreams/consumer-integration-resilience.md) coordinates simpler, safer external-app onboarding against the existing published SDK. It is separate from RA-4/RA-5 runtime hardening and from PR #577's Host-owned generic-text onboarding (superseding stale PR #562). No unvalidated convenience API or implicit automatic retry is assumed; release/physical obligations remain unchanged.
 
 ## Immediate next block
 
