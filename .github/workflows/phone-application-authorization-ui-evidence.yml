@@ -186,7 +186,7 @@ jobs:
           mkdir -p "$video_dir"
           adb shell pm clear "$HOST_PACKAGE" >/dev/null
           adb shell rm -f "$remote_video"
-          adb shell "screenrecord --bit-rate 4000000 --time-limit 60 $remote_video >/dev/null 2>&1 &"
+          adb shell "screenrecord --bit-rate 4000000 --time-limit 120 $remote_video >/dev/null 2>&1 &"
           for attempt in $(seq 1 20); do
             [[ -n "$(adb shell pidof screenrecord 2>/dev/null | tr -d '\r')" ]] && break
             sleep 0.25
@@ -195,7 +195,7 @@ jobs:
 
           set +e
           adb shell am instrument -w -r \
-            -e class 'io.github.daniele21.localllm.phonetest.HarnessApplicationConnectionControlUiTest#pendingAuthorizationJourneyTransitionsToConnectedControl' \
+            -e class 'io.github.daniele21.localllm.phonetest.HarnessApplicationConnectionControlUiTest#pendingAuthorizationJourneyTransitionsToConnectedControl,io.github.daniele21.localllm.phonetest.HarnessApplicationConnectionControlUiTest#createConnectionAlwaysShowsMutationOutcomeNearAction' \
             "$TEST_PACKAGE/androidx.test.runner.AndroidJUnitRunner" \
             | tee "$instrumentation_log"
           adb_status=${PIPESTATUS[0]}
@@ -237,11 +237,14 @@ jobs:
           external_dir="/sdcard/Android/data/$HOST_PACKAGE/files/ui-evidence/application-authorization"
           adb pull "$external_dir/needs-approval.png" "$screenshots/needs-approval.png" >/dev/null
           adb pull "$external_dir/connected.png" "$screenshots/connected.png" >/dev/null
-          test -s "$screenshots/needs-approval.png"
-          test -s "$screenshots/connected.png"
+          for phase in create-saving create-saved create-failed; do
+            adb pull "$external_dir/$phase.png" "$screenshots/$phase.png" >/dev/null
+          done
+          for phase in needs-approval connected create-saving create-saved create-failed; do
+            test -s "$screenshots/$phase.png"
+            file "$screenshots/$phase.png" | grep -q 'PNG image data'
+          done
           test -s "$video"
-          file "$screenshots/needs-approval.png" | grep -q 'PNG image data'
-          file "$screenshots/connected.png" | grep -q 'PNG image data'
           file "$video" | grep -Eq 'ISO Media|MP4'
           cat > "$media/manifest.txt" <<EOF
           journey_id=phone-application-authorization-ui
@@ -251,6 +254,9 @@ jobs:
           fidelity_class=simulated_or_emulated
           screenshot_pending=screenshots/needs-approval.png
           screenshot_connected=screenshots/connected.png
+          screenshot_create_saving=screenshots/create-saving.png
+          screenshot_create_saved=screenshots/create-saved.png
+          screenshot_create_failed=screenshots/create-failed.png
           video=video/journey.mp4
           EOF
 

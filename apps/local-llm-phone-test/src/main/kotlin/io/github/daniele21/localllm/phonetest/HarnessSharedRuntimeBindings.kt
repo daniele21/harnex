@@ -25,6 +25,9 @@ internal object HarnessSharedRuntimeBindings {
     /** Host-owned PII-analysis use case. Consumers never provide model identity. */
     val ombraUseCaseId = UseCaseId("document-pii-detection")
 
+    /** Host-owned bounded text-generation use case for general Consumer SDK workflows. */
+    val genericTextUseCaseId = UseCaseId("generic-text-generation")
+
     /** Host-owned Aura spreadsheet schema-selection use case. */
     val auraSchemaInferenceUseCaseId = UseCaseId("aura-transaction-schema-inference")
 
@@ -33,6 +36,8 @@ internal object HarnessSharedRuntimeBindings {
 
     val ombraDefaultPreset =
         InferencePresetRef(InferencePresetId("qwen35-json"), PHONE_INFERENCE_PRESET_VERSION)
+    val genericTextDefaultPreset =
+        InferencePresetRef(InferencePresetId("qwen35-text-quality"), PHONE_INFERENCE_PRESET_VERSION)
     val auraDefaultPreset =
         InferencePresetRef(InferencePresetId("qwen35-json"), PHONE_INFERENCE_PRESET_VERSION)
 
@@ -47,7 +52,7 @@ internal object HarnessSharedRuntimeBindings {
     const val AURA_DEBUG_PACKAGE = "com.staituned.aura.debug"
     const val SR6_RELEASE_CONSUMER_PACKAGE = "io.github.daniele21.localllm.consumerfixture"
 
-    val consoleUseCases: Set<UseCaseId> = setOf(consoleUseCaseId, ombraUseCaseId)
+    val consoleUseCases: Set<UseCaseId> = setOf(consoleUseCaseId, ombraUseCaseId, genericTextUseCaseId)
     val redactGuardUseCases: Set<UseCaseId> = setOf(ombraUseCaseId)
     val auraUseCases: Set<UseCaseId> = setOf(auraSchemaInferenceUseCaseId, auraCategoryClassificationUseCaseId)
     val piiConsumerApplicationIds: Set<ApplicationId> = setOf(consoleApplicationId, redactGuardApplicationId)
@@ -87,6 +92,7 @@ internal object HarnessSharedRuntimeBindings {
         val suffix = when (useCaseId) {
             consoleUseCaseId.value -> CONSOLE_PROFILE_SUFFIX
             ombraUseCaseId.value -> OMBRA_PROFILE_SUFFIX
+            genericTextUseCaseId.value -> GENERIC_TEXT_PROFILE_SUFFIX
             auraSchemaInferenceUseCaseId.value -> AURA_SCHEMA_PROFILE_SUFFIX
             auraCategoryClassificationUseCaseId.value -> AURA_CATEGORY_PROFILE_SUFFIX
             else -> return null
@@ -126,12 +132,35 @@ internal object HarnessSharedRuntimeBindings {
             useCaseId = ombraUseCaseId,
             defaultPreset = ombraDefaultPreset,
             profileSuffix = OMBRA_PROFILE_SUFFIX,
+            maxOutputTokens = STRUCTURED_DEFAULT_MAX_OUTPUT_TOKENS,
+            contextSize = STRUCTURED_CONTEXT_SIZE,
         )
+
+    /** Bounded TEXT runtime shared by user-created Consumer applications after explicit authorization. */
+    fun resolveGenericText(model: ImportedPhoneModel, applicationId: ApplicationId = consoleApplicationId): ResolvedUseCase {
+        val resolved =
+            resolvedPhoneUseCase(
+                model = model,
+                maxOutputTokens = GENERIC_TEXT_DEFAULT_MAX_OUTPUT_TOKENS,
+                useCaseValue = genericTextUseCaseId.value,
+                profileSuffix = GENERIC_TEXT_PROFILE_SUFFIX,
+                contextSize = GENERIC_TEXT_CONTEXT_SIZE,
+            )
+        return resolved.copy(
+            binding = AppModelBinding(
+                applicationId = applicationId,
+                useCaseId = genericTextUseCaseId,
+                useCaseProfileId = resolved.useCase.id,
+            ),
+        )
+    }
 
     /** Runtime resolver used by the Consumer control plane after assignment/authorization has already succeeded. */
     fun resolveConsumerUseCase(model: ImportedPhoneModel, applicationId: ApplicationId, useCaseId: UseCaseId): ResolvedUseCase =
         when (useCaseId) {
             ombraUseCaseId -> resolveOmbra(model, applicationId)
+
+            genericTextUseCaseId -> resolveGenericText(model, applicationId)
 
             auraSchemaInferenceUseCaseId,
             auraCategoryClassificationUseCaseId,
@@ -148,51 +177,58 @@ internal object HarnessSharedRuntimeBindings {
                     useCaseId = useCaseId,
                     defaultPreset = auraDefaultPreset,
                     profileSuffix = profileSuffix,
+                    maxOutputTokens = STRUCTURED_DEFAULT_MAX_OUTPUT_TOKENS,
+                    contextSize = STRUCTURED_CONTEXT_SIZE,
                 )
             }
 
             else -> error("Unsupported Consumer useCaseId ${useCaseId.value}")
         }
 
-    private fun resolveJsonSchemaUseCase(
-        model: ImportedPhoneModel,
-        applicationId: ApplicationId,
-        useCaseId: UseCaseId,
-        defaultPreset: InferencePresetRef,
-        profileSuffix: String,
-    ): ResolvedUseCase {
-        val resolved =
-            resolvedPhoneUseCase(
-                model = model,
-                maxOutputTokens = STRUCTURED_DEFAULT_MAX_OUTPUT_TOKENS,
-                useCaseValue = useCaseId.value,
-                profileSuffix = profileSuffix,
-                contextSize = STRUCTURED_CONTEXT_SIZE,
-            )
-        val useCase =
-            resolved.useCase.copy(
-                outputMode = OutputMode.JSON_SCHEMA,
-                defaultPreset = defaultPreset,
-            )
-        check(useCase.presets.any { it.ref == defaultPreset && OutputMode.JSON_SCHEMA in it.allowedOutputModes }) {
-            "Structured Consumer default preset must support JSON_SCHEMA"
-        }
-        return resolved.copy(
-            binding = AppModelBinding(
-                applicationId = applicationId,
-                useCaseId = useCaseId,
-                useCaseProfileId = useCase.id,
-            ),
-            useCase = useCase,
-        )
-    }
-
     private const val CONSOLE_DEFAULT_MAX_OUTPUT_TOKENS = 512
     private const val CONSOLE_CONTEXT_SIZE = 4_096
+    private const val GENERIC_TEXT_DEFAULT_MAX_OUTPUT_TOKENS = 512
+    private const val GENERIC_TEXT_CONTEXT_SIZE = 4_096
     private const val STRUCTURED_DEFAULT_MAX_OUTPUT_TOKENS = 512
     private const val STRUCTURED_CONTEXT_SIZE = 4_096
     private const val CONSOLE_PROFILE_SUFFIX = "shared-console"
     private const val OMBRA_PROFILE_SUFFIX = "ombra-pii"
+    private const val GENERIC_TEXT_PROFILE_SUFFIX = "generic-text"
     private const val AURA_SCHEMA_PROFILE_SUFFIX = "aura-import-schema"
     private const val AURA_CATEGORY_PROFILE_SUFFIX = "aura-import-category"
+}
+
+private fun resolveJsonSchemaUseCase(
+    model: ImportedPhoneModel,
+    applicationId: ApplicationId,
+    useCaseId: UseCaseId,
+    defaultPreset: InferencePresetRef,
+    profileSuffix: String,
+    maxOutputTokens: Int,
+    contextSize: Int,
+): ResolvedUseCase {
+    val resolved =
+        resolvedPhoneUseCase(
+            model = model,
+            maxOutputTokens = maxOutputTokens,
+            useCaseValue = useCaseId.value,
+            profileSuffix = profileSuffix,
+            contextSize = contextSize,
+        )
+    val useCase =
+        resolved.useCase.copy(
+            outputMode = OutputMode.JSON_SCHEMA,
+            defaultPreset = defaultPreset,
+        )
+    check(useCase.presets.any { it.ref == defaultPreset && OutputMode.JSON_SCHEMA in it.allowedOutputModes }) {
+        "Structured Consumer default preset must support JSON_SCHEMA"
+    }
+    return resolved.copy(
+        binding = AppModelBinding(
+            applicationId = applicationId,
+            useCaseId = useCaseId,
+            useCaseProfileId = useCase.id,
+        ),
+        useCase = useCase,
+    )
 }
