@@ -94,8 +94,8 @@ internal class BinderConsumerLogicalJobAdapter(
         call: ((ConsumerLogicalJobResultParcel) -> Unit) -> Unit,
     ): LogicalJobRemoteOutcome {
         val waiter = LogicalJobCallbackWaiter()
-        val subscription = endpointInvalidations?.addListener { epoch, detail ->
-            if (epoch == endpoint.connectionEpoch) waiter.disconnect(detail)
+        val subscription = endpointInvalidations?.addListener { epoch, _ ->
+            if (epoch == endpoint.connectionEpoch) waiter.disconnect()
         }
         return try {
             if (!isCurrent(endpoint)) {
@@ -139,8 +139,8 @@ private class LogicalJobCallbackWaiter {
 
     fun complete(result: ConsumerLogicalJobResultParcel) = finish(LogicalJobRemoteOutcome.Received(result))
 
-    fun disconnect(detail: String) {
-        if (detail.isNotBlank()) finish(LogicalJobRemoteOutcome.Disconnected)
+    fun disconnect() {
+        finish(LogicalJobRemoteOutcome.Disconnected)
     }
 
     fun await(timeoutMillis: Long): LogicalJobRemoteOutcome = if (latch.await(timeoutMillis, TimeUnit.MILLISECONDS)) {
