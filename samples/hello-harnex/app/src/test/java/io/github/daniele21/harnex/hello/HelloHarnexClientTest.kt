@@ -13,9 +13,11 @@ import io.github.daniele21.localllm.contracts.ConsumerErrorCode
 import io.github.daniele21.localllm.contracts.ConsumerFailure
 import io.github.daniele21.localllm.contracts.ConsumerGenerationEvent
 import io.github.daniele21.localllm.contracts.ConsumerGenerationHandle
+import io.github.daniele21.localllm.contracts.ConsumerGenerationInput
 import io.github.daniele21.localllm.contracts.ConsumerGenerationListener
 import io.github.daniele21.localllm.contracts.ConsumerGenerationRequest
 import io.github.daniele21.localllm.contracts.ConsumerGenerationStartResult
+import io.github.daniele21.localllm.contracts.ConsumerOutputConstraint
 import io.github.daniele21.localllm.contracts.ConsumerOutputConstraintKind
 import io.github.daniele21.localllm.contracts.ConsumerPrepareRequest
 import io.github.daniele21.localllm.contracts.ConsumerPrepareResult
@@ -40,6 +42,26 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class HelloHarnexClientTest {
+    @Test
+    fun `generic text request forwards prompt unchanged with text output constraint`() {
+        val runtime = FakeHelloHarnexRuntime()
+        val client = HelloHarnexClient(runtime)
+        try {
+            client.run("Explain local AI", {}, {}, {})
+            assertTrue(runtime.generationStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+
+            val request = requireNotNull(runtime.lastGenerationRequest)
+            assertEquals(
+                ConsumerGenerationInput.Text("Explain local AI"),
+                request.input,
+            )
+            assertEquals(ConsumerOutputConstraint.Text, request.outputConstraint)
+        } finally {
+            client.close()
+            assertTrue(runtime.closed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        }
+    }
+
     @Test
     fun `second inference is rejected while first generation is active`() {
         val runtime = FakeHelloHarnexRuntime()
@@ -139,24 +161,27 @@ class HelloHarnexClientTest {
 
     @Test
     fun `authorization rejection is surfaced as actionable failure`() {
-        val runtime =
-            FakeHelloHarnexRuntime(
-                assignments =
-                ConsumerAssignedUseCasesResult.Rejected(
-                    ConsumerControlPlaneFailure(
-                        ConsumerControlPlaneErrorCode.APPLICATION_NOT_AUTHORIZED,
-                        "authorization required",
-                    ),
+        val runtime = FakeHelloHarnexRuntime(
+            assignments = ConsumerAssignedUseCasesResult.Rejected(
+                ConsumerControlPlaneFailure(
+                    ConsumerControlPlaneErrorCode.APPLICATION_NOT_AUTHORIZED,
+                    "authorization required",
                 ),
-            )
+            ),
+        )
         val client = HelloHarnexClient(runtime)
         try {
             val resultReady = CountDownLatch(1)
             var result: Result<HelloInferenceResult>? = null
-            client.run("test", {}, {}, {
-                result = it
-                resultReady.countDown()
-            })
+            client.run(
+                "test",
+                {},
+                {},
+                {
+                    result = it
+                    resultReady.countDown()
+                },
+            )
 
             assertTrue(resultReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
             val failure = requireNotNull(result).exceptionOrNull() as HelloHarnexException
@@ -180,6 +205,10 @@ class HelloHarnexClientTest {
         val closeCount = AtomicInteger(0)
         val assignmentCalls = AtomicInteger(0)
 
+        @Volatile
+        var lastGenerationRequest: ConsumerGenerationRequest? = null
+            private set
+
         private val generationReturnAllowed = CountDownLatch(if (blockGenerationReturn) 1 else 0)
         private var generationRequestId: RequestId? = null
         private var generationListener: ConsumerGenerationListener? = null
@@ -196,12 +225,11 @@ class HelloHarnexClientTest {
         override fun publishedPresets(useCaseId: UseCaseId): ConsumerPublishedPresetsResult = ConsumerPublishedPresetsResult.Available(
             useCaseId = useCaseId,
             bindingRevision = 1,
-            presets =
-            listOf(
+            presets = listOf(
                 ConsumerPublishedPreset(
                     preset = PRESET,
-                    displayName = "Balanced",
-                    description = "Balanced test preset",
+                    displayName = "Quality",
+                    description = "General-purpose text preset",
                     isDefault = true,
                 ),
             ),
@@ -229,7 +257,7 @@ class HelloHarnexClientTest {
                 capabilityRevision = "capability-1",
                 preset = PRESET,
                 reasoningMode = EffectiveConsumerReasoningMode.DISABLED,
-                outputConstraint = ConsumerOutputConstraintKind.JSON_SCHEMA,
+                outputConstraint = ConsumerOutputConstraintKind.TEXT,
                 sessionKind = SessionKind.STATELESS,
             ),
         )
@@ -238,6 +266,7 @@ class HelloHarnexClientTest {
             ConsumerSessionResult.Created(SessionId("session-1"))
 
         override fun generate(request: ConsumerGenerationRequest, listener: ConsumerGenerationListener): ConsumerGenerationStartResult {
+            lastGenerationRequest = request
             generationRequestId = request.requestId
             generationListener = listener
             generationStarted.countDown()
@@ -283,8 +312,8 @@ class HelloHarnexClientTest {
 
     private companion object {
         const val TIMEOUT_SECONDS = 5L
-        val USE_CASE = UseCaseId("document-pii-detection")
-        val PRESET = InferencePresetRef(InferencePresetId("balanced"), 1)
+        val USE_CASE = UseCaseId("generic-text-generation")
+        val PRESET = InferencePresetRef(InferencePresetId("qwen35-text-quality"), 1)
 
         fun validAssignments(): ConsumerAssignedUseCasesResult = ConsumerAssignedUseCasesResult.Available(
             listOf(
@@ -292,8 +321,8 @@ class HelloHarnexClientTest {
                     useCaseId = USE_CASE,
                     useCaseRevision = 1,
                     bindingRevision = 1,
-                    displayName = "Document PII detection",
-                    description = "Detect personal information",
+                    displayName = "Generic text generation",
+                    description = "Run bounded local text generation",
                     isDefault = true,
                 ),
             ),

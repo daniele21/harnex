@@ -130,7 +130,7 @@ internal class HelloHarnexViewModel(context: Context) : ViewModel() {
 internal data class HelloHarnexUiState(
     val connectionState: SharedRuntimeConnectionState = SharedRuntimeConnectionState.DISCONNECTED,
     val negotiatedMinor: Int? = null,
-    val input: String = "Alice Rossi can be reached at alice.rossi@example.com.",
+    val input: String = "Explain in two concise sentences why on-device AI can improve privacy.",
     val output: String = "No inference yet.",
     val metrics: String = "",
     val status: String = "Authorize the app in Harnex, then connect.",

@@ -5,7 +5,7 @@ Document type: feature-specification
 Owner: shared-runtime-consumer-api
 Canonical scope: shared-runtime.consumer-api.capabilities-policy
 Read when: defining capability discovery, defaults, presets, reasoning support or use-case policy
-Last reviewed: 2026-08-13
+Last reviewed: 2026-09-08
 
 ## Goal
 
@@ -211,13 +211,13 @@ Output constraints are use-case scoped.
 Examples:
 
 ```text
-assistant-chat       -> TEXT
-transaction-classify -> JSON / JSON_SCHEMA
-summary              -> TEXT
-document-pii-detection -> JSON_SCHEMA
+generic-text-generation  -> TEXT
+transaction-classify     -> JSON / JSON_SCHEMA
+summary                  -> TEXT
+document-pii-detection   -> JSON_SCHEMA
 ```
 
-A generic use case does not automatically gain arbitrary JSON-schema execution merely because the backend supports a schema mechanism.
+The real `generic-text-generation` onboarding capability is deliberately TEXT-only. A generic use case does not gain arbitrary JSON-schema execution merely because the backend supports a schema mechanism.
 
 ## Limits
 
@@ -284,6 +284,26 @@ authenticated caller
 ```
 
 An already prepared session does not silently change model or preset when a later capability revision is published.
+
+## Generic onboarding policy
+
+`generic-text-generation` is the bounded host-owned capability used by the runnable Hello Harnex onboarding sample. It exists so an external developer can prove the Consumer SDK/Binder/control-plane/runtime path without copying a product-specific PII workflow.
+
+Its current public semantics are deliberately narrow:
+
+```text
+use case: generic-text-generation
+model: host-owned reviewed binding (not consumer-selectable)
+preset: qwen35-text-quality / Quality
+reasoning: disabled / not surfaced
+output: TEXT only
+session: STATELESS
+input messages: 1
+maximum input: 12,000 characters
+minimum context policy: 4,096 tokens
+```
+
+The app must still be explicitly authorized and hold an enabled binding for this use case. Generic onboarding does not create implicit Consumer authority, does not expose model selection and does not make Harnex a general-purpose chatbot. Product consumers should use narrower host-owned use cases when they need stronger domain/output guarantees.
 
 ## Reference-consumer policy
 
