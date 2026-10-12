@@ -75,6 +75,8 @@ The SDK owns public Consumer contracts, Binder composition, typed transport fail
 
 Consumers bind to the exact configured Harnex package/service component and do not need a custom Harnex bind permission. `SharedRuntimeHostConfig.create` validates Android package and Java service identifiers before binding; supply an explicit trusted component and preserve the real Host package/service pairing. A debug application-ID suffix does not automatically change the Java service class. Harnex public authorization is derived at the Binder boundary from calling UID -> exact installed package -> current signing certificate -> persisted Harnex authorization -> enabled use case. This makes independently signed consumers safe without making installation order or a late-defined Android custom permission part of the public SDK contract.
 
+In-flight Consumer setup, lifecycle, readiness and logical-job Binder waits terminate on loss of the owning connection epoch even when Android supplies no useful disconnect message. Treat that result as transport loss, not as an invitation to automatically submit the same inference again.
+
 The Binder client supports reversible `connect()` / `disconnect()` lifecycle control. `disconnect()` detaches the current transport without permanently closing the client, so a consumer can honor an explicit user connection preference and later reconnect with the same SDK instance. A later `connect()` creates a fresh transport/authorization epoch. `close()` remains the terminal lifecycle operation.
 
 Ordinary `prepare/createSession/generate` remains connection-scoped for compatibility. Long-running work that must outlive transient Binder/UI observation opts into `ConsumerLogicalJobClient`:
