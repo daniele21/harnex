@@ -1,0 +1,27 @@
+name: Local CI (dispatch)
+
+on:
+  push:
+    branches: [dev, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Dispatch to local runner
+        env:
+          GH_TOKEN: ${{ secrets.CENTRAL_DISPATCH_TOKEN }}
+          SOURCE_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          gh api --method POST \
+            repos/daniele21/local-runner-infra/dispatches \
+            -f event_type=run-ci \
+            -f "client_payload[repository]=$SOURCE_REPO" \
+            -f "client_payload[sha]=$SOURCE_SHA"
