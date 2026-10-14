@@ -56,12 +56,3 @@ Product depth, delivery stage and validation depth are independent.
 Missing local tooling is `REMOTE_AUTOMATED`, not user-run work. Reuse only provably equivalent trusted evidence. On failure classify before patching; after two failed repairs with the same signature, change diagnostic strategy and gather discriminating evidence.
 
 Before integration update affected canonical docs. Transfer durable truth and deferred release obligations before deleting completed plans. Never suppress legitimate tests, hide failed/pending gates, leak sensitive content or downgrade evidence merely to obtain PASS.
-
-
-## Shared Mac CI (local-runner-infra)
-
-- The centrally registered Mac runner fleet lives in `daniele21/local-runner-infra`; do not use its runner labels directly in Harnex jobs.
-- `.github/workflows/local-ci.yml` dispatches trusted commits to the central repository; `.github/ci/local-test.sh` defines the bounded Mac validation executed against that exact commit.
-- Check the source commit's `local-ci/mac` status and central logs; a green dispatch is only a successful request.
-- Keep all Android/Gradle/Android-emulator and release validation in Harnex. Do not weaken branch rules or remove required checks based on this initial lane.
-- Central contract: https://github.com/daniele21/local-runner-infra/blob/main/docs/integration-guide.md
