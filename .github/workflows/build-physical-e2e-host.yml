@@ -1,0 +1,143 @@
+name: Build physical E2E host
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/build-physical-e2e-host.yml"
+  workflow_call:
+    inputs:
+      harness_ref:
+        description: Exact Harness commit to package
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      harness_ref:
+        description: Exact Harness commit to package
+        required: false
+        default: a30f67b21e24adc6efea838e9a9d65cc78446f28
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-physical-host:
+    name: Build exact unsigned ARM64 host APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CANDIDATE_REF: ${{ github.event_name == 'pull_request' && 'a30f67b21e24adc6efea838e9a9d65cc78446f28' || inputs.harness_ref }}
+
+    steps:
+      - name: Checkout exact Harness source
+        uses: actions/checkout@v7
+        with:
+          repository: daniele21/android-local-llm-harness
+          ref: ${{ env.CANDIDATE_REF }}
+          fetch-depth: 1
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Verify exact source identity
+        id: identity
+        shell: bash
+        env:
+          EXPECTED_REF: ${{ env.CANDIDATE_REF }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          expected_sha="$(git rev-parse "$EXPECTED_REF^{commit}")"
+          test "$actual_sha" = "$expected_sha"
+          echo "source_revision=$actual_sha" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$actual_sha" > "$RUNNER_TEMP/harness-source-revision.txt"
+
+      - name: Verify llama.cpp pin
+        run: ./scripts/verify-llama-cpp-pin.sh
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          check-latest: false
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK components
+        shell: bash
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;28.2.13676358"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Build exact unsigned release host
+        env:
+          LOCAL_LLM_PHONE_TEST_ALLOW_UNSIGNED_RELEASE: "true"
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-configuration-cache :apps:local-llm-phone-test:assembleRelease
+
+      - name: Stage bounded physical host input
+        shell: bash
+        env:
+          SOURCE_REVISION: ${{ steps.identity.outputs.source_revision }}
+        run: |
+          set -euo pipefail
+          host_apk="$(find apps/local-llm-phone-test/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | sort | head -n 1)"
+          test -f "$host_apk"
+
+          apksigner="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          if "$apksigner" verify "$host_apk" >/dev/null 2>&1; then
+            echo "Expected an unsigned physical-E2E input APK, but the artifact is already signed." >&2
+            exit 1
+          fi
+
+          package_name="$($ANDROID_HOME/build-tools/36.0.0/aapt dump badging "$host_apk" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n 1)"
+          test "$package_name" = "io.github.daniele21.localllm.phonetest"
+
+          mapfile -t abis < <(unzip -Z1 "$host_apk" | awk -F/ '/^lib\/[^/]+\/.*\.so$/ {print $2}' | sort -u)
+          test "${#abis[@]}" -gt 0
+          test "${#abis[@]}" -eq 1
+          test "${abis[0]}" = "arm64-v8a"
+
+          stage="$RUNNER_TEMP/harness-physical-host"
+          mkdir -p "$stage"
+          cp "$host_apk" "$stage/harness-release-unsigned.apk"
+          cp "$RUNNER_TEMP/harness-source-revision.txt" "$stage/source-revision.txt"
+          sha256sum "$stage/harness-release-unsigned.apk" > "$stage/apk-sha256.txt"
+
+          python3 - "$stage/manifest.json" "$SOURCE_REVISION" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          output = Path(sys.argv[1])
+          source_revision = sys.argv[2]
+          payload = {
+              "schemaVersion": 1,
+              "kind": "crv-physical-host-unsigned",
+              "sourceRevision": source_revision,
+              "packageName": "io.github.daniele21.localllm.phonetest",
+              "variant": "release",
+              "architectures": ["arm64-v8a"],
+              "signed": False,
+          }
+          output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload physical host input
+        uses: actions/upload-artifact@v7
+        with:
+          name: crv-harness-physical-host-unsigned
+          path: ${{ runner.temp }}/harness-physical-host/**
+          if-no-files-found: error
+          retention-days: 7
