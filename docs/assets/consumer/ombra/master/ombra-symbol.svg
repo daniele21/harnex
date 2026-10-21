@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="title description">
+  <title id="title">OMBRA symbol candidate</title>
+  <desc id="description">A folded document with an opaque redaction bar and a mint reveal slit.</desc>
+  <g id="ombra-symbol">
+    <path id="document" fill="#F6F4EE" stroke="#315C4F" stroke-width="6" stroke-linejoin="round" d="M20,8 H60 L82,30 V92 H20 Z" />
+    <path id="fold" fill="#DDE9E2" stroke="#315C4F" stroke-width="6" stroke-linejoin="round" d="M60,8 V30 H82 Z" />
+    <rect id="redaction-bar" x="29" y="49" width="44" height="17" rx="4" fill="#15201D" />
+    <rect id="reveal-slit" x="37" y="56" width="24" height="3" rx="1.5" fill="#65D6A6" />
+  </g>
+</svg>

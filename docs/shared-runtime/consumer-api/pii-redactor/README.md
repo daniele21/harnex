@@ -35,6 +35,7 @@ user-selected PDF
 | Which OMB-0 decisions/spikes are accepted or still open? | [`omb0-decisions-and-spikes.md`](omb0-decisions-and-spikes.md) |
 | How are definitions, prompt input, chunking, JSON results and export handled? | [`detection-and-redaction.md`](detection-and-redaction.md) |
 | How are the OMBRA brand kit and six mockup views implemented? | [`ux-and-brand.md`](ux-and-brand.md) |
+| Where is the review-gated OMBRA vector identity candidate tracked? | [`../../../assets/consumer/ombra/master/README.md`](../../../assets/consumer/ombra/master/README.md) |
 | Which automated, quality, privacy and physical checks are required? | [`validation-and-rollout.md`](validation-and-rollout.md) |
 | Which frozen semantic-quality thresholds decide supported-model claims? | [`quality-policy-v1.md`](quality-policy-v1.md) |
 | In what order should implementation land and what closes each milestone? | [`roadmap.md`](roadmap.md) |

@@ -1,0 +1,37 @@
+name: OMBRA identity candidate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/verify_ombra_identity_candidate.py
+      - scripts/generate_ombra_android_identity.py
+      - .github/workflows/ombra-identity.yml
+      - docs/assets/consumer/ombra/master/**
+  push:
+    branches: [main, dev]
+    paths:
+      - scripts/verify_ombra_identity_candidate.py
+      - scripts/generate_ombra_android_identity.py
+      - .github/workflows/ombra-identity.yml
+      - docs/assets/consumer/ombra/master/**
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify review-gated OMBRA vector candidate
+        run: python3 scripts/verify_ombra_identity_candidate.py
+
+      - name: Verify production launcher generation gate
+        run: python3 scripts/generate_ombra_android_identity.py
