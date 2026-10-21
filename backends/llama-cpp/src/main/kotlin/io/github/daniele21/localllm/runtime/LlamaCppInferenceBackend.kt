@@ -43,7 +43,7 @@ class LlamaCppInferenceBackend(
 ) : InferenceBackend,
     EvaluationBatchInferenceBackend {
     override val id: String = "llama.cpp"
-    override val revision: String = "aedb2a5e9ca3d4064148bbb919e0ddc0c1b70ab3"
+    override val revision: String = "c1d0e7a004015f23bc0233470b747b596f29b264"
 
     @Volatile
     private var deviceInventoryFingerprint: String? = null

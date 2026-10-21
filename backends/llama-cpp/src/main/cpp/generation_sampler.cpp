@@ -133,6 +133,8 @@ llama_sampler_i sampled_token_acceptance_interface = {
     /* .backend_accept = */ nullptr,
     /* .backend_apply = */ nullptr,
     /* .backend_set_input = */ nullptr,
+    /* .backend_reset = */ nullptr,
+    /* .copy_state = */ nullptr,
 };
 
 llama_sampler* wrap_sampled_token_acceptance(llama_sampler* inner) {

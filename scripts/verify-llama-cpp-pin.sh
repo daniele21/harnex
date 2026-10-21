@@ -5,6 +5,8 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd "$script_dir/.." && pwd -P)"
 pin_file="${LLAMA_CPP_PIN_FILE:-$repo_root/backends/llama-cpp/llama-cpp-pin.json}"
 submodule_path="${LLAMA_CPP_SUBMODULE_PATH:-$repo_root/third_party/llama.cpp}"
+backend_runtime_file="${LLAMA_CPP_BACKEND_RUNTIME_FILE:-$repo_root/backends/llama-cpp/src/main/kotlin/io/github/daniele21/localllm/runtime/LlamaCppInferenceBackend.kt}"
+qwen_runtime_tuning_file="${QWEN35_RUNTIME_TUNING_FILE:-$repo_root/models/model-profile/src/main/kotlin/io/github/daniele21/localllm/models/Qwen35RuntimeTuning.kt}"
 
 print_initialization_help() {
   echo "llama.cpp submodule is not initialized at $submodule_path" >&2
@@ -48,6 +50,72 @@ if [[ "${#pin_values[@]}" -ne 2 ]]; then
 fi
 expected_tag="${pin_values[0]}"
 expected_commit="${pin_values[1]}"
+
+if [[ ! -f "$backend_runtime_file" ]]; then
+  echo "llama.cpp backend runtime is missing at $backend_runtime_file" >&2
+  exit 1
+fi
+
+backend_runtime_revision="$(python3 - "$backend_runtime_file" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+try:
+    content = path.read_text(encoding="utf-8")
+except OSError as exc:
+    raise SystemExit(f"unable to read llama.cpp backend runtime: {exc}")
+
+matches = re.findall(
+    r'override\s+val\s+revision\s*:\s*String\s*=\s*"([0-9a-f]{40})"',
+    content,
+)
+if len(matches) != 1:
+    raise SystemExit(
+        "llama.cpp backend runtime must declare exactly one lowercase 40-character revision"
+    )
+print(matches[0])
+PY
+)"
+
+if [[ "$backend_runtime_revision" != "$expected_commit" ]]; then
+  echo "llama.cpp backend runtime revision mismatch: pin manifest expects $expected_commit ($expected_tag), backend declares $backend_runtime_revision" >&2
+  exit 1
+fi
+
+if [[ ! -f "$qwen_runtime_tuning_file" ]]; then
+  echo "Qwen3.5 runtime tuning policy is missing at $qwen_runtime_tuning_file" >&2
+  exit 1
+fi
+
+qwen_runtime_revision="$(python3 - "$qwen_runtime_tuning_file" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+try:
+    content = path.read_text(encoding="utf-8")
+except OSError as exc:
+    raise SystemExit(f"unable to read Qwen3.5 runtime tuning policy: {exc}")
+
+matches = re.findall(
+    r'const\s+val\s+LLAMA_CPP_REVISION\s*=\s*"([0-9a-f]{40})"',
+    content,
+)
+if len(matches) != 1:
+    raise SystemExit(
+        "Qwen3.5 runtime tuning policy must declare exactly one lowercase 40-character LLAMA_CPP_REVISION"
+    )
+print(matches[0])
+PY
+)"
+
+if [[ "$qwen_runtime_revision" != "$expected_commit" ]]; then
+  echo "Qwen3.5 runtime backend revision mismatch: pin manifest expects $expected_commit ($expected_tag), policy declares $qwen_runtime_revision" >&2
+  exit 1
+fi
 
 if [[ ! -d "$submodule_path" || ! -e "$submodule_path/.git" ]]; then
   print_initialization_help

@@ -97,7 +97,7 @@ data class Qwen35TuningCandidate(
 
 object Qwen35RuntimeTuningProfiles {
     const val VERSION = 1
-    const val LLAMA_CPP_REVISION = "aedb2a5e9ca3d4064148bbb919e0ddc0c1b70ab3"
+    const val LLAMA_CPP_REVISION = "c1d0e7a004015f23bc0233470b747b596f29b264"
     val APPROVED_CONTEXT_TIERS: List<Int> = listOf(1_024, 2_048, 4_096, 8_192)
 
     fun candidateForTier(tier: Qwen35ModelTier): Qwen35RuntimeTuningProfile = Qwen35RuntimeTuningProfile(
