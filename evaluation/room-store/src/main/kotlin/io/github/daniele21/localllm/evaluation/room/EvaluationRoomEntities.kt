@@ -22,6 +22,7 @@ data class EvaluationRunEntity(
     @Embedded(prefix = "identity_") val identity: EvaluationRunIdentityEntity?,
     val state: String,
     @Embedded(prefix = "progress_") val progress: EvaluationProgressEntity,
+    @ColumnInfo(name = "quality_present") val qualityPresent: Boolean,
     @ColumnInfo(name = "quality_aggregate_score") val qualityAggregateScore: Double?,
     @Embedded(prefix = "reliability_") val reliability: EvaluationReliabilityEntity?,
     @ColumnInfo(name = "started_at_epoch_ms") val startedAtEpochMs: Long,
@@ -137,10 +138,11 @@ data class EvaluationSampleCaseEntity(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
-    indices = [Index(value = ["run_id"])],
+    indices = [Index(value = ["run_id"]), Index(value = ["run_id", "ordinal"], unique = true)],
 )
 data class EvaluationCategoryScoreEntity(
     @ColumnInfo(name = "run_id") val runId: String,
+    val ordinal: Int,
     @ColumnInfo(name = "category_id") val categoryId: String,
     val score: Double,
     @ColumnInfo(name = "scored_case_count") val scoredCaseCount: Int,

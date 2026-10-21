@@ -9,6 +9,11 @@ android {
 
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
+        javaCompileOptions {
+            annotationProcessorOptions {
+                argument("room.schemaLocation", "$projectDir/schemas")
+            }
+        }
     }
 
     compileOptions {
@@ -25,7 +30,9 @@ android {
 }
 
 dependencies {
-    implementation(project(":evaluation:contracts"))
+    api(project(":evaluation:contracts"))
     implementation(libs.room.runtime)
+    implementation(libs.kotlinx.coroutines.android)
+    annotationProcessor(libs.room.compiler)
     testImplementation(libs.junit4)
 }
