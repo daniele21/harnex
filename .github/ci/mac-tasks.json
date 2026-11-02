@@ -1,0 +1,11 @@
+{
+  "schema": "source-owned-mac-tasks/v1",
+  "tasks": {
+    "architecture-smoke": {
+      "description": "Standard-library-only architecture and scoped-CI policy tests; no Android emulator or model download",
+      "script": ".github/ci/tasks/architecture-smoke.sh",
+      "cost_class": "free",
+      "manual_only": true
+    }
+  }
+}
