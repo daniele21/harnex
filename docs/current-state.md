@@ -68,11 +68,11 @@ OMB-6B/OMB-8, model evaluation, Q35 device tuning, RAM/thermal evidence and LLUP
 
 ## Parallel consumer integration quality lane
 
-The active [consumer integration resilience workstream](workstreams/consumer-integration-resilience.md) coordinates simpler, safer external-app onboarding against the existing published SDK. It is separate from RA-4/RA-5 runtime hardening and from PR #577's Host-owned generic-text onboarding (superseding stale PR #562). No unvalidated convenience API or implicit automatic retry is assumed; release/physical obligations remain unchanged.
+The active [consumer integration resilience workstream](workstreams/consumer-integration-resilience.md) coordinates simpler, safer external-app onboarding against the existing published SDK. It remains distinct from RA-4/RA-5 runtime hardening. PR #577 has integrated Host-owned generic-text onboarding, superseding closed #562; PR #578 has integrated blank-epoch Binder invalidation with external-Consumer and Android STRONG validation. No unvalidated convenience API or implicit automatic retry is assumed; release/physical obligations remain unchanged.
 
 ## Simplicity-first improvement lane (plan only)
 
-The active [simplicity-first runtime workstream](workstreams/simplicity-first-runtime.md) tracks observed complexity, bounded runtime-core/JNI cleanup and the order of outcomes. It **does not** duplicate the already-owned Consumer onboarding ([CIH](workstreams/consumer-integration-resilience.md)), memory/Q35 device qualification or llama.cpp [LLUP](workstreams/llama-cpp-v0-3-residency-qualification.md) migration. Initial work is CIH-10 and read-only SIMP-00; no production runtime, SDK or upstream pin change is approved by this plan.
+The active [simplicity-first runtime workstream](workstreams/simplicity-first-runtime.md) tracks observed complexity, bounded runtime-core/JNI cleanup and the order of outcomes. It **does not** duplicate the already-owned Consumer onboarding ([CIH](workstreams/consumer-integration-resilience.md)), memory/Q35 device qualification or llama.cpp [LLUP](workstreams/llama-cpp-v0-3-residency-qualification.md) migration. CIH-10, SIMP-00, SIMP-10 and SIMP-20 are complete, including the bounded terminal-path refactor in PR #584. CIH-20, representative mobile memory evidence and upstream pin qualification remain separately owned.
 
 ## Immediate next block
 
