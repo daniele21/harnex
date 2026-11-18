@@ -88,6 +88,30 @@ class BinderConsumerRuntimeReadinessAdapterTest {
         )
     }
 
+    @Test(timeout = 2_000)
+    fun `blank endpoint invalidation reason immediately rejects in-flight readiness`() {
+        val invalidations = FakeEndpointInvalidations()
+        val service = FakeSharedRuntimeRemoteService()
+        val endpoint = RegisteredSharedRuntimeEndpoint(service, token, connectionEpoch = 21L)
+        service.consumerRuntimeReadinessHandler = { _, _ -> invalidations.invalidate(21L, "") }
+        val adapter = BinderConsumerRuntimeReadinessAdapter(
+            endpointProvider = { endpoint },
+            enabledFeaturesProvider = { setOf(BinderProtocolV1.FEATURE_CONSUMER_RUNTIME_READINESS_V1) },
+            endpointInvalidations = invalidations,
+            blockingCallGuard = BlockingCallGuard {},
+            operationTimeoutMillis = 60_000L,
+            correlationIds = CorrelationIdSource { "readiness-blank-op" },
+        )
+
+        val result = adapter.runtimeReadiness(activationId)
+
+        assertTrue(result is ConsumerRuntimeReadinessResult.Rejected)
+        assertEquals(
+            ConsumerControlPlaneErrorCode.TRANSPORT_FAILURE,
+            (result as ConsumerRuntimeReadinessResult.Rejected).failure.code,
+        )
+    }
+
     private fun adapter(service: FakeSharedRuntimeRemoteService): BinderConsumerRuntimeReadinessAdapter =
         BinderConsumerRuntimeReadinessAdapter(
             endpointProvider = { RegisteredSharedRuntimeEndpoint(service, token) },
