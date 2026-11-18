@@ -18,7 +18,7 @@ Harnex owns the local GGUF, model selection, residency, authorization and runtim
 5. On a worker/executor, request Host-assigned use cases and published presets, then `activate`, `prepare`, `createSession`, `generate`. Never embed a GGUF path, Host model policy, or caller-declared authorization.
 6. Close session and deactivate on every terminal/error/cancellation path; keep client outside short-lived Activity/Fragment scope. `disconnect()` is reversible; `close()` is terminal.
 
-For a production-shaped standalone reference use [Hello Harnex](../../samples/hello-harnex/README.md). It intentionally keeps one app-owned gateway instead of duplicating Harnex runtime state. The generic-text onboarding candidate in PR #577 provides a TEXT-only, stateless, Host-owned use case; until that PR is integrated, the published Host may still expose only use cases already assigned to the consumer. Do not assume the SDK dependency alone creates a Host assignment.
+For a production-shaped standalone reference use [Hello Harnex](../../samples/hello-harnex/README.md). It intentionally keeps one app-owned gateway instead of duplicating Harnex runtime state. PR #577 integrated a TEXT-only, stateless, Host-owned `Generic text generation` use case on `dev`. It is available only when the installed Host contains that change and the consumer has been explicitly authorized and assigned the use case; older distributed Host builds may not have it. The SDK dependency never creates an assignment or grants access.
 
 ## Interpret connection and setup separately
 
