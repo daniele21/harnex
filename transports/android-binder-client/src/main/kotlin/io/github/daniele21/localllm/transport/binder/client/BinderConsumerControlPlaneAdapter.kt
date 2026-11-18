@@ -151,8 +151,13 @@ internal class BinderConsumerControlPlaneAdapter(
             if (epoch == endpoint.connectionEpoch) waiter.disconnect()
         }
         return try {
-            call(waiter::complete)
-            waiter.await(operationTimeoutMillis)
+            // Invalidation can race with listener registration; do not dispatch through a stale endpoint.
+            if (!isCurrent(endpoint)) {
+                ControlPlaneRemoteOutcome.Disconnected
+            } else {
+                call(waiter::complete)
+                waiter.await(operationTimeoutMillis)
+            }
         } catch (_: DeadObjectException) {
             ControlPlaneRemoteOutcome.Disconnected
         } catch (_: RemoteException) {
