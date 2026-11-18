@@ -32,7 +32,7 @@ Source checkpoint: `dev@4e5ffda473c87cbb99ab6fb9f4aa75f4e402a477`
 | C4 | P1/P2 | `llama_jni.cpp` is 1,353 lines; JNI uses positional `Array<String>` responses and Base64 chunk transfer. This may increase protocol maintenance cost; performance impact unproven. | **SIMP-30**, backend owner: inventory/measure first, remove needless duplication safely, avoid a wholesale JNI protocol redesign. |
 | C5 | P2 | `dev`/ `main` pin `llama.cpp` `b9637` at `aedb2a5e…`; existing `v0.3.0` candidate PR #490 and LLUP qualification workstream are not integrated. Backend revision is represented in backend/profile identity. | **Existing LLUP/LLRT lane** only: compare exact candidate revisions including v1 if appropriate; preserve baseline and re-run affected behavior/packaging/quality/physical tests before any promotion. |
 | C6 | P3 / decision | In-process core exists; publicly consumed Maven `consumer-android:0.1.0-alpha.11` uses shared Binder Host. An independently distributed embedded SDK is not yet established. | Separate PRODUCT_STRATEGIC discovery/spike only if consumer demand warrants it; not part of this cleanup. |
-| C7 | No action by default | 34 Gradle modules and several large classes indicate possible navigation/build cost, not proven harmful module boundaries. | Consolidate only with dependency/build-cost evidence and without merging independently owned responsibilities. |
+| C7 | No action by default | 35 Gradle modules and several large classes indicate possible navigation/build cost, not proven harmful module boundaries. | Consolidate only with dependency/build-cost evidence and without merging independently owned responsibilities. |
 
 ## Priority and ownership: do not create duplicate plans
 
