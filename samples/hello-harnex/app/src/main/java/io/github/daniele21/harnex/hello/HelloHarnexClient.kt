@@ -17,6 +17,11 @@ import io.github.daniele21.localllm.contracts.ConsumerGenerationRequest
 import io.github.daniele21.localllm.contracts.ConsumerGenerationStartResult
 import io.github.daniele21.localllm.contracts.ConsumerOutputConstraint
 import io.github.daniele21.localllm.contracts.ConsumerPrepareRequest
+import io.github.daniele21.localllm.contracts.ConsumerReasoningPreference
+import io.github.daniele21.localllm.contracts.ConsumerSelectionRequest
+import io.github.daniele21.localllm.contracts.ConsumerOutputConstraintKind
+import io.github.daniele21.localllm.contracts.EffectiveConsumerReasoningMode
+import io.github.daniele21.localllm.contracts.SessionKind
 import io.github.daniele21.localllm.contracts.ConsumerPrepareResult
 import io.github.daniele21.localllm.contracts.ConsumerPublishedPresetsResult
 import io.github.daniele21.localllm.contracts.ConsumerSessionResult
@@ -154,7 +159,32 @@ internal class HelloHarnexClient internal constructor(
         HelloHarnexClientSupport.ensureOpen(closed, "Hello Harnex execution was closed")
 
         onStatus("Preparing the exact execution capability…")
-        val prepared = HelloHarnexClientSupport.prepared(runtime.prepare(ConsumerPrepareRequest(USE_CASE_ID)))
+        val prepared = HelloHarnexClientSupport.prepared(
+            runtime.prepare(
+                ConsumerPrepareRequest(
+                    useCaseId = assignment.useCaseId,
+                    selection = ConsumerSelectionRequest(
+                        preset = preset.preset,
+                        reasoning = ConsumerReasoningPreference.DISABLED,
+                        outputConstraint = ConsumerOutputConstraintKind.TEXT,
+                        sessionKind = SessionKind.STATELESS,
+                    ),
+                ),
+            ),
+        )
+        if (
+            prepared.useCaseId != assignment.useCaseId ||
+            prepared.preset != preset.preset ||
+            prepared.reasoningMode != EffectiveConsumerReasoningMode.DISABLED ||
+            prepared.outputConstraint != ConsumerOutputConstraintKind.TEXT ||
+            prepared.sessionKind != SessionKind.STATELESS
+        ) {
+            throw HelloHarnexException(
+                kind = HelloHarnexFailureKind.CONFIGURATION_REQUIRED,
+                stage = "prepare",
+                detail = "Host prepared a different execution from the published text use case",
+            )
+        }
         HelloHarnexClientSupport.ensureOpen(closed, "Hello Harnex execution was closed")
         return HelloHarnexClientSupport.session(runtime.createSession(prepared.preparedId)).also {
             activeSession = it
