@@ -39,7 +39,7 @@ Last reviewed: 2026-10-10
 | CIH-00 | Audit current SDK/sample/RedactGuard journey; map minimal public operations and setup failures. Docs/workstream only | none | DONE | Existing canonical owners, overlap #562 and friction points identified |
 | CIH-10 | Document a short correct golden path and recovery table. `docs/shared-runtime/*`; no sample behavior change | CIH-00 | DONE | Host absence, auth pending, model not ready, loss, incompatible version, explicit disconnect all have precise next actions |
 | CIH-20 | Consolidate actionable connection/setup states with existing public types. `transports/android-binder-client`, `core/contracts` only if needed | CIH-10 | ACTIVE | Pure tests distinguish connection from readiness; no new authoritative state or silent retry |
-| CIH-30 | Reduce repeated domain-neutral session boilerplate only where proved; `samples/hello-harnex` on canonical integrated generic-text use case | CIH-20 | BLOCKED | Atomic lifecycle, cancel/close/retry error outcomes proven; no duplicate model/preset policy |
+| CIH-30 | Reduce repeated domain-neutral session boilerplate only where proved; `samples/hello-harnex` on canonical integrated generic-text use case | CIH-20 | ACTIVE | Atomic lifecycle, cancel/close/retry error outcomes proven; no duplicate model/preset policy |
 | CIH-40 | Cross-app consumer proof / regression. `samples/external-consumer-android` and `apps/shared-runtime-client-consumer-fixture`; RedactGuard direct consumer proof | CIH-20/30 as applicable | READY | Published Maven SDK, ABI, host missing, pending/denied, reconnect, replace signer, service loss and cancellation covered |
 | CIH-50 | On-device Host/Consumer qualification on exact signed candidates; existing SR-6/HBG physical runner and release owners | CIH-40 | BLOCKED | Claim-matched distinct-signer and ARM64/JNI/GGUF evidence without overclaiming emulator tests |
 
@@ -56,6 +56,12 @@ Reviewed Harnex `dev@a3c3d432` and RedactGuard `main@59a4a7a`. This is source-le
 | Cleanup | One session and activation per short generation | Multiple document chunks and logical jobs with domain cancellation acknowledgements | Keep per-consumer lifecycle ownership; no second policy/state manager |
 
 **Decision: NARROW_SCOPE.** A universal public `generate()` facade would add another lifecycle/ABI owner while hiding a real difference in recovery semantics; no product evidence currently justifies it. Instead prove a correct exact-preset short-text example with the existing Consumer SDK, then assess whether third-party consumers repeat *pure, domain-neutral* setup identity boilerplate. Counts of SDK operations are not an integration-time measurement. Product impact remains unmeasured.
+
+### First simplification slice — app-owned SDK seam
+
+The Hello Harnex sample previously repeated the SDK's control-plane and local-inference method signatures and forwarded each method through a redundant abstract intermediate class. Replace this with the same two public SDK interfaces via Kotlin `by` delegation, retaining the app's explicit `connect/disconnect/close` lifecycle and its injectable test seam. This removes boilerplate **without changing** SDK ABI, Host authorization, inference policy, or job/recovery semantics. The sample's existing lifecycle/authorization/terminal-once tests and Maven publication-consumer fixture must remain green. This is a **sample-code maintenance improvement**, not proof that an independent Android integrator's time-to-first-inference has improved.
+
+Do **not** introduce an additive public convenience API or `ConsumerSetupIdentity` type merely for the two first-party consumers: that would change the versioned ABI baseline for alpha.11. Qualify actual independent demand and compatibility before opting into a published SDK release.
 
 ## Parallelization and convergence
 

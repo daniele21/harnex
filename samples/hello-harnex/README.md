@@ -46,7 +46,7 @@ This is intentionally **not** a reusable framework hidden inside the sample. The
 
 - UI renders product state and sends user intents;
 - a lifecycle owner keeps the Consumer client out of the Activity lifetime;
-- one small app-owned boundary isolates the public SDK from product code and makes behavior testable;
+- one small app-owned boundary isolates the public SDK from product code and makes behavior testable; it composes the SDK's `ConsumerLocalLlmClient` and `ConsumerControlPlaneClient` interfaces using Kotlin delegation rather than reimplementing each forwarding method;
 - Harnex owns authorization, model identity, selection, residency and runtime policy;
 - every accepted execution releases session and activation on terminal paths;
 - assignment/preset binding and returned activation identities are checked before execution; a mismatched activation is immediately released;

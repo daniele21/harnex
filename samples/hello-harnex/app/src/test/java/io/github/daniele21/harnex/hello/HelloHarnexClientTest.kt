@@ -6,6 +6,8 @@ import io.github.daniele21.localllm.contracts.ConsumerActivationRequest
 import io.github.daniele21.localllm.contracts.ConsumerActivationResult
 import io.github.daniele21.localllm.contracts.ConsumerAssignedUseCase
 import io.github.daniele21.localllm.contracts.ConsumerAssignedUseCasesResult
+import io.github.daniele21.localllm.contracts.ConsumerCapabilityErrorCode
+import io.github.daniele21.localllm.contracts.ConsumerCapabilityResult
 import io.github.daniele21.localllm.contracts.ConsumerControlPlaneErrorCode
 import io.github.daniele21.localllm.contracts.ConsumerControlPlaneFailure
 import io.github.daniele21.localllm.contracts.ConsumerDeactivationResult
@@ -329,6 +331,12 @@ class HelloHarnexClientTest {
         override fun connect() = Unit
 
         override fun disconnect() = Unit
+
+        override fun capabilities(useCaseId: UseCaseId): ConsumerCapabilityResult =
+            ConsumerCapabilityResult.Rejected(
+                ConsumerCapabilityErrorCode.CAPABILITY_INCOMPATIBLE,
+                "Capabilities are not queried by this callback-only sample",
+            )
 
         override fun assignedUseCases(): ConsumerAssignedUseCasesResult {
             assignmentCalls.incrementAndGet()
