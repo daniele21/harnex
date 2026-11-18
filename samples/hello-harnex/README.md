@@ -49,6 +49,7 @@ This is intentionally **not** a reusable framework hidden inside the sample. The
 - one small app-owned boundary isolates the public SDK from product code and makes behavior testable;
 - Harnex owns authorization, model identity, selection, residency and runtime policy;
 - every accepted execution releases session and activation on terminal paths;
+- assignment/preset binding and returned activation identities are checked before execution; a mismatched activation is immediately released;
 - `disconnect()` is reversible, while `close()` is terminal;
 - prompts and generated output are not persisted or written to diagnostics by this sample.
 

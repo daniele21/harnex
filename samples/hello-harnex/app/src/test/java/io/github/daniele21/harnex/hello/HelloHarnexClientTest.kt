@@ -160,6 +160,54 @@ class HelloHarnexClientTest {
     }
 
     @Test
+    fun `mismatched preset binding is rejected before activating the host`() {
+        val runtime = FakeHelloHarnexRuntime(publishedBindingRevision = 2)
+        val client = HelloHarnexClient(runtime)
+        try {
+            val resultReady = CountDownLatch(1)
+            var result: Result<HelloInferenceResult>? = null
+            client.run("test", {}, {}, {
+                result = it
+                resultReady.countDown()
+            })
+
+            assertTrue(resultReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            val failure = requireNotNull(result).exceptionOrNull() as HelloHarnexException
+            assertEquals(HelloHarnexFailureKind.CONFIGURATION_REQUIRED, failure.kind)
+            assertEquals(0, runtime.activations.get())
+            assertEquals(0, runtime.deactivations.get())
+            assertEquals(0, runtime.sessionsOpened.get())
+        } finally {
+            client.close()
+            assertTrue(runtime.closed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
+    fun `mismatched activation is released without preparing a session`() {
+        val runtime = FakeHelloHarnexRuntime(activationBindingRevision = 2)
+        val client = HelloHarnexClient(runtime)
+        try {
+            val resultReady = CountDownLatch(1)
+            var result: Result<HelloInferenceResult>? = null
+            client.run("test", {}, {}, {
+                result = it
+                resultReady.countDown()
+            })
+
+            assertTrue(resultReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            val failure = requireNotNull(result).exceptionOrNull() as HelloHarnexException
+            assertEquals(HelloHarnexFailureKind.CONFIGURATION_REQUIRED, failure.kind)
+            assertEquals(1, runtime.activations.get())
+            assertEquals(1, runtime.deactivations.get())
+            assertEquals(0, runtime.sessionsOpened.get())
+        } finally {
+            client.close()
+            assertTrue(runtime.closed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
     fun `authorization rejection is surfaced as actionable failure`() {
         val runtime = FakeHelloHarnexRuntime(
             assignments = ConsumerAssignedUseCasesResult.Rejected(
@@ -196,12 +244,16 @@ class HelloHarnexClientTest {
     private class FakeHelloHarnexRuntime(
         private val assignments: ConsumerAssignedUseCasesResult = validAssignments(),
         private val blockGenerationReturn: Boolean = false,
+        private val publishedBindingRevision: Int = 1,
+        private val activationBindingRevision: Int = 1,
     ) : HelloHarnexRuntime {
         val generationStarted = CountDownLatch(1)
         val closed = CountDownLatch(1)
         val cancelCount = AtomicInteger(0)
         val closedSessions = AtomicInteger(0)
         val deactivations = AtomicInteger(0)
+        val activations = AtomicInteger(0)
+        val sessionsOpened = AtomicInteger(0)
         val closeCount = AtomicInteger(0)
         val assignmentCalls = AtomicInteger(0)
 
@@ -224,7 +276,7 @@ class HelloHarnexClientTest {
 
         override fun publishedPresets(useCaseId: UseCaseId): ConsumerPublishedPresetsResult = ConsumerPublishedPresetsResult.Available(
             useCaseId = useCaseId,
-            bindingRevision = 1,
+            bindingRevision = publishedBindingRevision,
             presets = listOf(
                 ConsumerPublishedPreset(
                     preset = PRESET,
@@ -235,15 +287,18 @@ class HelloHarnexClientTest {
             ),
         )
 
-        override fun activate(request: ConsumerActivationRequest): ConsumerActivationResult = ConsumerActivationResult.Activated(
-            ConsumerActivation(
-                activationId = ConsumerActivationId("activation-1"),
-                useCaseId = request.useCaseId,
-                useCaseRevision = request.useCaseRevision,
-                bindingRevision = request.bindingRevision,
-                preset = request.preset,
-            ),
-        )
+        override fun activate(request: ConsumerActivationRequest): ConsumerActivationResult {
+            activations.incrementAndGet()
+            return ConsumerActivationResult.Activated(
+                ConsumerActivation(
+                    activationId = ConsumerActivationId("activation-1"),
+                    useCaseId = request.useCaseId,
+                    useCaseRevision = request.useCaseRevision,
+                    bindingRevision = activationBindingRevision,
+                    preset = request.preset,
+                ),
+            )
+        }
 
         override fun deactivate(activationId: ConsumerActivationId): ConsumerDeactivationResult {
             deactivations.incrementAndGet()
@@ -262,8 +317,10 @@ class HelloHarnexClientTest {
             ),
         )
 
-        override fun createSession(preparedId: ConsumerPreparedId): ConsumerSessionResult =
-            ConsumerSessionResult.Created(SessionId("session-1"))
+        override fun createSession(preparedId: ConsumerPreparedId): ConsumerSessionResult {
+            sessionsOpened.incrementAndGet()
+            return ConsumerSessionResult.Created(SessionId("session-1"))
+        }
 
         override fun generate(request: ConsumerGenerationRequest, listener: ConsumerGenerationListener): ConsumerGenerationStartResult {
             lastGenerationRequest = request

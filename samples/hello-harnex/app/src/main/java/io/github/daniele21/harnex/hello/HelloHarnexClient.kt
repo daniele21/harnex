@@ -4,6 +4,7 @@ import android.content.Context
 import io.github.daniele21.localllm.contracts.ConsumerActivationId
 import io.github.daniele21.localllm.contracts.ConsumerActivationRequest
 import io.github.daniele21.localllm.contracts.ConsumerActivationResult
+import io.github.daniele21.localllm.contracts.ConsumerAssignedUseCase
 import io.github.daniele21.localllm.contracts.ConsumerAssignedUseCasesResult
 import io.github.daniele21.localllm.contracts.ConsumerContentType
 import io.github.daniele21.localllm.contracts.ConsumerControlPlaneErrorCode
@@ -123,19 +124,32 @@ internal class HelloHarnexClient internal constructor(
     private fun prepareSession(onStatus: (String) -> Unit): SessionId {
         onStatus("Discovering the Harnex assignment…")
         val assignment = HelloHarnexClientSupport.assignment(runtime.assignedUseCases(), USE_CASE_ID)
-        val preset = HelloHarnexClientSupport.defaultPreset(runtime.publishedPresets(USE_CASE_ID))
+        val preset = HelloHarnexClientSupport.defaultPreset(
+            runtime.publishedPresets(USE_CASE_ID),
+            assignment,
+        )
+        val activationRequest = ConsumerActivationRequest(
+            useCaseId = assignment.useCaseId,
+            useCaseRevision = assignment.useCaseRevision,
+            bindingRevision = assignment.bindingRevision,
+            preset = preset.preset,
+        )
 
         onStatus("Activating the host-owned local execution…")
-        val activation = HelloHarnexClientSupport.activation(
-            runtime.activate(
-                ConsumerActivationRequest(
-                    useCaseId = USE_CASE_ID,
-                    useCaseRevision = assignment.useCaseRevision,
-                    bindingRevision = assignment.bindingRevision,
-                    preset = preset.preset,
-                ),
-            ),
-        )
+        val activation = HelloHarnexClientSupport.activation(runtime.activate(activationRequest))
+        val activationMatches = activation.useCaseId == activationRequest.useCaseId &&
+            activation.useCaseRevision == activationRequest.useCaseRevision &&
+            activation.bindingRevision == activationRequest.bindingRevision &&
+            activation.preset == activationRequest.preset
+        if (!activationMatches) {
+            // The Host owns the lease; reject mismatched identity and release the actual returned lease.
+            runCatching { runtime.deactivate(activation.activationId) }
+            throw HelloHarnexException(
+                kind = HelloHarnexFailureKind.CONFIGURATION_REQUIRED,
+                stage = "activation",
+                detail = "Host returned an activation for a different use-case configuration",
+            )
+        }
         activeActivation = activation.activationId
         HelloHarnexClientSupport.ensureOpen(closed, "Hello Harnex execution was closed")
 
@@ -256,14 +270,22 @@ private object HelloHarnexClientSupport {
             throw controlPlaneFailure("assignment", result.failure.code, result.failure.message)
     }
 
-    fun defaultPreset(result: ConsumerPublishedPresetsResult) = when (result) {
-        is ConsumerPublishedPresetsResult.Available ->
+    fun defaultPreset(result: ConsumerPublishedPresetsResult, assignment: ConsumerAssignedUseCase) = when (result) {
+        is ConsumerPublishedPresetsResult.Available -> {
+            if (result.useCaseId != assignment.useCaseId || result.bindingRevision != assignment.bindingRevision) {
+                throw HelloHarnexException(
+                    kind = HelloHarnexFailureKind.CONFIGURATION_REQUIRED,
+                    stage = "preset discovery",
+                    detail = "Host published presets for a different assignment revision",
+                )
+            }
             result.presets.singleOrNull { it.isDefault }
                 ?: throw HelloHarnexException(
                     kind = HelloHarnexFailureKind.CONFIGURATION_REQUIRED,
                     stage = "preset discovery",
                     detail = "The assigned use case has no default published preset",
                 )
+        }
 
         is ConsumerPublishedPresetsResult.Rejected ->
             throw controlPlaneFailure("preset discovery", result.failure.code, result.failure.message)
