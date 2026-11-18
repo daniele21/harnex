@@ -24,7 +24,7 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 | --- | --- | --- | --- |
 | C1 | P0 | Hello Harnex coordinates assignment/preset/activate/prepare/session/generate/close; 489-line gateway. RedactGuard owns a 607-line runtime and 310-line control-plane coordinator; not all logic is reusable. | **Existing CIH** `docs/workstreams/consumer-integration-resilience.md`: clarify setup/recovery; integrate generic-text PR #577; inspect duplication before any new public API. |
 | C2 | P0 | Memory admission/context planning exists, but reviewed production `MEASURED` profiles remain absent. | **Existing MEM/Q35**: physical exact-model/device qualification. Do not create a new memory governor or claim emulator evidence proves safety. |
-| C3 | P1 | `RuntimeOrchestrator.kt` has 1,469 lines and duplicated normal/guard completion branches. | **SIMP-10/20**: one successful terminal path while keeping lifecycle owners and behavior. |
+| C3 | P1 | `RuntimeOrchestrator.kt` has 1,469 lines and duplicated normal/guard completion branches. | **SIMP-10/20 DONE**: normal and guard completion share one terminal projection, with lifecycle owners unchanged. |
 | C4 | P1/P2 | `llama_jni.cpp` 1,353 lines; positional responses and Base64 streaming. | **SIMP-30**: profile cost/maintainability before changing JNI wire protocol. |
 | C5 | P2 | Production `llama.cpp` pin `b9637`/`aedb2a5e…`; v0.3 candidate PR #490 remains unmerged. | **Existing LLUP/LLRT** only: evaluate v1 in isolation; no pin upgrade without Android and physical qualification. |
 | C6 | Separate strategic question | Public Maven Consumer SDK alpha.11 uses shared Binder Host; in-process runtime exists but no standalone external embedded distribution claim. | Consider an embedded packaging spike only after explicit product demand/constraints. |
@@ -33,7 +33,7 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 ## SIMP-00 findings (read-only; no executable PASS claim)
 
 - `RuntimeOrchestrator` owns physical model/context transitions; `SessionLifecycle`, `ModelResidencyLifecycle` and `SingleDecodeScheduler` already own separate session reservations, residency state and bounded queue/cancel. **KEEP these owners.**
-- `executeGeneration` repeats `completeGeneration` for normal completion vs guard stop, differing only in stop metrics. Existing `RuntimeOrchestratorTest` covers streaming, cancellation/races and successful guard stop; PR #584 consolidates the duplicate call and adds a terminal-once assertion. **CHANGE only this path first.**
+- `executeGeneration` repeats `completeGeneration` for normal completion vs guard stop, differing only in stop metrics. Existing `RuntimeOrchestratorTest` covers streaming, cancellation/races and successful guard stop; PR #584 consolidated the duplicate call and added a terminal-once assertion, with STRONG tests green. **DONE**.
 - `executeEvaluationBatch` repeats context cleanup across four failure catches but uses different batch semantics. **DEFER** until direct batch lifecycle/failure tests establish a safe extraction.
 - `MemoryAdmissionControllerTest`, `MemoryAwareContextPlannerTest`, `RuntimeMemoryAdmissionIntegrationTest` and residency/session integration tests cover deterministic policy, not representative RAM/thermal qualification. **KEEP existing policy; measure on devices.**
 - JNI Base64 avoids treating arbitrary UTF-8 token fragments as safe modified-UTF-8 Java strings; using byte arrays would add native buffer handling. Positional `Array<String>` is maintenance friction but not a proven bottleneck. **KEEP pending measurement; no speculative rewrite.**
@@ -44,11 +44,11 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 | ID | State | Work / owner | Exit evidence |
 | --- | --- | --- | --- |
 | SIMP-00 | DONE | Source map above, risks and minimal candidate; docs only | Owner/test/consumer trace and decision without speculative abstraction |
-| SIMP-10 | ACTIVE | `core/runtime-core` test guard/cancel/terminal semantics; PR #584 | Existing focused tests + terminal-once assertion green at candidate |
-| SIMP-20 | ACTIVE | `core/runtime-core` one duplicate terminal-path refactor; PR #584, depends SIMP-10 | No public contract/state-owner drift; exact-head scoped/strong CI and direct consumers |
+| SIMP-10 | DONE | `core/runtime-core` test guard/cancel/terminal semantics; PR #584 | Existing focused tests + terminal-once assertion green at candidate |
+| SIMP-20 | DONE | `core/runtime-core` one duplicate terminal-path refactor; PR #584, depends SIMP-10 | No public contract/state-owner drift; exact-head scoped/strong CI and direct consumers |
 | SIMP-30 | BLOCKED | `backends/llama-cpp` JNI protocol cost investigation; independent of SIMP-20, after SIMP-00 | KEEP or one evidence-backed minimal edit with native/ARM64 packaging and device check |
 
-- **Parallel owners:** CIH handles SDK, MEM/Q35 handles physical qualification, LLUP handles upstream pin. SIMP-20 and SIMP-30 may progress in parallel only without shared JNI/Kotlin protocol or public contract changes. Existing PR #577 overlaps the Hello Harnex sample and supersedes stale #562 once accepted.
+- **Parallel owners:** CIH handles SDK, MEM/Q35 handles physical qualification, LLUP handles upstream pin. SIMP-20 and SIMP-30 may progress in parallel only without shared JNI/Kotlin protocol or public contract changes. PR #577 is integrated and supersedes closed #562; preserve the canonical Hello Harnex sample.
 - **Convergence:** CIH consumer proof + MEM/Q35 evidence + SIMP runtime tests; LLUP and embedded SDK have separate decisions. After each accepted slice, transfer settled details to code/tests/SDK/memory/architecture owners; delete this workstream once complete.
 - **Stop rule:** refuse an extraction that adds competing owners, adapters or more complexity than it removes.
 
@@ -63,5 +63,5 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 ## Resume checkpoint
 
 - Base at audit: `dev@b5def37`; refresh live base, PRs and selectors before implementation/merge.
-- PR #584 contains first bounded refactor with exact-head STRONG CI, not yet in `dev`. PR #577 generic text and #578 Binder invalidation are separate Consumer concerns; preserve their ownership.
+- PR #584 integrated the terminal-once simplification into `dev` as `dfaccd3` after STRONG automated validation; PR #577 integrated the generic-text onboarding as `52b9cf4`. PR #578 Binder invalidation remains a separate Consumer workstream until its own exact-head checks and merge.
 - Production pin remains `b9637`; v1.0.0 is an unqualified candidate. No generic import/embedded SDK/public convenience API has been implemented by SIMP.
