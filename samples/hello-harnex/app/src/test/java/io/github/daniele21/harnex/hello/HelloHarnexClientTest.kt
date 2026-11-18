@@ -20,12 +20,12 @@ import io.github.daniele21.localllm.contracts.ConsumerGenerationStartResult
 import io.github.daniele21.localllm.contracts.ConsumerOutputConstraint
 import io.github.daniele21.localllm.contracts.ConsumerOutputConstraintKind
 import io.github.daniele21.localllm.contracts.ConsumerPrepareRequest
-import io.github.daniele21.localllm.contracts.ConsumerReasoningPreference
 import io.github.daniele21.localllm.contracts.ConsumerPrepareResult
 import io.github.daniele21.localllm.contracts.ConsumerPreparedId
 import io.github.daniele21.localllm.contracts.ConsumerPreparedSelection
 import io.github.daniele21.localllm.contracts.ConsumerPublishedPreset
 import io.github.daniele21.localllm.contracts.ConsumerPublishedPresetsResult
+import io.github.daniele21.localllm.contracts.ConsumerReasoningPreference
 import io.github.daniele21.localllm.contracts.ConsumerSessionResult
 import io.github.daniele21.localllm.contracts.EffectiveConsumerReasoningMode
 import io.github.daniele21.localllm.contracts.InferencePresetId
