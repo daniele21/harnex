@@ -1,7 +1,6 @@
 package io.github.daniele21.harnex.hello
 
 import android.content.Context
-import io.github.daniele21.localllm.contracts.ConsumerActivation
 import io.github.daniele21.localllm.contracts.ConsumerActivationId
 import io.github.daniele21.localllm.contracts.ConsumerActivationRequest
 import io.github.daniele21.localllm.contracts.ConsumerActivationResult
@@ -138,7 +137,11 @@ internal class HelloHarnexClient internal constructor(
 
         onStatus("Activating the host-owned local execution…")
         val activation = HelloHarnexClientSupport.activation(runtime.activate(activationRequest))
-        if (!HelloHarnexClientSupport.matches(activation, activationRequest)) {
+        val activationMatches = activation.useCaseId == activationRequest.useCaseId &&
+            activation.useCaseRevision == activationRequest.useCaseRevision &&
+            activation.bindingRevision == activationRequest.bindingRevision &&
+            activation.preset == activationRequest.preset
+        if (!activationMatches) {
             // The Host owns the lease; reject mismatched identity and release the actual returned lease.
             runCatching { runtime.deactivate(activation.activationId) }
             throw HelloHarnexException(
@@ -267,38 +270,26 @@ private object HelloHarnexClientSupport {
             throw controlPlaneFailure("assignment", result.failure.code, result.failure.message)
     }
 
-    fun defaultPreset(
-        result: ConsumerPublishedPresetsResult,
-        assignment: ConsumerAssignedUseCase,
-    ) =
-        when (result) {
-            is ConsumerPublishedPresetsResult.Available -> {
-                if (result.useCaseId != assignment.useCaseId || result.bindingRevision != assignment.bindingRevision) {
-                    throw HelloHarnexException(
-                        kind = HelloHarnexFailureKind.CONFIGURATION_REQUIRED,
-                        stage = "preset discovery",
-                        detail = "Host published presets for a different assignment revision",
-                    )
-                }
-                result.presets.singleOrNull { it.isDefault }
-                    ?: throw HelloHarnexException(
-                        kind = HelloHarnexFailureKind.CONFIGURATION_REQUIRED,
-                        stage = "preset discovery",
-                        detail = "The assigned use case has no default published preset",
-                    )
+    fun defaultPreset(result: ConsumerPublishedPresetsResult, assignment: ConsumerAssignedUseCase) = when (result) {
+        is ConsumerPublishedPresetsResult.Available -> {
+            if (result.useCaseId != assignment.useCaseId || result.bindingRevision != assignment.bindingRevision) {
+                throw HelloHarnexException(
+                    kind = HelloHarnexFailureKind.CONFIGURATION_REQUIRED,
+                    stage = "preset discovery",
+                    detail = "Host published presets for a different assignment revision",
+                )
             }
-
-            is ConsumerPublishedPresetsResult.Rejected ->
-                throw controlPlaneFailure("preset discovery", result.failure.code, result.failure.message)
+            result.presets.singleOrNull { it.isDefault }
+                ?: throw HelloHarnexException(
+                    kind = HelloHarnexFailureKind.CONFIGURATION_REQUIRED,
+                    stage = "preset discovery",
+                    detail = "The assigned use case has no default published preset",
+                )
         }
 
-    fun matches(
-        activation: ConsumerActivation,
-        request: ConsumerActivationRequest,
-    ): Boolean = activation.useCaseId == request.useCaseId &&
-        activation.useCaseRevision == request.useCaseRevision &&
-        activation.bindingRevision == request.bindingRevision &&
-        activation.preset == request.preset
+        is ConsumerPublishedPresetsResult.Rejected ->
+            throw controlPlaneFailure("preset discovery", result.failure.code, result.failure.message)
+    }
 
     fun activation(result: ConsumerActivationResult) = when (result) {
         is ConsumerActivationResult.Activated -> result.activation
