@@ -17,8 +17,7 @@ internal fun NavGraphBuilder.installApplicationsListRoute(
     callbacks: HarnessApplicationsGraphCallbacks,
 ) {
     composable(HarnessDestination.APPS.route) {
-        val applicationsViewModel = activityApplicationsViewModel()
-        harnessObservedIdentityRefreshEffect(applicationsViewModel)
+        harnessObservedIdentityRefreshEffect(callbacks.onRefreshObservedIdentity)
         HarnessApplicationsScreen(
             state = state,
             onRefresh = callbacks.onRefresh,
@@ -46,8 +45,7 @@ internal fun NavGraphBuilder.installApplicationDetailRoute(
             navArgument(HarnessApplicationRoutes.APPLICATION_ID_ARGUMENT) { type = NavType.StringType },
         ),
     ) { entry ->
-        val applicationsViewModel = activityApplicationsViewModel()
-        harnessObservedIdentityRefreshEffect(applicationsViewModel)
+        harnessObservedIdentityRefreshEffect(callbacks.onRefreshObservedIdentity)
         val applicationId = HarnessApplicationRoutes.decodeApplicationId(
             entry.arguments?.getString(HarnessApplicationRoutes.APPLICATION_ID_ARGUMENT),
         )
@@ -59,7 +57,7 @@ internal fun NavGraphBuilder.installApplicationDetailRoute(
             }
             val onConnectionEnabledChanged: (Boolean) -> Unit = { enabled ->
                 selectedApplication?.let { application ->
-                    applicationsViewModel.setApplicationConnectionEnabled(application.applicationId, enabled)
+                    callbacks.onSetApplicationConnectionEnabled(application.applicationId, enabled)
                 }
             }
             if (useHarnessApplicationsMasterDetail(currentHarnessAdaptivePolicy())) {
@@ -139,12 +137,12 @@ internal fun NavGraphBuilder.installAssignmentRoute(
 }
 
 @Composable
-private fun harnessObservedIdentityRefreshEffect(viewModel: HarnessApplicationsReadViewModel) {
+private fun harnessObservedIdentityRefreshEffect(onRefreshObservedIdentity: () -> Unit) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner, viewModel) {
+    DisposableEffect(lifecycleOwner, onRefreshObservedIdentity) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                viewModel.refresh(HarnessApplicationsRefreshMode.OBSERVED_IDENTITY)
+                onRefreshObservedIdentity()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

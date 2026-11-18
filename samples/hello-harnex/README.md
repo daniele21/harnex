@@ -9,10 +9,10 @@ Hello Harnex app
   -> app-owned Consumer boundary
   -> Consumer Android SDK
   -> explicit Binder host
-  -> Harnex authorization + assigned use case
+  -> Harnex authorization + Generic text generation
   -> shared local runtime
   -> llama.cpp / local GGUF
-  -> structured result back to the app
+  -> text result back to the app
 ```
 
 The sample does **not** depend on Harnex source modules, JNI code, GGUF files or model-store internals. It resolves `consumer-android` from the public token-free Maven channel just like an external repository.
@@ -52,14 +52,14 @@ This is intentionally **not** a reusable framework hidden inside the sample. The
 - `disconnect()` is reversible, while `close()` is terminal;
 - prompts and generated output are not persisted or written to diagnostics by this sample.
 
-Do not copy the sample's PII product workflow into another app. Copy the **boundary and lifecycle pattern**, then use the Harnex-assigned use case owned by that product.
+`Generic text generation` exists to make the first integration easy to understand. Product apps should still use narrower host-owned use cases when their workflow needs stronger output, reasoning, schema or policy semantics.
 
 ## What you need
 
 - JDK 17 and Android SDK API 36;
 - an emulator or Android device visible to `adb`;
 - Harnex installed;
-- a supported local model installed in Harnex for the `Document PII detection` use case.
+- a supported local model installed in Harnex for the `Generic text generation` use case.
 
 The sample defaults to the source-build Harnex package `io.github.daniele21.localllm.phonetest.debug`. If you are using the Play/release package, use the override shown below.
 
@@ -103,12 +103,12 @@ In Harnex open **Apps -> New app connection** and use:
 | Harnex app ID | `hello-harnex` |
 | Android package | `io.github.daniele21.harnex.hello` |
 | Signer SHA-256 | copy it from the sample |
-| Use case | `Document PII detection` |
-| Initial preset | `Balanced` |
+| Use case | `Generic text generation` |
+| Initial preset | `Quality` |
 
-Harnex accepts the displayed colon-separated fingerprint and normalizes it to the canonical 64-character SHA-256 value. Create and enable the connection. Harnex remains the authority: the Maven dependency and Binder connection do not grant access by themselves.
+Harnex accepts the displayed colon-separated fingerprint and normalizes it to the canonical 64-character SHA-256 value. Tap **Create & enable connection**. The button enters a visible saving state and then shows either **Connection ready** or an actionable error; creation must never fail silently.
 
-The manual registration above is the current onboarding UX. It must not be interpreted as the trust anchor: at runtime Harnex still derives the caller from Android Binder identity and applies the persisted package/signer/use-case authorization policy.
+Harnex remains the authority: the Maven dependency and Binder connection do not grant access by themselves. At runtime Harnex derives the caller from Android Binder identity and applies the persisted package/signer/use-case authorization policy.
 
 ## 4. Connect and run
 
@@ -116,25 +116,32 @@ Back in Hello Harnex:
 
 1. tap **Connect to Harnex**;
 2. wait for `CONNECTED`;
-3. keep or edit the example text;
+3. keep or edit the example prompt;
 4. tap **Run on device**.
 
-The default input contains one email address. A successful response is structured JSON similar to:
+The default prompt is:
 
-```json
-{
-  "schemaVersion": 1,
-  "findings": [
-    {
-      "typeId": "email",
-      "surface": "alice.rossi@example.com",
-      "segmentId": "p0001-b0001"
-    }
-  ]
-}
+```text
+Explain in two concise sentences why on-device AI can improve privacy.
 ```
 
-Exact model output can vary, but Harnex constrains this request with the host-owned JSON-schema use case. The sample also displays public TTFT, total latency, output-token count and decode throughput when available.
+A successful response is normal text streamed back through the Consumer SDK. Hello Harnex sends the prompt unchanged as `ConsumerGenerationInput.Text` and requests `ConsumerOutputConstraint.Text`.
+
+The sample also displays public TTFT, total latency, output-token count and decode throughput when available.
+
+## The generic use case is deliberately bounded
+
+`generic-text-generation` is a host-owned onboarding/integration capability, not a general-purpose chatbot surface. Its current contract is:
+
+- stateless session;
+- text input and text output only;
+- reasoning not exposed;
+- one input message per session;
+- bounded input and context;
+- Harnex-owned model resolution and `Quality` preset;
+- no cloud fallback.
+
+Consumer apps still own their product workflow. If a product needs structured output, domain-specific instructions, different limits or other guarantees, those semantics belong in a deliberate Harnex use case rather than being smuggled through the generic sample.
 
 ## Read the integration in three files
 
@@ -179,7 +186,7 @@ bash scripts/verify-consumer-sdk-publication.sh
 
 It publishes run-owned Consumer SDK artifacts, builds both external Consumer projects from Maven coordinates, runs the Hello Harnex lifecycle tests and rejects source/composite/project coupling.
 
-The focused unit tests cover the application-owned lifecycle boundary, including concurrent-run rejection, terminal cleanup, close during active generation and actionable authorization failure mapping.
+The focused unit tests cover the application-owned lifecycle boundary, including the exact generic TEXT request, concurrent-run rejection, terminal cleanup, close during active generation and actionable authorization failure mapping.
 
 ## Privacy and lifecycle
 
@@ -192,9 +199,5 @@ The focused unit tests cover the application-owned lifecycle boundary, including
 - Harnex owns model identity, selection, residency and runtime policy.
 
 For work that must intentionally outlive a transient UI/connection observer, do **not** keep an Activity-owned ordinary generation alive. Use the SDK's durable logical-job API and follow its recovery semantics instead.
-
-## Why this first sample uses structured PII detection
-
-The goal is to demonstrate a **real currently supported Consumer API path**, not invent a tutorial-only runtime contract. `Document PII detection` is the existing production-shaped externally assignable use case, so the sample exercises the same authorization and runtime boundary used by a real consumer. A generic text-assistant sample should be added only when Harnex exposes that as a deliberate public host-owned use case.
 
 For the full Consumer SDK contract, see [`../../docs/shared-runtime/consumer-android-sdk.md`](../../docs/shared-runtime/consumer-android-sdk.md).

@@ -364,6 +364,8 @@ class RuntimeOrchestratorTest {
             },
         )
         assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        // The fake backend reports Cancelled when the guard stops streaming; the public result must still complete once.
+        assertEquals(1, events.count { it is GenerationEvent.Completed || it is GenerationEvent.Failed })
         val completed = events.last() as GenerationEvent.Completed
         assertEquals(StopReason.GENERATION_GUARD_THINKING_BUDGET, completed.metrics.stopReason)
         assertEquals("hello ", completed.output)
