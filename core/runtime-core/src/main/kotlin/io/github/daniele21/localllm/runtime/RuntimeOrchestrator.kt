@@ -522,31 +522,14 @@ class RuntimeOrchestrator(
             }
 
             val guardReason = guardStopReason.get()
-            if (lifecycle.isCancellationRequested()) {
-                val cancellation = LocalLlmError.Cancelled()
-                runtimeTelemetry.failed(request.requestId, cancellation)
-                lifecycle.finish(GenerationEvent.Failed(request.requestId, cancellation))
-            } else if (guardReason != null) {
-                completeGeneration(
-                    request = request,
-                    session = session,
-                    lifecycle = lifecycle,
-                    output = rawOutput.toString(),
-                    reasoningOutput = reasoningOutput.toString(),
-                    answerOutput = answerOutput.toString(),
-                    backendMetrics = outcome.metrics().copy(stopReason = guardReason),
-                    executionStartedAt = executionStartedAt,
-                    enqueuedAt = enqueuedAt,
-                    firstTokenAt = firstTokenAt,
-                    firstAnswerAt = firstAnswerAt,
-                    promptPlanningMs = promptPlanningMs,
-                    contextCreationMs = contextResult.creationMs,
-                )
-            } else if (outcome is BackendGenerationOutcome.Cancelled) {
+            // An explicit cancellation takes precedence. A generation guard is a successful, typed stop
+            // even if the backend reports cancellation because the streaming callback stopped decoding.
+            if (lifecycle.isCancellationRequested() || (guardReason == null && outcome is BackendGenerationOutcome.Cancelled)) {
                 val cancellation = LocalLlmError.Cancelled()
                 runtimeTelemetry.failed(request.requestId, cancellation)
                 lifecycle.finish(GenerationEvent.Failed(request.requestId, cancellation))
             } else {
+                val metrics = outcome.metrics()
                 completeGeneration(
                     request = request,
                     session = session,
@@ -554,7 +537,7 @@ class RuntimeOrchestrator(
                     output = rawOutput.toString(),
                     reasoningOutput = reasoningOutput.toString(),
                     answerOutput = answerOutput.toString(),
-                    backendMetrics = (outcome as BackendGenerationOutcome.Completed).metrics,
+                    backendMetrics = if (guardReason != null) metrics.copy(stopReason = guardReason) else metrics,
                     executionStartedAt = executionStartedAt,
                     enqueuedAt = enqueuedAt,
                     firstTokenAt = firstTokenAt,
