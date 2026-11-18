@@ -125,6 +125,15 @@ internal object HarnessSharedRuntimePolicy {
         return HarnessBuiltInControlPlaneSpec.ombra(applications)
     }
 
+    fun builtInGenericTextControlPlaneSpec(policies: Collection<AuthorizedClientPolicy>): HarnessBuiltInControlPlaneSpec {
+        val applications = requirementsForUseCases(
+            policies = policies,
+            useCaseIds = setOf(HarnessSharedRuntimeBindings.genericTextUseCaseId),
+            independentlySignedApplicationIds = emptySet(),
+        )
+        return HarnessBuiltInControlPlaneSpec.genericText(applications)
+    }
+
     /**
      * Seeds Aura only when its exact installed package/signing identity was observed. The independently signed Aura
      * registration starts PENDING and does not enter live Binder trust until explicit control-plane authorization.
@@ -168,7 +177,7 @@ internal object HarnessSharedRuntimePolicy {
                 applicationId = applicationId,
                 acceptedPackageNames = signersByPackage.keys,
                 acceptedSignerSha256 = signersByPackage.values.flatten().toSet(),
-                displayName = displayName(applicationId),
+                displayName = harnessApplicationDisplayName(applicationId),
                 initialState = if (independentlySigned) {
                     ApplicationRegistrationState.PENDING
                 } else {
@@ -226,16 +235,16 @@ internal object HarnessSharedRuntimePolicy {
         return signatures.map(::sha256).toSet()
     }
 
-    private fun displayName(applicationId: ApplicationId): String = when (applicationId) {
-        HarnessSharedRuntimeBindings.consoleApplicationId -> "Local LLM Console"
-        HarnessSharedRuntimeBindings.redactGuardApplicationId -> "RedactGuard"
-        HarnessSharedRuntimeBindings.auraApplicationId -> "Aura Finance"
-        else -> applicationId.value
-    }
-
     private fun sha256(signature: Signature): SigningCertificateSha256 {
         val digest = MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
         val hex = digest.joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
         return SigningCertificateSha256.parse(hex)
     }
+}
+
+private fun harnessApplicationDisplayName(applicationId: ApplicationId): String = when (applicationId) {
+    HarnessSharedRuntimeBindings.consoleApplicationId -> "Local LLM Console"
+    HarnessSharedRuntimeBindings.redactGuardApplicationId -> "RedactGuard"
+    HarnessSharedRuntimeBindings.auraApplicationId -> "Aura Finance"
+    else -> applicationId.value
 }
