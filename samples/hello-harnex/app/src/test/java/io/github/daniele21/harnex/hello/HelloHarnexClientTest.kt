@@ -332,11 +332,10 @@ class HelloHarnexClientTest {
 
         override fun disconnect() = Unit
 
-        override fun capabilities(useCaseId: UseCaseId): ConsumerCapabilityResult =
-            ConsumerCapabilityResult.Rejected(
-                ConsumerCapabilityErrorCode.CAPABILITY_INCOMPATIBLE,
-                "Capabilities are not queried by this callback-only sample",
-            )
+        override fun capabilities(useCaseId: UseCaseId): ConsumerCapabilityResult = ConsumerCapabilityResult.Rejected(
+            ConsumerCapabilityErrorCode.CAPABILITY_INCOMPATIBLE,
+            "Capabilities are not queried by this callback-only sample",
+        )
 
         override fun assignedUseCases(): ConsumerAssignedUseCasesResult {
             assignmentCalls.incrementAndGet()
