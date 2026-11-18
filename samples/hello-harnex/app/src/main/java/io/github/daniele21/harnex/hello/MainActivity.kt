@@ -69,8 +69,8 @@ class MainActivity : ComponentActivity() {
         root.addView(keyValue("Harnex app ID", "hello-harnex"))
         root.addView(keyValue("Android package", packageName))
         root.addView(keyValue("Signer SHA-256", signer, selectable = true))
-        root.addView(keyValue("Use case", "Document PII detection"))
-        root.addView(keyValue("Initial preset", "Balanced"))
+        root.addView(keyValue("Use case", "Generic text generation"))
+        root.addView(keyValue("Initial preset", "Quality"))
         root.addView(
             Button(this).apply {
                 text = "Copy signer SHA-256"
@@ -95,7 +95,7 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.START
         }
         connectButton = Button(this).apply {
-            text = "Connect"
+            text = "Connect to Harnex"
             isAllCaps = false
             setOnClickListener { viewModel.connect() }
         }
@@ -105,20 +105,31 @@ class MainActivity : ComponentActivity() {
             isEnabled = false
             setOnClickListener { viewModel.disconnect() }
         }
-        connectionActions.addView(connectButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        connectionActions.addView(disconnectButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        connectionActions.addView(
+            connectButton,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        connectionActions.addView(
+            disconnectButton,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+        )
         root.addView(connectionActions, matchWidth())
         root.addView(space(24))
     }
 
     private fun addInferenceSection(root: LinearLayout) {
         root.addView(section("3 · Run local inference"))
-        root.addView(label("The sample asks the host-owned PII use case to find the exact email address in this text.", 15f))
+        root.addView(
+            label(
+                "Send any bounded text prompt through the host-owned Generic text generation use case.",
+                15f,
+            ),
+        )
         input = EditText(this).apply {
-            setText("Alice Rossi can be reached at alice.rossi@example.com.")
+            setText("Explain in two concise sentences why on-device AI can improve privacy.")
             minLines = 3
             gravity = Gravity.TOP
-            hint = "Text containing an email address"
+            hint = "Prompt for local text generation"
             addTextChangedListener(
                 object : TextWatcher {
                     override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -148,8 +159,14 @@ class MainActivity : ComponentActivity() {
             isEnabled = false
             setOnClickListener { viewModel.cancel() }
         }
-        actions.addView(runButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        actions.addView(cancelButton, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        actions.addView(
+            runButton,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+        )
+        actions.addView(
+            cancelButton,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+        )
         root.addView(actions, matchWidth())
         root.addView(space(16))
 
