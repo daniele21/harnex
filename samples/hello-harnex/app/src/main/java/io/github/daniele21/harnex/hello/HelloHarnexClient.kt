@@ -1,9 +1,11 @@
 package io.github.daniele21.harnex.hello
 
 import android.content.Context
+import io.github.daniele21.localllm.contracts.ConsumerActivation
 import io.github.daniele21.localllm.contracts.ConsumerActivationId
 import io.github.daniele21.localllm.contracts.ConsumerActivationRequest
 import io.github.daniele21.localllm.contracts.ConsumerActivationResult
+import io.github.daniele21.localllm.contracts.ConsumerAssignedUseCase
 import io.github.daniele21.localllm.contracts.ConsumerAssignedUseCasesResult
 import io.github.daniele21.localllm.contracts.ConsumerContentType
 import io.github.daniele21.localllm.contracts.ConsumerControlPlaneErrorCode
@@ -265,7 +267,10 @@ private object HelloHarnexClientSupport {
             throw controlPlaneFailure("assignment", result.failure.code, result.failure.message)
     }
 
-    fun defaultPreset(result: ConsumerPublishedPresetsResult, assignment: io.github.daniele21.localllm.contracts.ConsumerAssignedUseCase) =
+    fun defaultPreset(
+        result: ConsumerPublishedPresetsResult,
+        assignment: ConsumerAssignedUseCase,
+    ) =
         when (result) {
             is ConsumerPublishedPresetsResult.Available -> {
                 if (result.useCaseId != assignment.useCaseId || result.bindingRevision != assignment.bindingRevision) {
@@ -288,7 +293,7 @@ private object HelloHarnexClientSupport {
         }
 
     fun matches(
-        activation: io.github.daniele21.localllm.contracts.ConsumerActivation,
+        activation: ConsumerActivation,
         request: ConsumerActivationRequest,
     ): Boolean = activation.useCaseId == request.useCaseId &&
         activation.useCaseRevision == request.useCaseRevision &&
