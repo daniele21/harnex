@@ -140,6 +140,7 @@ The sample also displays public TTFT, total latency, output-token count and deco
 - one input message per session;
 - bounded input and context;
 - Harnex-owned model resolution and `Quality` preset;
+- the explicit `prepare` request pins that preset, disabled reasoning, TEXT output and a stateless session; Hello Harnex checks the returned identity before creating a session;
 - no cloud fallback.
 
 Consumer apps still own their product workflow. If a product needs structured output, domain-specific instructions, different limits or other guarantees, those semantics belong in a deliberate Harnex use case rather than being smuggled through the generic sample.

@@ -25,6 +25,7 @@ import io.github.daniele21.localllm.contracts.ConsumerPreparedId
 import io.github.daniele21.localllm.contracts.ConsumerPreparedSelection
 import io.github.daniele21.localllm.contracts.ConsumerPublishedPreset
 import io.github.daniele21.localllm.contracts.ConsumerPublishedPresetsResult
+import io.github.daniele21.localllm.contracts.ConsumerReasoningPreference
 import io.github.daniele21.localllm.contracts.ConsumerSessionResult
 import io.github.daniele21.localllm.contracts.EffectiveConsumerReasoningMode
 import io.github.daniele21.localllm.contracts.InferencePresetId
@@ -56,6 +57,12 @@ class HelloHarnexClientTest {
                 request.input,
             )
             assertEquals(ConsumerOutputConstraint.Text, request.outputConstraint)
+            val prepare = requireNotNull(runtime.lastPrepareRequest)
+            assertEquals(USE_CASE, prepare.useCaseId)
+            assertEquals(PRESET, prepare.selection.preset)
+            assertEquals(ConsumerReasoningPreference.DISABLED, prepare.selection.reasoning)
+            assertEquals(ConsumerOutputConstraintKind.TEXT, prepare.selection.outputConstraint)
+            assertEquals(SessionKind.STATELESS, prepare.selection.sessionKind)
         } finally {
             client.close()
             assertTrue(runtime.closed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
@@ -208,6 +215,54 @@ class HelloHarnexClientTest {
     }
 
     @Test
+    fun `mismatched prepared preset releases activation without opening session`() {
+        val runtime = FakeHelloHarnexRuntime(preparedPreset = InferencePresetRef(InferencePresetId("other"), 1))
+        val client = HelloHarnexClient(runtime)
+        try {
+            val resultReady = CountDownLatch(1)
+            var result: Result<HelloInferenceResult>? = null
+            client.run("test", {}, {}, {
+                result = it
+                resultReady.countDown()
+            })
+
+            assertTrue(resultReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            val failure = requireNotNull(result).exceptionOrNull() as HelloHarnexException
+            assertEquals(HelloHarnexFailureKind.CONFIGURATION_REQUIRED, failure.kind)
+            assertEquals(1, runtime.deactivations.get())
+            assertEquals(0, runtime.sessionsOpened.get())
+            assertEquals(null, runtime.lastGenerationRequest)
+        } finally {
+            client.close()
+            assertTrue(runtime.closed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
+    fun `mismatched prepared output constraint releases activation before generation`() {
+        val runtime = FakeHelloHarnexRuntime(preparedOutputConstraint = ConsumerOutputConstraintKind.JSON_SCHEMA)
+        val client = HelloHarnexClient(runtime)
+        try {
+            val resultReady = CountDownLatch(1)
+            var result: Result<HelloInferenceResult>? = null
+            client.run("test", {}, {}, {
+                result = it
+                resultReady.countDown()
+            })
+
+            assertTrue(resultReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            val failure = requireNotNull(result).exceptionOrNull() as HelloHarnexException
+            assertEquals(HelloHarnexFailureKind.CONFIGURATION_REQUIRED, failure.kind)
+            assertEquals(1, runtime.deactivations.get())
+            assertEquals(0, runtime.sessionsOpened.get())
+            assertEquals(null, runtime.lastGenerationRequest)
+        } finally {
+            client.close()
+            assertTrue(runtime.closed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
     fun `authorization rejection is surfaced as actionable failure`() {
         val runtime = FakeHelloHarnexRuntime(
             assignments = ConsumerAssignedUseCasesResult.Rejected(
@@ -246,6 +301,8 @@ class HelloHarnexClientTest {
         private val blockGenerationReturn: Boolean = false,
         private val publishedBindingRevision: Int = 1,
         private val activationBindingRevision: Int = 1,
+        private val preparedPreset: InferencePresetRef = PRESET,
+        private val preparedOutputConstraint: ConsumerOutputConstraintKind = ConsumerOutputConstraintKind.TEXT,
     ) : HelloHarnexRuntime {
         val generationStarted = CountDownLatch(1)
         val closed = CountDownLatch(1)
@@ -259,6 +316,10 @@ class HelloHarnexClientTest {
 
         @Volatile
         var lastGenerationRequest: ConsumerGenerationRequest? = null
+            private set
+
+        @Volatile
+        var lastPrepareRequest: ConsumerPrepareRequest? = null
             private set
 
         private val generationReturnAllowed = CountDownLatch(if (blockGenerationReturn) 1 else 0)
@@ -305,17 +366,20 @@ class HelloHarnexClientTest {
             return ConsumerDeactivationResult.Released
         }
 
-        override fun prepare(request: ConsumerPrepareRequest): ConsumerPrepareResult = ConsumerPrepareResult.Prepared(
-            ConsumerPreparedSelection(
-                preparedId = ConsumerPreparedId("prepared-1"),
-                useCaseId = request.useCaseId,
-                capabilityRevision = "capability-1",
-                preset = PRESET,
-                reasoningMode = EffectiveConsumerReasoningMode.DISABLED,
-                outputConstraint = ConsumerOutputConstraintKind.TEXT,
-                sessionKind = SessionKind.STATELESS,
-            ),
-        )
+        override fun prepare(request: ConsumerPrepareRequest): ConsumerPrepareResult {
+            lastPrepareRequest = request
+            return ConsumerPrepareResult.Prepared(
+                ConsumerPreparedSelection(
+                    preparedId = ConsumerPreparedId("prepared-1"),
+                    useCaseId = request.useCaseId,
+                    capabilityRevision = "capability-1",
+                    preset = preparedPreset,
+                    reasoningMode = EffectiveConsumerReasoningMode.DISABLED,
+                    outputConstraint = preparedOutputConstraint,
+                    sessionKind = SessionKind.STATELESS,
+                ),
+            )
+        }
 
         override fun createSession(preparedId: ConsumerPreparedId): ConsumerSessionResult {
             sessionsOpened.incrementAndGet()

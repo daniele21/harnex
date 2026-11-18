@@ -43,6 +43,20 @@ Last reviewed: 2026-10-10
 | CIH-40 | Cross-app consumer proof / regression. `samples/external-consumer-android` and `apps/shared-runtime-client-consumer-fixture`; RedactGuard direct consumer proof | CIH-20/30 as applicable | READY | Published Maven SDK, ABI, host missing, pending/denied, reconnect, replace signer, service loss and cancellation covered |
 | CIH-50 | On-device Host/Consumer qualification on exact signed candidates; existing SR-6/HBG physical runner and release owners | CIH-40 | BLOCKED | Claim-matched distinct-signer and ARM64/JNI/GGUF evidence without overclaiming emulator tests |
 
+## CIH-30 discovery checkpoint — two real consumer codepaths
+
+Reviewed Harnex `dev@a3c3d432` and RedactGuard `main@59a4a7a`. This is source-level evidence, not measured external developer time.
+
+| Concern | Hello Harnex | RedactGuard | Reuse decision |
+| --- | --- | --- | --- |
+| Discover assigned use case and published presets | Yes; fixed default text preset | Yes; process-local operator selection with stale-value replacement | Same Host contract; app-owned selection policy differs |
+| Verify assignment/binding and activation identities | Yes | Yes, with explicit failure diagnostics | Candidate for a small pure-contract helper only when adoption justifies an SDK ABI change |
+| Prepare exact execution | Generic TEXT / stateless / reasoning disabled | Domain JSON_SCHEMA / stateless / reasoning disabled + capability revision | Explicitly pin and check preparation using existing types; keep domain constraints separate |
+| Execution and recovery | One callback generation, connection-scoped cancellation | Durable logical jobs, stable identity/query after disconnect | **Do not** merge or hide different recovery semantics under one `generate()` |
+| Cleanup | One session and activation per short generation | Multiple document chunks and logical jobs with domain cancellation acknowledgements | Keep per-consumer lifecycle ownership; no second policy/state manager |
+
+**Decision: NARROW_SCOPE.** A universal public `generate()` facade would add another lifecycle/ABI owner while hiding a real difference in recovery semantics; no product evidence currently justifies it. Instead prove a correct exact-preset short-text example with the existing Consumer SDK, then assess whether third-party consumers repeat *pure, domain-neutral* setup identity boilerplate. Counts of SDK operations are not an integration-time measurement. Product impact remains unmeasured.
+
 ## Parallelization and convergence
 
 - Lane A (docs / integration guidance): CIH-10 independently from native/runtime RA work.
