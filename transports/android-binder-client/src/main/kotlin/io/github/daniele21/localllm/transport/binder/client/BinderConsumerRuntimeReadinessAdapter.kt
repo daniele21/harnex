@@ -60,8 +60,8 @@ internal class BinderConsumerRuntimeReadinessAdapter(
         call: ((ConsumerRuntimeReadinessResultParcel) -> Unit) -> Unit,
     ): RuntimeReadinessRemoteOutcome {
         val waiter = RuntimeReadinessCallbackWaiter()
-        val subscription = endpointInvalidations?.addListener { epoch, detail ->
-            if (epoch == endpoint.connectionEpoch) waiter.disconnect(detail)
+        val subscription = endpointInvalidations?.addListener { epoch, _ ->
+            if (epoch == endpoint.connectionEpoch) waiter.disconnect()
         }
         return try {
             call(waiter::complete)
@@ -99,8 +99,8 @@ private class RuntimeReadinessCallbackWaiter {
 
     fun complete(result: ConsumerRuntimeReadinessResultParcel) = finish(RuntimeReadinessRemoteOutcome.Received(result))
 
-    fun disconnect(detail: String) {
-        if (detail.isNotBlank()) finish(RuntimeReadinessRemoteOutcome.Disconnected)
+    fun disconnect() {
+        finish(RuntimeReadinessRemoteOutcome.Disconnected)
     }
 
     fun await(timeoutMillis: Long): RuntimeReadinessRemoteOutcome = if (latch.await(timeoutMillis, TimeUnit.MILLISECONDS)) {
