@@ -70,6 +70,10 @@ OMB-6B/OMB-8, model evaluation, Q35 device tuning, RAM/thermal evidence and LLUP
 
 The active [consumer integration resilience workstream](workstreams/consumer-integration-resilience.md) coordinates simpler, safer external-app onboarding against the existing published SDK. It is separate from RA-4/RA-5 runtime hardening and from open PR #562's Host-owned generic-text onboarding. No unvalidated convenience API or implicit automatic retry is assumed; release/physical obligations remain unchanged.
 
+## Simplicity-first improvement lane (plan only)
+
+The active [simplicity-first runtime workstream](workstreams/simplicity-first-runtime.md) tracks observed complexity, bounded runtime-core/JNI cleanup and the order of outcomes. It **does not** duplicate the already-owned Consumer onboarding ([CIH](workstreams/consumer-integration-resilience.md)), memory/Q35 device qualification or llama.cpp [LLUP](workstreams/llama-cpp-v0-3-residency-qualification.md) migration. Initial work is CIH-10 and read-only SIMP-00; no production runtime, SDK or upstream pin change is approved by this plan.
+
 ## Immediate next block
 
 1. integrate release productization into current `dev` with FULL automated validation;
