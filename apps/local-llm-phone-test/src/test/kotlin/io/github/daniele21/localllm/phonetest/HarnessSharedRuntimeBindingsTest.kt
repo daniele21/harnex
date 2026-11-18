@@ -1,7 +1,9 @@
 package io.github.daniele21.localllm.phonetest
 
 import io.github.daniele21.localllm.catalog.CuratedModelCatalog
+import io.github.daniele21.localllm.contracts.ApplicationId
 import io.github.daniele21.localllm.contracts.UseCaseId
+import io.github.daniele21.localllm.models.OutputMode
 import io.github.daniele21.localllm.runtime.UseCaseActivationId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -89,6 +91,23 @@ class HarnessSharedRuntimeBindingsTest {
         assertFalse(HarnessSharedRuntimeBindings.SR6_RELEASE_CONSUMER_PACKAGE in packages)
         assertFalse(HarnessSharedRuntimeBindings.REDACTGUARD_RELEASE_PACKAGE in packages)
         assertFalse(HarnessSharedRuntimeBindings.AURA_RELEASE_PACKAGE in packages)
+    }
+
+    @Test
+    fun `generic text resolver preserves consumer identity and text-only runtime contract`() {
+        val applicationId = ApplicationId("hello-harnex")
+        val resolved = HarnessSharedRuntimeBindings.resolveGenericText(curatedModel(), applicationId)
+
+        assertEquals(applicationId, resolved.binding.applicationId)
+        assertEquals(HarnessSharedRuntimeBindings.genericTextUseCaseId, resolved.binding.useCaseId)
+        assertEquals(OutputMode.TEXT, resolved.useCase.outputMode)
+        assertEquals(HarnessSharedRuntimeBindings.genericTextDefaultPreset, resolved.useCase.defaultPreset)
+        assertTrue(
+            resolved.useCase.presets.any { preset ->
+                preset.ref == HarnessSharedRuntimeBindings.genericTextDefaultPreset &&
+                    OutputMode.TEXT in preset.allowedOutputModes
+            },
+        )
     }
 
     @Test

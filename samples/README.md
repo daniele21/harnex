@@ -6,7 +6,7 @@ Samples demonstrate public consumption boundaries without making repository-inte
 
 ### `hello-harnex`
 
-The **runnable onboarding sample and golden Consumer-app reference** for external Android developers. It is a standalone app that consumes the published Consumer SDK, shows its exact package/signer identity, guides the user through Harnex authorization and runs one real local inference through Binder.
+The **runnable onboarding sample and golden Consumer-app reference** for external Android developers. It is a standalone app that consumes the published Consumer SDK, shows its exact package/signer identity, guides the user through Harnex authorization and runs the host-owned bounded `Generic text generation` capability through Binder.
 
 Start here if you want to answer: **“How should another Android app actually integrate Harnex?”**
 
