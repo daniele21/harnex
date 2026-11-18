@@ -172,13 +172,11 @@ internal class HelloHarnexClient internal constructor(
                 ),
             ),
         )
-        if (
-            prepared.useCaseId != assignment.useCaseId ||
-            prepared.preset != preset.preset ||
-            prepared.reasoningMode != EffectiveConsumerReasoningMode.DISABLED ||
-            prepared.outputConstraint != ConsumerOutputConstraintKind.TEXT ||
-            prepared.sessionKind != SessionKind.STATELESS
-        ) {
+        val identityMatches = prepared.useCaseId == assignment.useCaseId && prepared.preset == preset.preset
+        val executionMatches = prepared.reasoningMode == EffectiveConsumerReasoningMode.DISABLED &&
+            prepared.outputConstraint == ConsumerOutputConstraintKind.TEXT &&
+            prepared.sessionKind == SessionKind.STATELESS
+        if (!identityMatches || !executionMatches) {
             throw HelloHarnexException(
                 kind = HelloHarnexFailureKind.CONFIGURATION_REQUIRED,
                 stage = "prepare",
