@@ -63,5 +63,5 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 ## Resume checkpoint
 
 - Base at audit: `dev@b5def37`; refresh live base, PRs and selectors before implementation/merge.
-- PR #584 integrated the terminal-once simplification into `dev` as `dfaccd3` after STRONG automated validation; PR #577 integrated the generic-text onboarding as `52b9cf4`. PR #578 Binder invalidation remains a separate Consumer workstream until its own exact-head checks and merge.
+- PR #584 integrated the terminal-once simplification into `dev` as `dfaccd3` after STRONG automated validation; PR #577 integrated the generic-text onboarding as `52b9cf4`. PR #578 Binder invalidation was integrated in `dev` as `c2ab02d` after STRONG Android and external Consumer validation.
 - Production pin remains `b9637`; v1.0.0 is an unqualified candidate. No generic import/embedded SDK/public convenience API has been implemented by SIMP.
