@@ -34,6 +34,24 @@ Source checkpoint: `dev@4e5ffda473c87cbb99ab6fb9f4aa75f4e402a477`
 | C6 | P3 / decision | In-process core exists; publicly consumed Maven `consumer-android:0.1.0-alpha.11` uses shared Binder Host. An independently distributed embedded SDK is not yet established. | Separate PRODUCT_STRATEGIC discovery/spike only if consumer demand warrants it; not part of this cleanup. |
 | C7 | No action by default | 35 Gradle modules and several large classes indicate possible navigation/build cost, not proven harmful module boundaries. | Consolidate only with dependency/build-cost evidence and without merging independently owned responsibilities. |
 
+## SIMP-00 source audit — first bounded decision
+
+Source: `dev@b5def37ade90d0bb208f2acc540a6540efb48761` (the SIMP plan-only merge); source paths inspected directly, no runtime behavior test claimed by this audit.
+
+| Boundary | Observed responsibility / test evidence | Decision |
+| --- | --- | --- |
+| `RuntimeOrchestrator.executeGeneration` | Planning, context acquisition, streaming parser/guard and terminal projection share one function; guard-stop and normal-success branches call `completeGeneration` with the same arguments except typed stop metrics. `RuntimeOrchestratorTest` covers normal streaming, queued/running cancellation, backend-error race and guard-as-completion. | **CHANGE small**: consolidate only the duplicate successful terminal path; explicit cancellation remains higher priority, and guard stop stays a successful typed result even if the backend reports cancelled. PR #584 owns this slice. |
+| `RuntimeOrchestrator.executeEvaluationBatch` | Four exception handlers repeat the same context-release code. Evaluation uses distinct session/context/cancellation semantics. | **DEFER**: inspect direct batch tests and cleanup failure semantics before considering an extraction; do not combine this with the normal-generation refactor. |
+| `SessionLifecycle` / `ModelResidencyLifecycle` / `SingleDecodeScheduler` | Separate owners already exist for session release reservations, resident-model state, and bounded queue/cancel. `RuntimeSessionLifecycleIntegrationTest`, `RuntimeModelResidencyIntegrationTest`, `SingleDecodeSchedulerTest` exercise the boundaries. | **KEEP**: no second manager, scheduler or new state machine. |
+| `MemoryAdmissionController` + planners | Checks platform pressure, resource bounds, missing headroom and arithmetic overflow; `MemoryAdmissionControllerTest`, `MemoryAwareContextPlannerTest` and runtime integration tests cover deterministic policy. | **KEEP** existing governor; missing representative `MEASURED` profiles remain a *physical-evidence* gap, not an argument for redesign. |
+| `llama_jni.cpp` + `LlamaCppStreaming.kt` | Native result arrays use positional fields; chunks are Base64-encoded on native side, UTF-8-decoded in Kotlin. Both are protocol maintenance costs. Base64 also avoids unsafe raw JNI modified-UTF-8 decoding of arbitrary token fragments. | **DO NOT REWRITE** the protocol on size alone. First measure conversion/allocations and model decode; a `jbyteArray` alternative is worthwhile only if a reproducible correctness/maintenance/performance benefit outweighs extra JNI code. |
+
+### Backend upgrade triage (owned by LLUP, not SIMP)
+
+- Production pin remains `b9637`/`aedb2a5e9ca3d4064148bbb919e0ddc0c1b70ab3`. Open LLUP PR #490 targets `v0.3.0`; do not merge two independent upgrades.
+- Upstream `llama.cpp v1.0.0` was tagged on 2026-11-13; immutable source commit `b1b770d90d94cad9e9ea5b993bdbc383a522fb28` (annotated tag `a6d1a74dbebce3a16f4f2ceddbf38c21a08d8674`). The v1 release explicitly removes deprecated public APIs; core calls such as `llama_model_load_from_file`, `llama_memory_clear` and `llama_sampler_sample` still appear in `include/llama.h`, but this is **not** a CMake/JNI build or model-compatibility qualification.
+- Next LLUP decision gate: compare exact upstream headers/CMake/common helpers, compile ARM64/JNI, run existing GGUF/generation/cancel/packaging checks, then A/B memory/quality/thermal evidence on representative hardware. A version number alone is not a mobile performance improvement.
+
 ## Priority and ownership: do not create duplicate plans
 
 1. **First user-facing win (P0):** execute existing `docs/workstreams/consumer-integration-resilience.md` (CIH-10/20, then CIH-30 if justified). Resolve open PR #577 against #562 before editing `samples/hello-harnex`; show generic-text inference, correct readiness and cleanup. Preserve public Consumer SDK and RedactGuard behavior.
@@ -46,9 +64,9 @@ Source checkpoint: `dev@4e5ffda473c87cbb99ab6fb9f4aa75f4e402a477`
 
 | ID | State | Owns / exact result | Dependency | Iteration proof |
 | --- | --- | --- | --- | --- |
-| SIMP-00 | READY | **Read-only** map of `RuntimeOrchestrator` request -> model/context -> generation -> terminal/cleanup; identify which branches and collaborators have truly duplicate responsibilities. Define baseline tests and non-regression matrix. | none | Evidence-backed map names owner, consumers, tests, and a smallest feasible extraction, or decides DO_NOT_BUILD. |
-| SIMP-10 | BLOCKED | `core/runtime-core`: regression tests around chosen normal generation path, cancellation/close, queue errors, context release and one terminal event; no production behavior change. | SIMP-00 | Focused deterministic tests pass for baseline exact source. |
-| SIMP-20 | BLOCKED | `core/runtime-core`: one minimal root-cause simplification, e.g. isolate preparation or result projection **only if** SIMP-00 finds an independently meaningful boundary. No second scheduler, session or residency authority. | SIMP-10 | Behavior tests + direct consumers pass; simpler responsibility map with no new lifecycle leaks or broad suppression. |
+| SIMP-00 | DONE | **Read-only** map of `RuntimeOrchestrator` request -> model/context -> generation -> terminal/cleanup; identify which branches and collaborators have truly duplicate responsibilities. Define baseline tests and non-regression matrix. | none | Evidence-backed map names owner, consumers, tests, and a smallest feasible extraction, or decides DO_NOT_BUILD. |
+| SIMP-10 | ACTIVE | `core/runtime-core`: regression tests around chosen normal generation path, cancellation/close, queue errors, context release and one terminal event; no production behavior change. | SIMP-00 | Focused deterministic tests pass for baseline exact source. |
+| SIMP-20 | ACTIVE | `core/runtime-core`: one minimal root-cause simplification, e.g. isolate preparation or result projection **only if** SIMP-00 finds an independently meaningful boundary. No second scheduler, session or residency authority. | SIMP-10 | Behavior tests + direct consumers pass; simpler responsibility map with no new lifecycle leaks or broad suppression. |
 | SIMP-30 | BLOCKED | `backends/llama-cpp`: profile/trace JNI boundary and error/chunk conversion, then choose KEEP or one small typed/centralized conversion improvement. Do not change upstream pin in this slice. | SIMP-00 (can run after it independently of SIMP-20) | Kotlin + host-native tests, ARM64 build/package proof for actual native changes; no worsened correctness/latency/allocations. |
 
 Work graph deliberately excludes CIH, MEM, LLUP and embedded implementation tasks: they remain in their existing canonical plans.
@@ -82,5 +100,5 @@ LLUP upgrade A/B and embedded product discovery: separate decisions.
 
 - Read the latest `dev` and related PRs before work; this plan was shaped from `dev@4e5ffda473c87cbb99ab6fb9f4aa75f4e402a477`.
 - Current pins: `b9637`/`aedb2a5e…`; Consumer SDK `0.1.0-alpha.11`; generic-text PR #577 is open and supersedes stale #562 only when reconciled.
-- The first implementation action is **CIH-10** or read-only **SIMP-00**; no rewrite, v1 pin update or public convenience API has been approved.
+- SIMP-00 found one small duplicate terminal path; PR #584 implements it and has exact-head STRONG automated evidence, but is not yet integrated. CIH-10/20 and generic-text PR #577 remain separately owned. No rewrite, v1 pin update or public convenience API has been approved.
 - Transfer finished behavior to the canonical code/tests/SDK/memory/architecture owners, update `docs/current-state.md`, then delete this temporary workstream when complete.
