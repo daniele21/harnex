@@ -55,8 +55,10 @@ class CuratedModelCatalogTest {
         assertEquals(listOf("qwen35-2b-q4-k-m"), releases.map { it.id.modelId.value })
         assertTrue(releases.single().availability == CatalogAvailability.CANDIDATE)
         assertTrue(releases.single().allowedTargets.contains(EmbeddedCatalogTargets.LOCAL_TEXT_GENERATION))
-        assertTrue(CuratedModelCatalog.releases.filterNot { it.id.modelId.value == "qwen35-2b-q4-k-m" }
-            .none { EmbeddedCatalogTargets.LOCAL_TEXT_GENERATION in it.allowedTargets })
+        assertTrue(
+            CuratedModelCatalog.releases.filterNot { it.id.modelId.value == "qwen35-2b-q4-k-m" }
+                .none { EmbeddedCatalogTargets.LOCAL_TEXT_GENERATION in it.allowedTargets },
+        )
     }
 
     @Test
