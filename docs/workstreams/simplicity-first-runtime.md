@@ -35,7 +35,7 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 - `RuntimeOrchestrator` owns physical model/context transitions; `SessionLifecycle`, `ModelResidencyLifecycle` and `SingleDecodeScheduler` already own separate session reservations, residency state and bounded queue/cancel. **KEEP these owners.**
 - `executeGeneration` repeats `completeGeneration` for normal completion vs guard stop, differing only in stop metrics. Existing `RuntimeOrchestratorTest` covers streaming, cancellation/races and successful guard stop; PR #584 consolidated the duplicate call and added a terminal-once assertion, with STRONG tests green. **DONE**.
 - `executeEvaluationBatch` previously repeated cleanup across four catches. **SIMP-25 DONE** in PR #591: one cleanup path preserves typed errors, cancel semantics, terminal-once and exactly-once release attempts.
-- **SIMP-26** addresses the distinct false-ready failure: successful-path native batch release exceptions and cleanup exceptions during failed generation could be followed by `READY` from `finally`. A per-operation release-failure flag now preserves `DEGRADED` after finalization, without introducing a second state owner. This does not assert successful native recovery after a failed release.
+- **SIMP-26 DONE** in PR #592: both the successful-path native batch release exception and failure-path cleanup exception retain the terminal error and leave `RuntimeState.DEGRADED` after worker completion. A per-operation release-failure flag avoids a second state owner. This is truthful health reporting, not native recovery or a permanent degradation policy.
 - `MemoryAdmissionControllerTest`, `MemoryAwareContextPlannerTest`, `RuntimeMemoryAdmissionIntegrationTest` and residency/session integration tests cover deterministic policy, not representative RAM/thermal qualification. **KEEP existing policy; measure on devices.**
 - JNI Base64 avoids treating arbitrary UTF-8 token fragments as safe modified-UTF-8 Java strings; using byte arrays would add native buffer handling. Positional `Array<String>` is maintenance friction but not a proven bottleneck. **KEEP pending measurement; no speculative rewrite.**
 - Upstream `llama.cpp v1.0.0` (2026-11-13) has exact source commit `b1b770d90d94cad9e9ea5b993bdbc383a522fb28` (annotated tag `a6d1a74dbebce3a16f4f2ceddbf38c21a08d8674`). Some core native API calls remain available but deprecated public APIs were removed. This is **not** CMake/JNI/build/GGUF certification; LLUP owns that decision.
@@ -48,7 +48,7 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 | SIMP-10 | DONE | `core/runtime-core` test guard/cancel/terminal semantics; PR #584 | Existing focused tests + terminal-once assertion green at candidate |
 | SIMP-20 | DONE | `core/runtime-core` one duplicate terminal-path refactor; PR #584, depends SIMP-10 | No public contract/state-owner drift; exact-head scoped/strong CI and direct consumers |
 | SIMP-25 | DONE | Consolidate `executeEvaluationBatch` duplicated failure cleanup; PR #591 | Exact-head Android STRONG and regression tests passed; merged in `dev@dfa1675` |
-| SIMP-26 | IN PROGRESS | Preserve truthful `DEGRADED` on batch context release failure | Test successful-path and catch-path release failures, exact one attempt and worker-idle final runtime state; STRONG validation and integration proof |
+| SIMP-26 | DONE | Preserve truthful `DEGRADED` on batch context release failure; PR #592 | Exact-head Android STRONG, two worker-idle regression tests, Repository validation and merge to `dev@48ea57d`; physical native qualification remains separate |
 | SIMP-30 | BLOCKED | `backends/llama-cpp` JNI protocol cost investigation; independent of SIMP-20, after SIMP-00 | KEEP or one evidence-backed minimal edit with native/ARM64 packaging and device check |
 
 - **Parallel owners:** CIH handles SDK, MEM/Q35 handles physical qualification, LLUP handles upstream pin. SIMP-20 and SIMP-30 may progress in parallel only without shared JNI/Kotlin protocol or public contract changes. PR #577 is integrated and supersedes closed #562; preserve the canonical Hello Harnex sample.
@@ -65,6 +65,6 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 
 ## Resume checkpoint
 
-- Base at audit: `dev@b5def37`; refresh live base, PRs and selectors before implementation/merge.
+- Base at audit: `dev@b5def37`; SIMP-25 and SIMP-26 are integrated through `dev@48ea57d`. Refresh live base, PRs and selectors before implementation/merge.
 - PR #584 integrated the terminal-once simplification into `dev` as `dfaccd3` after STRONG automated validation; PR #577 integrated the generic-text onboarding as `52b9cf4`. PR #578 Binder invalidation was integrated in `dev` as `c2ab02d` after STRONG Android and external Consumer validation.
 - Production pin remains `b9637`; v1.0.0 is an unqualified candidate. No generic import/embedded SDK/public convenience API has been implemented by SIMP.
