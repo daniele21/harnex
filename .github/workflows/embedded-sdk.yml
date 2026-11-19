@@ -30,6 +30,11 @@ on:
 permissions:
   contents: read
 
+# Native AAR publication is expensive; newer revisions supersede older PR jobs.
+concurrency:
+  group: embedded-sdk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   stage-maven:
     name: Stage all embedded SDK AARs
