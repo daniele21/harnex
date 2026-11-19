@@ -35,7 +35,11 @@ done
 
 for module in core:contracts "${modules[@]}"; do
   artifact="${module##*:}"
-  if [[ "$artifact" == "android-embedded-sdk" ]]; then artifact="embedded-android"; fi
+  case "$module" in
+    core:contracts) artifact="core-contracts" ;;
+    observability:contracts) artifact="observability-contracts" ;;
+    integrations:android-embedded-sdk) artifact="embedded-android" ;;
+  esac
   base="$REPOSITORY/io/github/daniele21/localllm/$artifact/$SDK_VERSION/$artifact-$SDK_VERSION"
   for ext in aar pom; do
     [[ -s "$base.$ext" ]] || {
