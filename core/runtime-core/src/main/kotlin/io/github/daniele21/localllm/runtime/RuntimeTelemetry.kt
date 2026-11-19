@@ -146,6 +146,7 @@ internal class RuntimeTelemetry(private val repository: TelemetryRepository, pri
     fun memoryAdmission(
         resource: MemoryAdmissionResource,
         outcome: MemoryAdmissionOutcome,
+        enforced: Boolean = true,
         estimate: MemoryCostEstimate? = null,
         decisionReason: String? = null,
         admissionReason: MemoryAdmissionRejectReason? = null,
@@ -153,12 +154,13 @@ internal class RuntimeTelemetry(private val repository: TelemetryRepository, pri
         effectiveContextTokens: Int? = null,
     ) {
         log(
-            level = if (outcome == MemoryAdmissionOutcome.REJECT) LogLevel.WARN else LogLevel.INFO,
-            event = "memory.admission",
+            level = if (enforced && outcome == MemoryAdmissionOutcome.REJECT) LogLevel.WARN else LogLevel.INFO,
+            event = if (enforced) "memory.admission" else "memory.admission.shadow",
             requestId = null,
             fields = buildMap {
                 put("resource", resource.name)
                 put("outcome", outcome.name)
+                if (!enforced) put("enforced", "false")
                 decisionReason?.let { put("decisionReason", it) }
                 admissionReason?.let { put("admissionReason", it.name) }
                 estimate?.let {
