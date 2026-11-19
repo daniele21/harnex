@@ -182,8 +182,8 @@ class GenerationPlanningPolicyTest {
         )
         val ordinaryContextSize = 2_048
         val batchSequenceContextSize = 1_024
-        val ordinaryMetadata = policy.effectiveMetadata(resolved, promptPlan, ordinaryContextSize)
-        val batchMetadata = policy.effectiveMetadata(resolved, promptPlan, batchSequenceContextSize)
+        val ordinaryMetadata = resolved.effectiveMetadata(promptPlan, ordinaryContextSize)
+        val batchMetadata = resolved.effectiveMetadata(promptPlan, batchSequenceContextSize)
 
         assertEquals(
             EffectiveGenerationMetadata(
@@ -214,8 +214,8 @@ class GenerationPlanningPolicyTest {
             closeMarker = "</think>",
             forcedCloseText = "</think>",
         )
-        val ordinaryRequest = policy.backendRequest(request, resolved, promptPlan, reasoningControl)
-        val batchRequest = policy.backendRequest(request, resolved, promptPlan, null)
+        val ordinaryRequest = resolved.backendRequest(request, promptPlan, reasoningControl)
+        val batchRequest = resolved.backendRequest(request, promptPlan, null)
         assertEquals(
             BackendGenerationRequest(
                 requestId = request.requestId.value,
@@ -239,11 +239,9 @@ class GenerationPlanningPolicyTest {
         assertEquals(ordinaryRequest.copy(reasoningControl = null), batchRequest)
         assertEquals(
             SeedPolicyType.RANDOM,
-            policy.effectiveMetadata(
-                policy.resolveConfiguration(request(), resolvedUseCase()),
-                promptPlan,
-                batchSequenceContextSize,
-            ).requestedSeedPolicy,
+            policy.resolveConfiguration(request(), resolvedUseCase())
+                .effectiveMetadata(promptPlan, batchSequenceContextSize)
+                .requestedSeedPolicy,
         )
     }
 
