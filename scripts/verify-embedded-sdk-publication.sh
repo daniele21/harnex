@@ -75,6 +75,39 @@ if [[ -f samples/external-embedded-android/settings.gradle.kts ]]; then
     echo "External APK is missing the transitive native backend" >&2
     exit 1
   fi
+
+  # Retain only a verified, independently built APK for physical-device smoke testing.
+  # This is a CI/debug sample, not a release-signed Harnex Host or an SDK publication.
+  smoke_dir="$ROOT_DIR/build/embedded-smoke-apk"
+  rm -rf "$smoke_dir"
+  mkdir -p "$smoke_dir"
+  apk_name="harnex-embedded-smoke-arm64.apk"
+  cp "$apk" "$smoke_dir/$apk_name"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    apk_sha256="$(sha256sum "$smoke_dir/$apk_name" | awk '{print $1}')"
+  else
+    apk_sha256="$(shasum -a 256 "$smoke_dir/$apk_name" | awk '{print $1}')"
+  fi
+  printf '%s  %s\n' "$apk_sha256" "$apk_name" > "$smoke_dir/SHA256SUMS"
+  cat > "$smoke_dir/build-manifest.json" <<EOF
+{
+  "schema_version": 1,
+  "project": "harnex",
+  "platform": "android",
+  "architecture": "arm64-v8a",
+  "channel": "ci-smoke",
+  "variant": "debug",
+  "package_id": "io.github.daniele21.localllm.embedded.smoke",
+  "source_revision": "$(git rev-parse HEAD)",
+  "build_id": "${GITHUB_RUN_ID:-local}",
+  "embedded_sdk_version": "$SDK_VERSION",
+  "apk_file": "$apk_name",
+  "apk_sha256": "$apk_sha256",
+  "qualification": "build-only; representative physical ARM64/GGUF generation not yet verified"
+}
+EOF
+  echo "Installable embedded smoke APK staged: $smoke_dir/$apk_name"
 fi
 
 if find "$REPOSITORY" -type f \( -name '*.gguf' -o -name '*.ggml' \) -print -quit | grep -q .; then
