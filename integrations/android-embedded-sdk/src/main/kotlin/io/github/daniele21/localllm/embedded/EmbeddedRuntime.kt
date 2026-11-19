@@ -108,12 +108,12 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
             SecureModelDownloader(
                 rootDirectory = downloadRoot,
                 sourcePolicy =
-                    AllowlistedHttpsSourcePolicy(
-                        setOf(
-                            AllowedSourceHost("huggingface.co", includeSubdomains = true),
-                            AllowedSourceHost("hf.co", includeSubdomains = true),
-                        ),
+                AllowlistedHttpsSourcePolicy(
+                    setOf(
+                        AllowedSourceHost("huggingface.co", includeSubdomains = true),
+                        AllowedSourceHost("hf.co", includeSubdomains = true),
                     ),
+                ),
             )
         downloads.recoverInterruptedDownloads()
         val verifiedAccess = FileSystemVerifiedDownloadAccess(downloadRoot)
