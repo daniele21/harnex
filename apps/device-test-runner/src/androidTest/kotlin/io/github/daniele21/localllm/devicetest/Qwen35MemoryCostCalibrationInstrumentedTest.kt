@@ -49,14 +49,7 @@ class Qwen35MemoryCostCalibrationInstrumentedTest {
         require(required("harnessCommit").matches(Regex("[0-9a-f]{40}"))) { "Invalid Harness commit identity" }
         require(required("runtimeProfileVersion").toInt() == 1) { "Unsupported candidate runtime profile version" }
         val digest = ModelDigest(required("modelSha256").lowercase())
-        val relativePath = required("modelRelativePath")
-        require(!File(relativePath).isAbsolute) { "Model path must be relative" }
-        val root = appContext.dataDir.canonicalFile
-        val modelFile = File(root, relativePath).canonicalFile
-        require(modelFile.path.startsWith(root.path + File.separator) && modelFile.isFile) {
-            "Calibration model is unavailable or outside app storage"
-        }
-        require(sha256(modelFile) == digest.sha256) { "Model bytes differ from curated artifact identity" }
+        val modelFile = verifiedModelFile(required("modelRelativePath"), digest)
         require(Build.SUPPORTED_ABIS.firstOrNull() == "arm64-v8a") { "Physical ARM64 device required" }
 
         val contextTokens = required("contextTokens").toInt()
@@ -185,6 +178,17 @@ class Qwen35MemoryCostCalibrationInstrumentedTest {
         .put("workload", "fixed-native-probe-v1")
         .put("sampleIntervalMs", recorder.sampleIntervalMs)
         .put("phases", recorder.results())
+
+    private fun verifiedModelFile(relativePath: String, digest: ModelDigest): File {
+        require(!File(relativePath).isAbsolute) { "Model path must be relative" }
+        val root = appContext.dataDir.canonicalFile
+        val file = File(root, relativePath).canonicalFile
+        require(file.path.startsWith(root.path + File.separator) && file.isFile) {
+            "Calibration model is unavailable or outside app storage"
+        }
+        require(sha256(file) == digest.sha256) { "Model bytes differ from curated artifact identity" }
+        return file
+    }
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
