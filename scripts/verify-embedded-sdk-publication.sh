@@ -51,6 +51,32 @@ for module in core:contracts "${modules[@]}"; do
   done
 done
 
+# The integration candidate must be consumable without source checkout/build substitution.
+if [[ -f samples/external-embedded-android/settings.gradle.kts ]]; then
+  backend_aar="$REPOSITORY/io/github/daniele21/localllm/llama-cpp/$SDK_VERSION/llama-cpp-$SDK_VERSION.aar"
+  if ! unzip -Z1 "$backend_aar" | grep -Fx 'jni/arm64-v8a/liblocal_llm_jni.so'; then
+    echo "Published backend AAR is missing arm64-v8a JNI" >&2
+    exit 1
+  fi
+
+  ./gradlew --no-configuration-cache -p samples/external-embedded-android \
+    -PembeddedSdkVersion="$SDK_VERSION" \
+    -PembeddedSdkRepositoryUrl="$REPOSITORY" \
+    :app:assembleDebug
+
+  if grep -R --line-number -E 'project\\(|includeBuild\\(|android-local-llm-harness' \
+    samples/external-embedded-android --include='*.gradle.kts'; then
+    echo "External Embedded SDK sample contains a forbidden source/build coupling" >&2
+    exit 1
+  fi
+
+  apk="samples/external-embedded-android/app/build/outputs/apk/debug/app-debug.apk"
+  if ! unzip -Z1 "$apk" | grep -Fx 'lib/arm64-v8a/liblocal_llm_jni.so'; then
+    echo "External APK is missing the transitive native backend" >&2
+    exit 1
+  fi
+fi
+
 if find "$REPOSITORY" -type f \( -name '*.gguf' -o -name '*.ggml' \) -print -quit | grep -q .; then
   echo "Model artifacts must not be packaged in the embedded SDK" >&2
   exit 1
