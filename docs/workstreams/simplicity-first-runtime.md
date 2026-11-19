@@ -5,7 +5,7 @@ Document type: workstream
 Owner: runtime-core / llama-cpp backend (coordination; no duplicate implementation owners)
 Canonical scope: workstream.simplicity-first-runtime
 Read when: choosing the next evidence-backed simplification of the Harnex runtime
-Last reviewed: 2026-11-18
+Last reviewed: 2026-11-19
 Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 
 ## Product intent and decision
@@ -34,7 +34,7 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 
 - `RuntimeOrchestrator` owns physical model/context transitions; `SessionLifecycle`, `ModelResidencyLifecycle` and `SingleDecodeScheduler` already own separate session reservations, residency state and bounded queue/cancel. **KEEP these owners.**
 - `executeGeneration` repeats `completeGeneration` for normal completion vs guard stop, differing only in stop metrics. Existing `RuntimeOrchestratorTest` covers streaming, cancellation/races and successful guard stop; PR #584 consolidated the duplicate call and added a terminal-once assertion, with STRONG tests green. **DONE**.
-- `executeEvaluationBatch` repeats context cleanup across four failure catches but uses different batch semantics. **DEFER** until direct batch lifecycle/failure tests establish a safe extraction.
+- `executeEvaluationBatch` repeated context cleanup across four failure catches but retains distinct batch semantics. **SIMP-25 candidate:** one unchanged cleanup path and typed failure mapping, backed by direct batch failure/cancel lifecycle tests; no unification with ordinary generation.
 - `MemoryAdmissionControllerTest`, `MemoryAwareContextPlannerTest`, `RuntimeMemoryAdmissionIntegrationTest` and residency/session integration tests cover deterministic policy, not representative RAM/thermal qualification. **KEEP existing policy; measure on devices.**
 - JNI Base64 avoids treating arbitrary UTF-8 token fragments as safe modified-UTF-8 Java strings; using byte arrays would add native buffer handling. Positional `Array<String>` is maintenance friction but not a proven bottleneck. **KEEP pending measurement; no speculative rewrite.**
 - Upstream `llama.cpp v1.0.0` (2026-11-13) has exact source commit `b1b770d90d94cad9e9ea5b993bdbc383a522fb28` (annotated tag `a6d1a74dbebce3a16f4f2ceddbf38c21a08d8674`). Some core native API calls remain available but deprecated public APIs were removed. This is **not** CMake/JNI/build/GGUF certification; LLUP owns that decision.
@@ -46,6 +46,7 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 | SIMP-00 | DONE | Source map above, risks and minimal candidate; docs only | Owner/test/consumer trace and decision without speculative abstraction |
 | SIMP-10 | DONE | `core/runtime-core` test guard/cancel/terminal semantics; PR #584 | Existing focused tests + terminal-once assertion green at candidate |
 | SIMP-20 | DONE | `core/runtime-core` one duplicate terminal-path refactor; PR #584, depends SIMP-10 | No public contract/state-owner drift; exact-head scoped/strong CI and direct consumers |
+| SIMP-25 | IN PROGRESS | Consolidate `executeEvaluationBatch` duplicated failure cleanup without changing batch ownership or error types | Direct tests prove configuration/backend/unexpected/cancel results, one terminal and exactly-once native-context release; required runtime STRONG integration checks |
 | SIMP-30 | BLOCKED | `backends/llama-cpp` JNI protocol cost investigation; independent of SIMP-20, after SIMP-00 | KEEP or one evidence-backed minimal edit with native/ARM64 packaging and device check |
 
 - **Parallel owners:** CIH handles SDK, MEM/Q35 handles physical qualification, LLUP handles upstream pin. SIMP-20 and SIMP-30 may progress in parallel only without shared JNI/Kotlin protocol or public contract changes. PR #577 is integrated and supersedes closed #562; preserve the canonical Hello Harnex sample.
