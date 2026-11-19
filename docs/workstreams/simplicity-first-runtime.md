@@ -6,7 +6,7 @@ Owner: runtime-core / llama-cpp backend (coordination; no duplicate implementati
 Canonical scope: workstream.simplicity-first-runtime
 Read when: choosing the next evidence-backed simplification of the Harnex runtime
 Last reviewed: 2026-11-19
-Source checkpoint: `dev@d5fb979f578b0ef0e0cc0d5a96e4b8ebd7d1f63c`
+Source checkpoint: `dev@07941016c3523b0047d91b7b855101cf846d83d9`
 
 ## Product intent and decision
 
@@ -50,11 +50,18 @@ Source checkpoint: `dev@d5fb979f578b0ef0e0cc0d5a96e4b8ebd7d1f63c`
 | SIMP-25 | DONE | Consolidate `executeEvaluationBatch` duplicated failure cleanup; PR #591 | Exact-head Android STRONG and regression tests passed; merged in `dev@dfa1675` |
 | SIMP-26 | DONE | Preserve truthful `DEGRADED` on batch context release failure; PR #592 | Exact-head Android STRONG, two worker-idle regression tests, Repository validation and merge to `dev@48ea57d`; physical native qualification remains separate |
 | SIMP-27 | DONE | PR #594 split ordinary generation into in-class preparation, streaming, terminal projection and one typed failure path; no new resource owner or public API | Exact-head integration Android STRONG, runtime tests, direct consumer compilation, Spotless/Detekt and Repository validation passed; merged to `dev@d5fb979`. Physical ARM64/GGUF evidence is not claimed |
+| SIMP-28 | IN REVIEW | Reuse the two deterministic resolved-configuration projections for ordinary generation and batch on existing `ResolvedRequestConfiguration`, returned by `GenerationPlanningPolicy`, without combining lifecycle/streaming ownership | Full-field metadata and backend request parity (including actual per-sequence context size, stop policy, sampling, seed and opt-in reasoning control); exact-head Android STRONG and direct consumer compilation before integration |
 | SIMP-30 | BLOCKED | `backends/llama-cpp` JNI protocol cost investigation; independent of SIMP-20, after SIMP-00 | KEEP or one evidence-backed minimal edit with native/ARM64 packaging and device check |
 
 - **Parallel owners:** CIH handles SDK, MEM/Q35 handles physical qualification, LLUP handles upstream pin. SIMP-20 and SIMP-30 may progress in parallel only without shared JNI/Kotlin protocol or public contract changes. PR #577 is integrated and supersedes closed #562; preserve the canonical Hello Harnex sample.
 - **Convergence:** CIH consumer proof + MEM/Q35 evidence + SIMP runtime tests; LLUP and embedded SDK have separate decisions. After each accepted slice, transfer settled details to code/tests/SDK/memory/architecture owners; delete this workstream once complete.
 - **Stop rule:** refuse an extraction that adds competing owners, adapters or more complexity than it removes.
+
+## SIMP-28: one configuration projection, distinct execution policies
+
+- Both paths now project `ResolvedRequestConfiguration` and `BackendPromptPlan` to `EffectiveGenerationMetadata` and `BackendGenerationRequest` as methods of the existing immutable `ResolvedRequestConfiguration` in the generation-planning file; this avoids drifting field mappings without adding methods to the planning policy, new managers or state.
+- The caller supplies the **actual context size**: materialized ordinary context versus per-sequence evaluation-batch allocation. It also supplies backend reasoning control for ordinary generation while evaluation batching deliberately passes `null` and rejects thinking mode.
+- Batch still owns one dedicated native context, exactly-once release and per-case outcome attribution. Ordinary generation keeps streaming, guard-stop semantics, terminal-once and cancellation behavior. No cross-path error/cancellation abstraction is introduced.
 
 ## Validation and execution
 

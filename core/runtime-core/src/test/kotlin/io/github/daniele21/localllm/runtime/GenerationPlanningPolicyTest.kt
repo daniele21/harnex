@@ -1,7 +1,9 @@
 package io.github.daniele21.localllm.runtime
 
 import io.github.daniele21.localllm.contracts.ApplicationId
+import io.github.daniele21.localllm.contracts.ChatTemplateSource
 import io.github.daniele21.localllm.contracts.ConfigurationErrorCode
+import io.github.daniele21.localllm.contracts.EffectiveGenerationMetadata
 import io.github.daniele21.localllm.contracts.GenerationInput
 import io.github.daniele21.localllm.contracts.GenerationOverrides
 import io.github.daniele21.localllm.contracts.GenerationRequest
@@ -9,6 +11,7 @@ import io.github.daniele21.localllm.contracts.ModelDigest
 import io.github.daniele21.localllm.contracts.OutputConstraint
 import io.github.daniele21.localllm.contracts.RequestId
 import io.github.daniele21.localllm.contracts.SeedPolicy
+import io.github.daniele21.localllm.contracts.SeedPolicyType
 import io.github.daniele21.localllm.contracts.SessionId
 import io.github.daniele21.localllm.contracts.SessionOptions
 import io.github.daniele21.localllm.contracts.ThinkingMode
@@ -148,6 +151,98 @@ class GenerationPlanningPolicyTest {
         assertNull(unsupported)
         assertNotNull(supported)
         assertEquals(8, supported?.maxReasoningTokens)
+    }
+
+    @Test
+    fun `ordinary and batch projections preserve the exact resolved configuration`() {
+        val policy = GenerationPlanningPolicy(SeedSource { 99L })
+        val request = request().copy(
+            overrides = GenerationOverrides(
+                maxOutputTokens = 24,
+                temperature = 0.4f,
+                topP = 0.82f,
+                topK = 16,
+                minP = 0.07f,
+                presencePenalty = 0.3f,
+                repeatPenalty = 1.1f,
+                repeatLastN = 64,
+                seedPolicy = SeedPolicy.Fixed(17L),
+                thinkingMode = ThinkingMode.ENABLED,
+            ),
+            outputConstraint = OutputConstraint.Json,
+        )
+        val resolved = policy.resolveConfiguration(request, resolvedUseCase(outputMode = OutputMode.JSON))
+        val promptPlan = BackendPromptPlan(
+            prompt = "rendered chat",
+            tokenCount = 7,
+            chatTemplateId = "model-template",
+            chatTemplateSource = ChatTemplateSource.GGUF,
+            stopTokenIds = setOf(10, 11),
+            stopSequences = listOf("</s>"),
+        )
+        val ordinaryContextSize = 2_048
+        val batchSequenceContextSize = 1_024
+        val ordinaryMetadata = resolved.effectiveMetadata(promptPlan, ordinaryContextSize)
+        val batchMetadata = resolved.effectiveMetadata(promptPlan, batchSequenceContextSize)
+
+        assertEquals(
+            EffectiveGenerationMetadata(
+                preset = null,
+                temperature = 0.4f,
+                topP = 0.82f,
+                topK = 16,
+                minP = 0.07f,
+                presencePenalty = 0.3f,
+                repeatPenalty = 1.1f,
+                repeatLastN = 64,
+                requestedSeedPolicy = SeedPolicyType.FIXED,
+                effectiveSeed = 17L,
+                maxOutputTokens = 24,
+                contextSize = ordinaryContextSize,
+                promptTokenCount = 7,
+                chatTemplateId = "model-template",
+                chatTemplateSource = ChatTemplateSource.GGUF,
+                systemPromptVersion = "v1",
+                thinkingMode = ThinkingMode.ENABLED,
+            ),
+            ordinaryMetadata,
+        )
+        assertEquals(ordinaryMetadata.copy(contextSize = batchSequenceContextSize), batchMetadata)
+
+        val reasoningControl = BackendReasoningControl(
+            maxReasoningTokens = 8,
+            closeMarker = "</think>",
+            forcedCloseText = "</think>",
+        )
+        val ordinaryRequest = resolved.backendRequest(request, promptPlan, reasoningControl)
+        val batchRequest = resolved.backendRequest(request, promptPlan, null)
+        assertEquals(
+            BackendGenerationRequest(
+                requestId = request.requestId.value,
+                prompt = "rendered chat",
+                maxOutputTokens = 24,
+                temperature = 0.4f,
+                topP = 0.82f,
+                topK = 16,
+                minP = 0.07f,
+                presencePenalty = 0.3f,
+                repeatPenalty = 1.1f,
+                repeatLastN = 64,
+                seed = 17L,
+                outputConstraint = OutputConstraint.Json,
+                stopTokenIds = setOf(10, 11),
+                stopSequences = listOf("</s>"),
+                reasoningControl = reasoningControl,
+            ),
+            ordinaryRequest,
+        )
+        assertEquals(ordinaryRequest.copy(reasoningControl = null), batchRequest)
+        assertEquals(
+            SeedPolicyType.RANDOM,
+            policy.resolveConfiguration(request(), resolvedUseCase())
+                .effectiveMetadata(promptPlan, batchSequenceContextSize)
+                .requestedSeedPolicy,
+        )
     }
 
     private fun request(): GenerationRequest = GenerationRequest(
