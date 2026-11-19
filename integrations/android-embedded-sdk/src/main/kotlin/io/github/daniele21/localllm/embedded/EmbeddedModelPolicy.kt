@@ -2,6 +2,7 @@ package io.github.daniele21.localllm.embedded
 
 import io.github.daniele21.localllm.catalog.CatalogAvailability
 import io.github.daniele21.localllm.catalog.CuratedModelCatalog
+import io.github.daniele21.localllm.catalog.EmbeddedCatalogTargets
 import io.github.daniele21.localllm.contracts.ApplicationId
 import io.github.daniele21.localllm.contracts.UseCaseId
 import io.github.daniele21.localllm.models.AppModelBinding
@@ -30,6 +31,9 @@ internal object EmbeddedModelPolicy {
         val release = CuratedModelCatalog.releases.single { it.id.modelId.value == configuration.modelId }
         require(release.availability == CatalogAvailability.ACTIVE || release.availability == CatalogAvailability.CANDIDATE) {
             "Embedded model is unavailable"
+        }
+        require(EmbeddedCatalogTargets.LOCAL_TEXT_GENERATION in release.allowedTargets) {
+            "Model is not authorized for embedded inference"
         }
 
         val tuningProfile = Qwen35RuntimeTuningProfiles.candidateForTier(Qwen35ModelTier.B2)
