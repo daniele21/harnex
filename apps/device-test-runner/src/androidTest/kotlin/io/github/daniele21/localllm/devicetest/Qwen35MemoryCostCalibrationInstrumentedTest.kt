@@ -135,36 +135,7 @@ class Qwen35MemoryCostCalibrationInstrumentedTest {
             Thread.sleep(750)
             recorder.point("settled_after_unload")
 
-            val evidence = JSONObject()
-                .put("schemaVersion", 1)
-                .put("status", "CANDIDATE_UNREVIEWED")
-                .put("harnessCommit", required("harnessCommit"))
-                .put("backendId", backend.id)
-                .put("backendRevision", backend.revision)
-                .put("modelDigest", digest.sha256)
-                .put("tier", tier)
-                .put("runtimeProfileId", profile.id)
-                .put("runtimeProfileVersion", required("runtimeProfileVersion").toInt())
-                .put("deviceModel", Build.MODEL)
-                .put("deviceManufacturer", Build.MANUFACTURER)
-                .put("deviceBuildFingerprint", Build.FINGERPRINT)
-                .put("sdkInt", Build.VERSION.SDK_INT)
-                .put("abi", Build.SUPPORTED_ABIS.first())
-                .put("contextTokens", contextTokens)
-                .put("cpuThreads", cpuThreads)
-                .put("batchThreads", batchThreads)
-                .put("batchSize", profile.batchSize)
-                .put("microBatchSize", profile.microBatchSize)
-                .put("gpuLayers", profile.gpuLayers)
-                .put("useMmap", profile.useMmap)
-                .put("useMlock", profile.useMlock)
-                .put("flashAttention", profile.flashAttention)
-                .put("kvCacheTypeK", profile.kvCacheTypeK ?: "default")
-                .put("kvCacheTypeV", profile.kvCacheTypeV ?: "default")
-                .put("outputTokens", outputTokens)
-                .put("workload", "fixed-native-probe-v1")
-                .put("sampleIntervalMs", 200)
-                .put("phases", recorder.results())
+            val evidence = calibrationEvidence(args, tier, profile, backend, recorder)
             println("LOCAL_LLM_MEMORY_CALIBRATION_JSON " + evidence)
         } finally {
             nativeContext?.let { runCatching { backend.releaseContext(it) } }
@@ -172,6 +143,43 @@ class Qwen35MemoryCostCalibrationInstrumentedTest {
             if (initialized) runCatching(backend::shutdown)
         }
     }
+
+    private fun calibrationEvidence(
+        args: android.os.Bundle,
+        tier: String,
+        profile: GgufModelProfile,
+        backend: LlamaCppInferenceBackend,
+        recorder: NativeCostPhaseRecorder,
+    ) = JSONObject()
+        .put("schemaVersion", 1)
+        .put("status", "CANDIDATE_UNREVIEWED")
+        .put("harnessCommit", requireNotNull(args.getString("harnessCommit")))
+        .put("backendId", backend.id)
+        .put("backendRevision", backend.revision)
+        .put("modelDigest", profile.artifact.digest.sha256)
+        .put("tier", tier)
+        .put("runtimeProfileId", profile.id)
+        .put("runtimeProfileVersion", requireNotNull(args.getString("runtimeProfileVersion")).toInt())
+        .put("deviceModel", Build.MODEL)
+        .put("deviceManufacturer", Build.MANUFACTURER)
+        .put("deviceBuildFingerprint", Build.FINGERPRINT)
+        .put("sdkInt", Build.VERSION.SDK_INT)
+        .put("abi", Build.SUPPORTED_ABIS.first())
+        .put("contextTokens", profile.contextSize)
+        .put("cpuThreads", profile.cpuThreads)
+        .put("batchThreads", profile.batchThreads)
+        .put("batchSize", profile.batchSize)
+        .put("microBatchSize", profile.microBatchSize)
+        .put("gpuLayers", profile.gpuLayers)
+        .put("useMmap", profile.useMmap)
+        .put("useMlock", profile.useMlock)
+        .put("flashAttention", profile.flashAttention)
+        .put("kvCacheTypeK", profile.kvCacheTypeK ?: "default")
+        .put("kvCacheTypeV", profile.kvCacheTypeV ?: "default")
+        .put("outputTokens", requireNotNull(args.getString("outputTokens")).toInt())
+        .put("workload", "fixed-native-probe-v1")
+        .put("sampleIntervalMs", recorder.sampleIntervalMs)
+        .put("phases", recorder.results())
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")
@@ -191,6 +199,7 @@ private class NativeCostPhaseRecorder(context: Context) {
     private val activityManager = context.getSystemService(ActivityManager::class.java)
     private val powerManager = context.getSystemService(PowerManager::class.java)
     private val entries = JSONArray()
+    val sampleIntervalMs = 200L
 
     fun point(name: String) {
         val current = snapshot()
@@ -207,17 +216,18 @@ private class NativeCostPhaseRecorder(context: Context) {
         val watcher = thread(name = "native-cost-sampler", isDaemon = true) {
             while (running.get()) {
                 try {
-                    Thread.sleep(200)
-                    if (!running.get()) break
-                    val current = snapshot()
-                    peakPss = maxOf(peakPss, current.pssKb)
-                    minAvailable = listOfNotNull(minAvailable, current.availableBytes).minOrNull()
-                    sampleCount++
+                    Thread.sleep(sampleIntervalMs)
+                    if (running.get()) {
+                        val current = snapshot()
+                        peakPss = maxOf(peakPss, current.pssKb)
+                        minAvailable = listOfNotNull(minAvailable, current.availableBytes).minOrNull()
+                        sampleCount++
+                    }
                 } catch (_: InterruptedException) {
-                    break
+                    running.set(false)
                 } catch (error: Throwable) {
                     sampleFailure = error
-                    break
+                    running.set(false)
                 }
             }
         }
