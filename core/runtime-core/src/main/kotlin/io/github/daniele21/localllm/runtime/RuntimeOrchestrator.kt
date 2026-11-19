@@ -56,6 +56,7 @@ class RuntimeOrchestrator(
     private val memoryAwareContextPlanner: MemoryAwareContextPlanner? = null,
     private val memoryAwareModelLoadPlanner: MemoryAwareModelLoadPlanner? = null,
     private val memoryAwareEvaluationBatchContextPlanner: MemoryAwareEvaluationBatchContextPlanner? = null,
+    private val enforceMemoryAdmission: Boolean = true,
     seedSource: SeedSource = SeedSource { ThreadLocalRandom.current().nextLong(MAX_SEED_EXCLUSIVE) },
     telemetryRepository: TelemetryRepository = NoOpTelemetryRepository,
     epochClock: EpochClock = EpochClock { System.currentTimeMillis() },
@@ -844,26 +845,31 @@ class RuntimeOrchestrator(
             is MemoryAwareEvaluationBatchContextDecision.Allow -> {
                 runtimeTelemetry.memoryAdmission(
                     resource = MemoryAdmissionResource.CONTEXT,
+                    enforced = enforceMemoryAdmission,
                     outcome = if (decision.downshifted) MemoryAdmissionOutcome.DOWNSHIFT else MemoryAdmissionOutcome.ALLOW,
                     estimate = decision.estimate,
                     requestedContextTokens = requestedAggregate,
                     effectiveContextTokens = decision.aggregateContextTokens,
                 )
-                decision.perSequenceContextTokens
+                if (enforceMemoryAdmission) decision.perSequenceContextTokens else requestedPerSequence
             }
 
             is MemoryAwareEvaluationBatchContextDecision.Reject -> {
                 runtimeTelemetry.memoryAdmission(
                     resource = MemoryAdmissionResource.CONTEXT,
+                    enforced = enforceMemoryAdmission,
                     outcome = MemoryAdmissionOutcome.REJECT,
                     decisionReason = decision.reason.name,
                     admissionReason = decision.admissionReason,
                     requestedContextTokens = requestedAggregate,
                 )
-                throw GenerationPlanningException(
-                    ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
-                    evaluationBatchMemoryFailureMessage(requestedAggregate, decision),
-                )
+                if (enforceMemoryAdmission) {
+                    throw GenerationPlanningException(
+                        ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
+                        evaluationBatchMemoryFailureMessage(requestedAggregate, decision),
+                    )
+                }
+                requestedPerSequence
             }
         }
     }
@@ -973,26 +979,31 @@ class RuntimeOrchestrator(
             is MemoryAwareContextDecision.Allow -> {
                 runtimeTelemetry.memoryAdmission(
                     resource = MemoryAdmissionResource.CONTEXT,
+                    enforced = enforceMemoryAdmission,
                     outcome = if (decision.downshifted) MemoryAdmissionOutcome.DOWNSHIFT else MemoryAdmissionOutcome.ALLOW,
                     estimate = decision.estimate,
                     requestedContextTokens = contextPlan.requestedContextTokens,
                     effectiveContextTokens = decision.contextTokens,
                 )
-                decision.contextTokens
+                if (enforceMemoryAdmission) decision.contextTokens else contextPlan.requestedContextTokens
             }
 
             is MemoryAwareContextDecision.Reject -> {
                 runtimeTelemetry.memoryAdmission(
                     resource = MemoryAdmissionResource.CONTEXT,
+                    enforced = enforceMemoryAdmission,
                     outcome = MemoryAdmissionOutcome.REJECT,
                     decisionReason = decision.reason.name,
                     admissionReason = decision.admissionReason,
                     requestedContextTokens = contextPlan.requestedContextTokens,
                 )
-                throw GenerationPlanningException(
-                    ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
-                    memoryAdmissionFailureMessage(contextPlan, decision),
-                )
+                if (enforceMemoryAdmission) {
+                    throw GenerationPlanningException(
+                        ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
+                        memoryAdmissionFailureMessage(contextPlan, decision),
+                    )
+                }
+                contextPlan.requestedContextTokens
             }
         }
     }
@@ -1115,6 +1126,7 @@ class RuntimeOrchestrator(
         when (decision) {
             is MemoryAwareModelLoadDecision.Allow -> runtimeTelemetry.memoryAdmission(
                 resource = MemoryAdmissionResource.MODEL,
+                enforced = enforceMemoryAdmission,
                 outcome = MemoryAdmissionOutcome.ALLOW,
                 estimate = decision.estimate,
             )
@@ -1122,11 +1134,12 @@ class RuntimeOrchestrator(
             is MemoryAwareModelLoadDecision.Reject -> {
                 runtimeTelemetry.memoryAdmission(
                     resource = MemoryAdmissionResource.MODEL,
+                    enforced = enforceMemoryAdmission,
                     outcome = MemoryAdmissionOutcome.REJECT,
                     decisionReason = decision.reason.name,
                     admissionReason = decision.admissionReason,
                 )
-                throw ModelLoadMemoryAdmissionException(resolved.model.id, decision)
+                if (enforceMemoryAdmission) throw ModelLoadMemoryAdmissionException(resolved.model.id, decision)
             }
         }
     }
