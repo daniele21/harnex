@@ -6,7 +6,7 @@ Owner: runtime-core / llama-cpp backend (coordination; no duplicate implementati
 Canonical scope: workstream.simplicity-first-runtime
 Read when: choosing the next evidence-backed simplification of the Harnex runtime
 Last reviewed: 2026-11-19
-Source checkpoint: `dev@07941016c3523b0047d91b7b855101cf846d83d9`
+Source checkpoint: `dev@ed7aa3034338c65fbf815c7fd86116399bd61191`
 
 ## Product intent and decision
 
@@ -50,7 +50,7 @@ Source checkpoint: `dev@07941016c3523b0047d91b7b855101cf846d83d9`
 | SIMP-25 | DONE | Consolidate `executeEvaluationBatch` duplicated failure cleanup; PR #591 | Exact-head Android STRONG and regression tests passed; merged in `dev@dfa1675` |
 | SIMP-26 | DONE | Preserve truthful `DEGRADED` on batch context release failure; PR #592 | Exact-head Android STRONG, two worker-idle regression tests, Repository validation and merge to `dev@48ea57d`; physical native qualification remains separate |
 | SIMP-27 | DONE | PR #594 split ordinary generation into in-class preparation, streaming, terminal projection and one typed failure path; no new resource owner or public API | Exact-head integration Android STRONG, runtime tests, direct consumer compilation, Spotless/Detekt and Repository validation passed; merged to `dev@d5fb979`. Physical ARM64/GGUF evidence is not claimed |
-| SIMP-28 | IN REVIEW | Reuse the two deterministic resolved-configuration projections for ordinary generation and batch on existing `ResolvedRequestConfiguration`, returned by `GenerationPlanningPolicy`, without combining lifecycle/streaming ownership | Full-field metadata and backend request parity (including actual per-sequence context size, stop policy, sampling, seed and opt-in reasoning control); exact-head Android STRONG and direct consumer compilation before integration |
+| SIMP-28 | DONE | PR #596 now shares the two immutable generation projections through `ResolvedRequestConfiguration` for ordinary generation and batch, preserving distinct lifecycle and cancellation semantics | Exact-head integration Android STRONG, direct consumers, regression tests and Repository validation PASS; merged in `dev@ed7aa303`. No public contract/JNI change or physical Android claim |
 | SIMP-30 | BLOCKED | `backends/llama-cpp` JNI protocol cost investigation; independent of SIMP-20, after SIMP-00 | KEEP or one evidence-backed minimal edit with native/ARM64 packaging and device check |
 
 - **Parallel owners:** CIH handles SDK, MEM/Q35 handles physical qualification, LLUP handles upstream pin. SIMP-20 and SIMP-30 may progress in parallel only without shared JNI/Kotlin protocol or public contract changes. PR #577 is integrated and supersedes closed #562; preserve the canonical Hello Harnex sample.
@@ -73,6 +73,6 @@ Source checkpoint: `dev@07941016c3523b0047d91b7b855101cf846d83d9`
 
 ## Resume checkpoint
 
-- Base at audit: `dev@b5def37`; SIMP-25 and SIMP-26 are integrated through `dev@3fb6043` (including PR #593 documentation). SIMP-27 is integrated through PR #594 (`dev@d5fb979`) with exact-head integration STRONG and Repository validation. Refresh live base, PRs and selectors before the next change.
+- Base at audit: `dev@b5def37`; SIMP-25 and SIMP-26 are integrated through `dev@3fb6043` (including PR #593 documentation). SIMP-27 is integrated through PR #594 (`dev@d5fb979`) with exact-head integration STRONG and Repository validation. Refresh live base, PRs and selectors before the next change. SIMP-28 is now integrated through PR #596 (`dev@ed7aa303`), with one canonical configuration projection and no new orchestration manager.
 - PR #584 integrated the terminal-once simplification into `dev` as `dfaccd3` after STRONG automated validation; PR #577 integrated the generic-text onboarding as `52b9cf4`. PR #578 Binder invalidation was integrated in `dev` as `c2ab02d` after STRONG Android and external Consumer validation.
 - Production pin remains `b9637`; v1.0.0 is an unqualified candidate. No generic import/embedded SDK/public convenience API has been implemented by SIMP.
