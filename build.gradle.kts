@@ -23,6 +23,85 @@ allprojects {
     }
 }
 
+/**
+ * A second, explicit distribution mode for the existing production Android modules.
+ * Use normal transitive Maven metadata instead of a fat AAR or copying native sources.
+ * Keep the existing Consumer SDK publication and Binder dependencies unchanged.
+ */
+val embeddedPublishingModules =
+    setOf(
+        ":core:backend-spi",
+        ":core:runtime-core",
+        ":models:model-profile",
+        ":models:model-store",
+        ":models:model-catalog",
+        ":models:model-download",
+        ":models:model-install",
+        ":backends:llama-cpp",
+        ":observability:contracts",
+        ":transports:in-process",
+        ":integrations:android-embedded-sdk",
+    )
+val embeddedSdkVersion =
+    providers.gradleProperty("embeddedSdkVersion")
+        .orElse(providers.gradleProperty("consumerSdkVersion"))
+        .orElse("0.1.0-SNAPSHOT")
+
+subprojects {
+    if (path in embeddedPublishingModules) {
+        group = "io.github.daniele21.localllm"
+        version = embeddedSdkVersion.get()
+        plugins.withId("com.android.library") {
+            // Existing Consumer artifacts apply Android before maven-publish.
+            // Preserve that plugin ordering for the new publication graph.
+            pluginManager.apply("maven-publish")
+            extensions.configure<com.android.build.api.dsl.LibraryExtension> {
+                publishing {
+                    singleVariant("release") {
+                        withSourcesJar()
+                    }
+                }
+            }
+            extensions.configure<org.gradle.api.publish.PublishingExtension> {
+                repositories {
+                    maven {
+                        name = "embeddedSdk"
+                        url = uri(rootProject.layout.buildDirectory.dir("embedded-sdk-repository"))
+                    }
+                }
+                publications {
+                    register<org.gradle.api.publish.maven.MavenPublication>("embeddedRelease") {
+                        groupId = project.group.toString()
+                        artifactId =
+                            when (project.path) {
+                                ":integrations:android-embedded-sdk" -> "embedded-android"
+                                ":observability:contracts" -> "observability-contracts"
+                                else -> project.name
+                            }
+                        version = project.version.toString()
+                        afterEvaluate { from(components["release"]) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// core-contracts already has a Consumer publication. Reuse it with the same version
+// in the embedded staging repository rather than publishing duplicate coordinates.
+project(":core:contracts") {
+    plugins.withId("maven-publish") {
+        extensions.configure<org.gradle.api.publish.PublishingExtension> {
+            repositories {
+                maven {
+                    name = "embeddedSdk"
+                    url = uri(rootProject.layout.buildDirectory.dir("embedded-sdk-repository"))
+                }
+            }
+        }
+    }
+}
+
 configure<SpotlessExtension> {
     kotlin {
         target("**/*.kt")

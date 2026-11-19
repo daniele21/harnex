@@ -143,6 +143,7 @@ internal object Qwen35CuratedModelReleases {
             "local-assistant",
             "local-rag",
         ),
+        allowEmbeddedLocalTextGeneration = true,
     )
 
     private fun qwenThreePointFiveTwoBQFiveKM(): CatalogModelRelease = CuratedModelReleaseFactory.release(

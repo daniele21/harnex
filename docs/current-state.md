@@ -5,7 +5,7 @@ Document type: current-state
 Owner: repository
 Canonical scope: state.repository
 Read when: determining the integrated baseline, open blockers or next repository work block
-Last reviewed: 2026-09-09
+Last reviewed: 2026-11-19
 
 This is the operational ledger for integrated state, blockers and immediate work. Capability history belongs in [`roadmap.md`](roadmap.md); milestone detail stays in focused workstreams.
 
@@ -41,6 +41,12 @@ That Play run observed the **same Play App Signing SHA-256 digest for Harnex and
 ### Consumer API, OMBRA, evaluation and audit
 
 CA-0..4 are integrated; concrete model/runtime/residency authority stays in Harnex. OMB-6B identity approval, OMB-8 measured quality execution and physical evidence remain open. Model-evaluation work is integrated through EVAL-D-09. Local inference Activity/audit is integrated under ADR 0017 with bounded encrypted app-private history and verified Binder caller attribution; normal telemetry stays content-free.
+
+## Embedded SDK commercial-app enablement (plan only)
+
+The [embedded Android SDK workstream](workstreams/embedded-android-sdk.md) prepares a **separately distributable, single-APK local inference path** for independent commercial Android apps. ADR 0010, `transports/in-process`, `RuntimeOrchestrator`, `apps/device-test-runner` and verified model lifecycle modules are reusable foundations; the published SDK today remains the **Shared Host/Binder Consumer SDK**, not a tested embedded Maven artifact.
+
+No embedded SDK artifact, standalone external embedded-app E2E or physical commercial-app qualification is claimed. The next step is **EMB-00**, to freeze the narrow embedded API/composition and audit/model-readiness boundaries before packaging and independent-consumer proof. App-owned conversation storage, history selection and chat UI are explicitly outside Harnex.
 
 ## Release evidence state
 
