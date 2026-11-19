@@ -6,7 +6,7 @@ Owner: runtime-core / llama-cpp backend (coordination; no duplicate implementati
 Canonical scope: workstream.simplicity-first-runtime
 Read when: choosing the next evidence-backed simplification of the Harnex runtime
 Last reviewed: 2026-11-19
-Source checkpoint: `dev@7057690134260a59de9b74e38e058a582eff01f3`
+Source checkpoint: `dev@c2c37c31ba274fcc34b1b25f63cbd09e065c6505`
 
 ## Goal and boundaries
 
@@ -41,7 +41,7 @@ Source checkpoint: `dev@7057690134260a59de9b74e38e058a582eff01f3`
 | SIMP-26 | DONE | Batch native release failure preserves `DEGRADED`, PR #592, `dev@48ea57d`; no automatic recovery policy |
 | SIMP-27 | DONE | Ordinary preparation/streaming/finalization readable within one owner, PR #594, `dev@d5fb979` |
 | SIMP-28 | DONE | Shared immutable metadata/backend request projections; separate batch/ordinary lifecycle, PR #596, `dev@ed7aa303` |
-| SIMP-29 | IN REVIEW | Audit and truthful health on failed deferred ordinary-session release, PR #598; exact-head integration STRONG pending |
+| SIMP-29 | DONE | Residual complexity audit and shared worker-state finalization preserve truthful `DEGRADED` after failed deferred session release; PR #598 merged `dev@c2c37c31` with Android integration STRONG, Repository validation and regression PASS |
 | SIMP-30 | BLOCKED | JNI protocol investigation: KEEP until measurable justification and native/device evidence |
 
 ## SIMP-29 — residual-complexity audit and change
@@ -49,7 +49,7 @@ Source checkpoint: `dev@7057690134260a59de9b74e38e058a582eff01f3`
 Source: `dev@70576901`, `RuntimeOrchestrator.kt` 1,404 lines. Source-line spans (not formal cyclomatic complexity): `executeEvaluationBatch` 115; `generateEvaluationBatch` 89; `streamGeneration` 84; `prepareGeneration` 57; `prepareEvaluationBatchCase` 44.
 
 - **KEEP separate:** batch owns its dedicated native context, per-case cancellation/attribution and disabled thinking; ordinary generation owns streaming, guard stops and explicit cancellation barriers. Consolidating the similar prompt/context planning blocks would add callback/checkpoint complexity without a proven maintenance benefit.
-- **Smallest proven change:** the two worker `finally` blocks repeated deferred-unload/READY/DEGRADED state logic. When a deferred `releaseSession` failed during an ordinary terminal, it marked `DEGRADED` and then the ordinary `finally` overwrote it with `READY`. One in-class finalization helper now respects an existing `DEGRADED` state; batch retains its release-failure precedence.
+- **Smallest proven change:** the two worker `finally` blocks repeated deferred-unload/READY/DEGRADED state logic. When a deferred `releaseSession` failed during an ordinary terminal, it marked `DEGRADED` and then the ordinary `finally` overwrote it with `READY`. One in-class finalization helper now respects an existing `DEGRADED` state; batch retains its release-failure precedence. Verified in PR #598 with exact-head Android STRONG and consumer compilation.
 - **Regression:** after the decode worker is idle, failed ordinary native context release remains `DEGRADED`, produces one terminal, attempts release once and allows a later explicit session-close retry. Existing batch cleanup, guard, queue/cancel, streaming and memory tests must remain green.
 - **Limit:** truthful health reporting is **not** recovery. A later independent prepare/retry and physical native qualifications are separate policy/evidence questions. Do not start further refactors merely to lower LOC.
 
