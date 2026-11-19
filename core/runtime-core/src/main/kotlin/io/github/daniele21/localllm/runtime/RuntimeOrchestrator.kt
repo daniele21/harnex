@@ -682,44 +682,19 @@ class RuntimeOrchestrator(
                 }
             }
             lifecycle.finish(listener, RuntimeEvaluationBatchOutcome.Completed(results))
-        } catch (_: GenerationCancelledException) {
-            context?.let { activeContext ->
-                context = null
-                runCatching { releaseEvaluationBatchContext(batchBackend, activeContext) }
-                    .onFailure { state.set(RuntimeState.DEGRADED) }
-            }
-            failEvaluationBatch(bindings, lifecycle, listener, LocalLlmError.Cancelled())
-        } catch (error: GenerationPlanningException) {
-            context?.let { activeContext ->
-                context = null
-                runCatching { releaseEvaluationBatchContext(batchBackend, activeContext) }
-                    .onFailure { state.set(RuntimeState.DEGRADED) }
-            }
-            failEvaluationBatch(
-                bindings,
-                lifecycle,
-                listener,
-                LocalLlmError.Configuration(error.message.orEmpty(), error.reason),
-            )
-        } catch (error: BackendException) {
-            context?.let { activeContext ->
-                context = null
-                runCatching { releaseEvaluationBatchContext(batchBackend, activeContext) }
-                    .onFailure { state.set(RuntimeState.DEGRADED) }
-            }
-            failEvaluationBatch(bindings, lifecycle, listener, error.toPublicError())
         } catch (error: Throwable) {
             context?.let { activeContext ->
                 context = null
                 runCatching { releaseEvaluationBatchContext(batchBackend, activeContext) }
                     .onFailure { state.set(RuntimeState.DEGRADED) }
             }
-            failEvaluationBatch(
-                bindings,
-                lifecycle,
-                listener,
-                LocalLlmError.NativeRuntime(error.message ?: "Unexpected evaluation batch failure"),
-            )
+            val failure = when (error) {
+                is GenerationCancelledException -> LocalLlmError.Cancelled()
+                is GenerationPlanningException -> LocalLlmError.Configuration(error.message.orEmpty(), error.reason)
+                is BackendException -> error.toPublicError()
+                else -> LocalLlmError.NativeRuntime(error.message ?: "Unexpected evaluation batch failure")
+            }
+            failEvaluationBatch(bindings, lifecycle, listener, failure)
         } finally {
             val unloaded = attemptDeferredModelUnload(ignoreActiveGeneration = true)
             if (!closed.get() && !unloaded) {
