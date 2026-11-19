@@ -20,7 +20,11 @@ fun interface EpochClock {
 }
 
 @Suppress("TooManyFunctions")
-internal class RuntimeTelemetry(private val repository: TelemetryRepository, private val clock: EpochClock) {
+internal class RuntimeTelemetry(
+    private val repository: TelemetryRepository,
+    private val clock: EpochClock,
+    private val enforceMemoryAdmission: Boolean = true,
+) {
     private val activeRuns = ConcurrentHashMap<RequestId, GenerationRunRecord>()
 
     fun queued(request: GenerationRequest, modelDigest: ModelDigest) {
@@ -153,12 +157,13 @@ internal class RuntimeTelemetry(private val repository: TelemetryRepository, pri
         effectiveContextTokens: Int? = null,
     ) {
         log(
-            level = if (outcome == MemoryAdmissionOutcome.REJECT) LogLevel.WARN else LogLevel.INFO,
-            event = "memory.admission",
+            level = if (enforceMemoryAdmission && outcome == MemoryAdmissionOutcome.REJECT) LogLevel.WARN else LogLevel.INFO,
+            event = if (enforceMemoryAdmission) "memory.admission" else "memory.admission.shadow",
             requestId = null,
             fields = buildMap {
                 put("resource", resource.name)
                 put("outcome", outcome.name)
+                if (!enforceMemoryAdmission) put("enforced", "false")
                 decisionReason?.let { put("decisionReason", it) }
                 admissionReason?.let { put("admissionReason", it.name) }
                 estimate?.let {

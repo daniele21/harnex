@@ -56,6 +56,7 @@ class RuntimeOrchestrator(
     private val memoryAwareContextPlanner: MemoryAwareContextPlanner? = null,
     private val memoryAwareModelLoadPlanner: MemoryAwareModelLoadPlanner? = null,
     private val memoryAwareEvaluationBatchContextPlanner: MemoryAwareEvaluationBatchContextPlanner? = null,
+    private val enforceMemoryAdmission: Boolean = true,
     seedSource: SeedSource = SeedSource { ThreadLocalRandom.current().nextLong(MAX_SEED_EXCLUSIVE) },
     telemetryRepository: TelemetryRepository = NoOpTelemetryRepository,
     epochClock: EpochClock = EpochClock { System.currentTimeMillis() },
@@ -68,7 +69,7 @@ class RuntimeOrchestrator(
     private val sessions = ConcurrentHashMap<SessionId, SessionDescriptor>()
     private val closed = AtomicBoolean(false)
     private val deferredModelUnload = AtomicBoolean(false)
-    private val runtimeTelemetry = RuntimeTelemetry(telemetryRepository, epochClock)
+    private val runtimeTelemetry = RuntimeTelemetry(telemetryRepository, epochClock, enforceMemoryAdmission)
     private val generationPlanning = GenerationPlanningPolicy(seedSource)
     private val modelResidency = ModelResidencyLifecycle()
 
@@ -849,7 +850,7 @@ class RuntimeOrchestrator(
                     requestedContextTokens = requestedAggregate,
                     effectiveContextTokens = decision.aggregateContextTokens,
                 )
-                decision.perSequenceContextTokens
+                if (enforceMemoryAdmission) decision.perSequenceContextTokens else requestedPerSequence
             }
 
             is MemoryAwareEvaluationBatchContextDecision.Reject -> {
@@ -860,10 +861,13 @@ class RuntimeOrchestrator(
                     admissionReason = decision.admissionReason,
                     requestedContextTokens = requestedAggregate,
                 )
-                throw GenerationPlanningException(
-                    ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
-                    evaluationBatchMemoryFailureMessage(requestedAggregate, decision),
-                )
+                if (enforceMemoryAdmission) {
+                    throw GenerationPlanningException(
+                        ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
+                        evaluationBatchMemoryFailureMessage(requestedAggregate, decision),
+                    )
+                }
+                requestedPerSequence
             }
         }
     }
@@ -978,7 +982,7 @@ class RuntimeOrchestrator(
                     requestedContextTokens = contextPlan.requestedContextTokens,
                     effectiveContextTokens = decision.contextTokens,
                 )
-                decision.contextTokens
+                if (enforceMemoryAdmission) decision.contextTokens else contextPlan.requestedContextTokens
             }
 
             is MemoryAwareContextDecision.Reject -> {
@@ -989,10 +993,13 @@ class RuntimeOrchestrator(
                     admissionReason = decision.admissionReason,
                     requestedContextTokens = contextPlan.requestedContextTokens,
                 )
-                throw GenerationPlanningException(
-                    ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
-                    memoryAdmissionFailureMessage(contextPlan, decision),
-                )
+                if (enforceMemoryAdmission) {
+                    throw GenerationPlanningException(
+                        ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
+                        memoryAdmissionFailureMessage(contextPlan, decision),
+                    )
+                }
+                contextPlan.requestedContextTokens
             }
         }
     }
@@ -1126,7 +1133,7 @@ class RuntimeOrchestrator(
                     decisionReason = decision.reason.name,
                     admissionReason = decision.admissionReason,
                 )
-                throw ModelLoadMemoryAdmissionException(resolved.model.id, decision)
+                if (enforceMemoryAdmission) throw ModelLoadMemoryAdmissionException(resolved.model.id, decision)
             }
         }
     }

@@ -22,6 +22,7 @@ import io.github.daniele21.localllm.models.OutputMode
 import io.github.daniele21.localllm.models.ResolvedUseCase
 import io.github.daniele21.localllm.models.UseCaseCachePolicy
 import io.github.daniele21.localllm.models.UseCaseProfile
+import io.github.daniele21.localllm.observability.store.InMemoryTelemetryRepository
 import io.github.daniele21.localllm.store.ModelStore
 import io.github.daniele21.localllm.store.ModelStoreSnapshot
 import io.github.daniele21.localllm.store.StoredModel
@@ -37,6 +38,56 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class RuntimeMemoryAdmissionIntegrationTest {
+    @Test
+    fun `shadow model cost missing does not stop cold preparation`() {
+        val observations = AtomicInteger(0)
+        val fixture = MemoryAdmissionRuntimeFixture(
+            shadowAdmission = true,
+            modelLoadPlanner = MemoryAwareModelLoadPlanner(
+                observationSource = RuntimeMemoryObservationSource {
+                    observations.incrementAndGet()
+                    RuntimeMemoryObservation(availableMemoryBytes = 8_192L)
+                },
+                costEstimator = ModelMemoryCostEstimator { null },
+                admissionController = admissionController(),
+            ),
+        )
+
+        assertTrue(fixture.runtime.prepare(fixture.applicationId, fixture.useCaseId).ready)
+        assertEquals(1, fixture.backend.loadCalls)
+        assertEquals(1, observations.get())
+        val log = fixture.telemetry.recentLogs().single { it.event == "memory.admission.shadow" }
+        assertEquals("MODEL", log.fields["resource"])
+        assertEquals("REJECT", log.fields["outcome"])
+        assertEquals("false", log.fields["enforced"])
+        assertEquals("MEMORY_COST_ESTIMATE_UNAVAILABLE", log.fields["decisionReason"])
+        fixture.close()
+    }
+
+    @Test
+    fun `shadow context budget rejection does not change native allocation or terminal`() {
+        val fixture = MemoryAdmissionRuntimeFixture(
+            shadowAdmission = true,
+            planner = memoryPlanner(
+                observationSource = RuntimeMemoryObservationSource {
+                    RuntimeMemoryObservation(availableMemoryBytes = 256, lowMemory = false)
+                },
+                peakBytes = 1_024,
+            ),
+        )
+        val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)
+
+        assertTrue(fixture.generateAndAwait("shadow-context", session) is GenerationEvent.Completed)
+        assertEquals(1, fixture.backend.createContextCalls)
+        assertEquals(1, fixture.backend.generateCalls)
+        val log = fixture.telemetry.recentLogs().single { it.event == "memory.admission.shadow" }
+        assertEquals("CONTEXT", log.fields["resource"])
+        assertEquals("false", log.fields["enforced"])
+        assertEquals("MEMORY_BUDGET_REJECTED", log.fields["decisionReason"])
+        assertEquals(MemoryAdmissionRejectReason.AVAILABLE_MEMORY_FLOOR.name, log.fields["admissionReason"])
+        fixture.close()
+    }
+
     @Test
     fun `memory rejection fails before native context creation`() {
         val fixture = MemoryAdmissionRuntimeFixture(
@@ -182,6 +233,7 @@ class RuntimeMemoryAdmissionIntegrationTest {
 private class MemoryAdmissionRuntimeFixture(
     planner: MemoryAwareContextPlanner? = null,
     modelLoadPlanner: MemoryAwareModelLoadPlanner? = null,
+    shadowAdmission: Boolean = false,
 ) {
     val applicationId = ApplicationId("memory-app")
     val useCaseId = UseCaseId("memory-use-case")
@@ -191,6 +243,7 @@ private class MemoryAdmissionRuntimeFixture(
         deleteOnExit()
     }
     val backend = DeterministicFakeInferenceBackend()
+    val telemetry = InMemoryTelemetryRepository()
     private val resolved = resolvedUseCase()
     private val registry = object : ModelProfileRegistry {
         override fun resolve(applicationId: ApplicationId, useCaseId: UseCaseId): ResolvedUseCase = resolved
@@ -201,6 +254,8 @@ private class MemoryAdmissionRuntimeFixture(
         backend = backend,
         memoryAwareContextPlanner = planner,
         memoryAwareModelLoadPlanner = modelLoadPlanner,
+        enforceMemoryAdmission = !shadowAdmission,
+        telemetryRepository = telemetry,
     )
 
     fun request(id: String, sessionId: SessionId): GenerationRequest = GenerationRequest(

@@ -50,6 +50,14 @@ No numeric production `MEASURED` profiles are committed yet. Qwen3.5 recurrent/l
 
 The phone-test composition adapts the canonical Android `ResourceSnapshotProvider` into `RuntimeMemoryObservation` without reversing module dependencies.
 
+### MEM-A — shadow admission (integration, not calibration)
+
+The primary `HarnessRuntimeGraph` now wires **all three existing planners** (cold model, ordinary context, aggregate evaluation batch) using a fresh Android resource snapshot at each new allocation boundary. Snapshots are retained through the existing bounded telemetry repository, without prompt/output content. The testable `RuntimeOrchestrator` option `enforceMemoryAdmission = false` records `memory.admission.shadow` decisions but never rejects, downshifts, or claims an allocation was approved. The previous default remains enforcing when a caller explicitly supplies planners.
+
+**No production cost profiles are supplied in this shadow composition.** Missing estimates are recorded as `MEMORY_COST_ESTIMATE_UNAVAILABLE`; the shadow-only controller has zero numeric budget floors and **must not be reused for enforcement**. Shadow telemetry is evidence of attempted assessment, not certified headroom and not a `MEASURED` cost profile. Snapshot capture or persistence failure must not stop inference in observation mode. Existing Android low-memory callbacks, one-model residency, warm-idle TTL and bounded work remain authoritative.
+
+Before any enforcing Android policy, publish reviewed model-load/context peak-cost profiles that distinguish exact model artifact, backend revision, runtime tuning identity and device class as applicable (including batch/ubatch, flash attention and other material memory knobs). Calibrate safety floors/reserve, ensure the profile registry rejects incompatible identities, then enable real admission only for qualified combinations. Do not silently enforce with the shadow placeholders.
+
 Warm shared-runtime residency is bounded by policy:
 
 - Binder disconnect is only a demand-absent signal;
