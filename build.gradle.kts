@@ -70,7 +70,7 @@ subprojects {
                 publications {
                     register<org.gradle.api.publish.maven.MavenPublication>("embeddedRelease") {
                         groupId = project.group.toString()
-                        artifactId = project.name
+                        artifactId = if (project.path == ":integrations:android-embedded-sdk") "embedded-android" else project.name
                         version = project.version.toString()
                         afterEvaluate { from(components["release"]) }
                     }
