@@ -9,15 +9,15 @@ Last reviewed: 2026-11-19
 
 ## Product intent and decision
 
-- **Depth:** PRODUCT_STRATEGIC. This makes an embedded, single-app distribution mode a supported public product path alongside, not instead of, Shared Host + Binder Consumer.
-- **Consumer / problem:** a commercial Android application must ship one APK and run local inference without requiring its customer to install, authorize or operate a separate Harnex Host. Its developers must not assemble GGUF/JNI/runtime internals.
-- **Outcome:** one versioned Gradle dependency lets an independent Android project install/verify a reviewed local model, perform bounded text/message inference with streaming and cancellation, and cleanly release runtime resources.
-- **Decision:** BUILD the smallest public embedded adapter over existing runtime/model/backend owners. Keep Shared Host/Binder behavior unchanged. ADR 0010 already establishes the embedded/in-process path; decide any further irreversible public API or security boundary change in its canonical owner before implementing.
+- **Depth:** PRODUCT_STRATEGIC; embedded single-app distribution complements Shared Host/Binder.
+- **Problem:** a commercial Android app needs local inference in one APK without a separately operated Host or native GGUF/JNI assembly.
+- **Outcome:** one versioned Gradle dependency for verified model provisioning, bounded inference, streaming, cancellation and cleanup.
+- **Decision:** BUILD a minimal embedded adapter over existing runtime/model/backend owners; preserve Shared Host. ADR 0010 already accepts embedded/in-process deployment.
 - **Non-goals:** chat history, conversation database, turns/truncation/memory policy, chat titles, consumer UX, app identity authorization via Binder, cloud inference/fallback, arbitrary GGUF import, another orchestrator, or a fat APK containing a large model by default.
 
-**Product ownership:** the independent app owns the conversation and chooses the bounded USER/ASSISTANT messages for each turn; Harnex owns chat-template rendering, exact model/profile policy, native session/context, streaming, cancellation, resource and verified-model lifecycle. Use **stateless explicit message input per request** for the first consumer proof; never treat a native session/KV cache as the conversation's source of truth. App-owned instructions must enter through a documented bounded request/configuration policy, not a Harnex chat manager.
+**Ownership:** the app selects USER/ASSISTANT history each turn; Harnex renders model templates and owns native inference/model lifecycle. First proof uses **stateless explicit Messages per request**, not KV/session state as conversation truth. App instructions use bounded configuration/request policy, never a Harnex chat manager.
 
-**Trust/privacy:** an embedded instance runs inside the commercial app's Android UID/private sandbox; Binder UID/package/signer approval is **specific to the separate Host mode**, not an embedded startup requirement. Preserve content-free normal logs/telemetry and no cloud fallback. Determine an explicit embedded audit persistence default, retention and consent boundary before release: Host Activity's encrypted content store must not be silently copied into an embedded consumer.
+**Trust/privacy:** embedded runs in the consumer app's sandbox; Binder signer approval applies only to Shared Host. No cloud fallback or content in normal logs. Decide embedded audit opt-in/retention; do not silently copy Host Activity persistence.
 
 ## Material risks / assumptions
 
@@ -28,24 +28,24 @@ Last reviewed: 2026-11-19
 | FEASIBILITY | HIGH | Native/transitive AAR packaging, ABI, model install, app process lifecycle and real device memory; prove one external packaged artifact end to end |
 | VIABILITY | MEDIUM | Public SDK ABI/versioning, Maven dependency graph, supported-model download/license/storage and maintenance cost; audit publication and clean-room consumption |
 
-- **A1 — artifact closure:** the runtime, JNI and their transitive Android libraries can be consumed through a single published Gradle coordinate. **Unproven for an external embedded app.** Check clean standalone compile, release shrink and packaged `arm64-v8a` libraries.
-- **A2 — external composition:** Host-only policy/state can be excluded from embedded initialization without copying runtime ownership. **Partially supported** by `transports/in-process`, `docs/api-usage.md` and `apps/device-test-runner`; verify genuine independent run.
-- **A3 — message semantics:** `GenerationInput.Messages` is suitable for explicitly supplied bounded multi-turn input with model-native template rendering. **Core support exists; external end-to-end correctness is unproven.** Test 3+ successive message-list requests with no leaked hidden state.
-- **A4 — model bootstrap:** reviewed catalog -> secure verified download -> installer -> store can be composed in an independent app while retaining fail-closed policy. **Modules exist; packaged external lifecycle is unproven.** Test absent/interrupted/invalid/installed transitions.
-- **A5 — hardware envelope:** representative commercial Android devices can execute the chosen supported model within memory/thermal constraints. **Not established by an emulator.** Capture exact-artifact ARM64/GGUF/lifecycle evidence.
+- **A1:** one Maven coordinate resolves runtime/JNI/transitive dependencies. **Unproven externally.** Check standalone release compile, shrink and ARM64 JNI.
+- **A2:** exclude Host-only policy without duplicated runtime. **Partially supported** by in-process/device runner; prove externally.
+- **A3:** `GenerationInput.Messages` correctly renders bounded multi-turn input. **Core exists, external proof missing.** Test repeated requests without hidden history.
+- **A4:** catalog -> verified download -> install -> store composes externally. **Modules exist, integration unproven.** Test missing/interrupted/corrupt/ready.
+- **A5:** supported model operates on representative phones within memory/thermal budgets. **Emulator insufficient.** Capture physical evidence.
 
 ## Canonical owner boundaries
 
 | Work | Canonical owner / reuse |
 | --- | --- |
-| App-visible embedded facade and Android composition | a small dedicated embedded integration/publishing module only where proven necessary; delegate to `LocalLlmClient` / `InProcessLocalLlmClient` |
+| Embedded API/composition | minimal module if necessary; delegate to `LocalLlmClient` / `InProcessLocalLlmClient` |
 | Generation inputs, events, limits, typed errors | `core/contracts` and direct runtime clients; extend only when existing contracts cannot express the agreed behavior |
 | Scheduling, context planning, session lifetime, failure/cancel | `core/runtime-core` — **no second runtime owner** |
 | GGUF/JNI/native binaries | `backends/llama-cpp`, backend SPI and existing packaging guards |
 | Curated model availability, verified download/install/store | `models/model-catalog`, `model-download`, `model-install`, `model-store` and reviewed profiles |
 | Embedded audit/log/diagnostic policy | existing observability contracts and optional adapters; do not silently persist application conversation content |
-| External clean-room proof | new standalone `samples/external-embedded-android` using published Maven artifacts only |
-| Chat turns, history, persistence, UX and business logic | **future commercial-app repository, never Harnex** |
+| External proof | standalone `samples/external-embedded-android` consuming Maven only |
+| Chat/history/UX/business | **commercial-app repository only** |
 
 ## Work graph (state is planning, not implementation proof)
 
@@ -74,14 +74,14 @@ Passing this gate authorizes **integration work on a new app**, not a claim that
 
 ## Validation, execution and delivery
 
-- **PRODUCT:** PRODUCT_STRATEGIC; **DELIVERY:** ITERATION per slice, INTEGRATION for a candidate into `dev`, RELEASE only for SDK promotion; **VALIDATION:** STRONG for public contracts/Android/JNI/model lifecycle, repository selector can raise to FULL for build/publishing/toolchain or release; **EXECUTION:** REMOTE_AUTOMATED for Android/Gradle/fixtures when no equivalent local SDK, REAL_ENVIRONMENT for physical GGUF/memory/thermal/device proofs.
+- **Axes:** PRODUCT_STRATEGIC; ITERATION -> INTEGRATION (`dev`) -> RELEASE (SDK promotion); STRONG for public/Android/JNI contracts, FULL where selected for build/release; REMOTE_AUTOMATED for missing Android tooling and REAL_ENVIRONMENT for physical ARM64/GGUF/memory/thermal evidence.
 - Baseline: use `.engineering/commands.json`, `python3 scripts/detect_ci_scope.py`, existing consumer publication/ABI patterns, model/native scoped AGENTS and available CI/self-hosted runner. No claim of PASS from document changes alone.
 - Parallel writes after EMB-00: **publishing/Gradle** (EMB-10), **runtime facade** (EMB-20), **model bootstrap** (EMB-30). Converge once on EMB-40; do not merge prematurely or overlap public contract owners.
-- On implementation update `docs/architecture.md` only for changed ownership/deployment, `docs/api-usage.md` and new permanent embedded integration guide for truthful API usage, `docs/product.md` for durable positioning, `docs/current-state.md` for observed integration/blockers. Review ADR 0010 before any architecture divergence. Keep Host/Binder existing SDK tests green.
+- Update relevant canonical architecture/API/integration docs and current-state as implemented; review ADR 0010 for changed decisions. Keep Host/Binder regressions green.
 - **Post-release learning:** can a new independent Android developer integrate a real local generation without reading native internals or seeking Harnex Host setup instructions? Observe setup friction with the first consumer app; no prompt/content telemetry.
 
 ## Resume checkpoint
 
-Baseline inspected: `dev@33e76c321bc6cf08046c8ab2e099e2007eb9cc5e`, 2026-11-19; Android validation at this head was green. Recheck target, related PRs and exact-head evidence before any implementation. **No embedded SDK artifact or independent-app runtime evidence was produced by this planning work.**
+Baseline: `dev@33e76c321bc6cf08046c8ab2e099e2007eb9cc5e` (2026-11-19; green Android CI). Refresh before implementation. **Planning only: no embedded artifact or external runtime proof.**
 
 **Next action:** EMB-00 — choose and test the smallest embedded public API/composition boundary using existing core contracts and the `apps/device-test-runner` proof before introducing new modules.
