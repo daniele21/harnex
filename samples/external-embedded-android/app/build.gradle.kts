@@ -18,6 +18,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    // The llama.cpp backend resolves native libraries from applicationInfo.nativeLibraryDir.
+    // Like Harnex's Host and device runner, extract JNI libraries into that directory.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {
