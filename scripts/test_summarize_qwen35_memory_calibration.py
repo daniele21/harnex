@@ -10,7 +10,7 @@ SCRIPT = Path(__file__).with_name("summarize-qwen35-memory-calibration.py")
 MODULE = runpy.run_path(str(SCRIPT), run_name="harnex_calibration_test")
 summarize = MODULE["summarize"]
 CURATED = MODULE["CURATED"]
-HEAD = "a" * 64
+HEAD = "a" * 40
 REVISION = "aedb2a5e9ca3d4064148bbb919e0ddc0c1b70ab3"
 
 
