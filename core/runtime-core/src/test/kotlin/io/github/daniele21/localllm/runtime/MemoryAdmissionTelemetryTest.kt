@@ -9,6 +9,28 @@ import org.junit.Test
 
 class MemoryAdmissionTelemetryTest {
     @Test
+    fun `shadow rejection is informational and is never reported as enforced admission`() {
+        val repository = InMemoryTelemetryRepository()
+        val telemetry = RuntimeTelemetry(repository, EpochClock { 1_000L })
+
+        telemetry.memoryAdmission(
+            resource = MemoryAdmissionResource.MODEL,
+            outcome = MemoryAdmissionOutcome.REJECT,
+            enforced = false,
+            decisionReason = MemoryAwareModelLoadRejectReason.MEMORY_COST_ESTIMATE_UNAVAILABLE.name,
+        )
+
+        val log = repository.recentLogs().single()
+        assertEquals("memory.admission.shadow", log.event)
+        assertEquals(LogLevel.INFO, log.level)
+        assertNull(log.requestId)
+        assertEquals("false", log.fields["enforced"])
+        assertEquals("REJECT", log.fields["outcome"])
+        assertEquals("MEMORY_COST_ESTIMATE_UNAVAILABLE", log.fields["decisionReason"])
+        assertTrue(log.fields.keys.none { it.contains("prompt", ignoreCase = true) })
+    }
+
+    @Test
     fun `records downshift with only resource policy and cost fields`() {
         val repository = InMemoryTelemetryRepository()
         val telemetry = RuntimeTelemetry(repository, EpochClock { 1_000L })
