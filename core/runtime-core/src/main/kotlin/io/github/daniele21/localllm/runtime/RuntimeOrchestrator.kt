@@ -424,7 +424,7 @@ class RuntimeOrchestrator(
             throw GenerationCancelledException()
         }
         val executionEvidence = backend.executionEvidence(contextResult.context)
-        val effective = generationPlanning.effectiveMetadata(resolved, promptPlan, contextResult.context.contextSize)
+        val effective = resolved.effectiveMetadata(promptPlan, contextResult.context.contextSize)
         effectivePromptSink.publish(request.requestId, promptPlan.prompt)
         runtimeTelemetry.prepared(
             requestId = request.requestId,
@@ -493,7 +493,7 @@ class RuntimeOrchestrator(
                 ),
             )
         }
-        val backendRequest = generationPlanning.backendRequest(request, resolved, promptPlan, reasoningControl)
+        val backendRequest = resolved.backendRequest(request, promptPlan, reasoningControl)
         lifecycle.ensureNotCancelled()
         val outcome = backend.generate(contextResult.context, backendRequest) { text, generatedTokens ->
             if (lifecycle.isCancellationRequested()) {
@@ -601,7 +601,7 @@ class RuntimeOrchestrator(
             ensureEvaluationBatchNotCancelled(lifecycle)
             val executionEvidence = backend.executionEvidence(context)
             prepared.forEach { preparedCase ->
-                val effective = generationPlanning.effectiveMetadata(preparedCase.resolved, preparedCase.promptPlan, perSequenceContextSize)
+                val effective = preparedCase.resolved.effectiveMetadata(preparedCase.promptPlan, perSequenceContextSize)
                 runtimeTelemetry.prepared(
                     requestId = preparedCase.binding.request.requestId,
                     configuration = effective,
@@ -793,7 +793,7 @@ class RuntimeOrchestrator(
             promptPlan = promptPlan,
             contextPlan = contextPlan,
             promptPlanningMs = promptPlanningMs,
-            backendRequest = generationPlanning.backendRequest(binding.request, resolved, promptPlan, null),
+            backendRequest = resolved.backendRequest(binding.request, promptPlan, null),
         )
     }
 
