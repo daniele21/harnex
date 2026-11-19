@@ -18,6 +18,25 @@ checks the `arm64-v8a` JNI library in the published backend AAR and final APK. T
 It must not use `project(...)`, `includeBuild(...)`, or a source checkout as a
 dependency. An AAR/compile success is **not** evidence of real GGUF generation.
 
+## Download the smoke APK without building
+
+The [Embedded SDK Maven staging GitHub Actions workflow](https://github.com/daniele21/harnex/actions/workflows/embedded-sdk.yml)
+uploads an installable **debug-only** APK when its Maven publication, external
+consumer build, and ARM64 JNI packaging checks pass.
+
+1. Open a **successful run on `dev`** and find its **Artifacts** section.
+2. Download `harnex-embedded-smoke-apk-<run-id>` (a ZIP archive).
+3. Unzip it and install **`harnex-embedded-smoke-arm64.apk`** on an ARM64
+   Android device. The ZIP also includes `SHA256SUMS` and
+   `build-manifest.json` tying the APK to its source revision and workflow run.
+4. Android may ask for permission to install apps from your browser or file
+   manager. Use the APK only for this test, not as a production application.
+
+Artifacts remain available for **7 days** and GitHub may require signing in.
+The APK does **not** include a GGUF model, a Harnex Host, or a chat app.
+It is debug-signed; it must not be represented as a published SDK or a
+production/Play release.
+
 ## Device smoke (requires representative physical ARM64 hardware)
 
 Install `app/build/outputs/apk/debug/app-debug.apk` from this sample after

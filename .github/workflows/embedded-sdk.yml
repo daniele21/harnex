@@ -17,6 +17,7 @@ on:
       - 'transports/in-process/**'
       - 'backends/llama-cpp/**'
       - 'integrations/android-embedded-sdk/**'
+      - 'samples/external-embedded-android/**'
       - 'scripts/verify-embedded-sdk-publication.sh'
   push:
     branches: [dev]
@@ -24,6 +25,7 @@ on:
       - '.github/workflows/embedded-sdk.yml'
       - 'build.gradle.kts'
       - 'integrations/android-embedded-sdk/**'
+      - 'samples/external-embedded-android/**'
       - 'scripts/verify-embedded-sdk-publication.sh'
   workflow_dispatch:
 
@@ -62,6 +64,13 @@ jobs:
         env:
           EMBEDDED_SDK_VERSION: 0.1.0-ci.${{ github.run_id }}
         run: bash scripts/verify-embedded-sdk-publication.sh
+      - name: Upload installable Android embedded smoke APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: harnex-embedded-smoke-apk-${{ github.run_id }}
+          path: build/embedded-smoke-apk/
+          if-no-files-found: error
+          retention-days: 7
       - name: Retain publication evidence
         if: always()
         uses: actions/upload-artifact@v4
