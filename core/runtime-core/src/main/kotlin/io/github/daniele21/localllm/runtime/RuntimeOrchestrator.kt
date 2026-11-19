@@ -374,10 +374,7 @@ class RuntimeOrchestrator(
         } catch (error: Throwable) {
             failGeneration(request.requestId, lifecycle, generationFailure(error, lifecycle))
         } finally {
-            val unloaded = attemptDeferredModelUnload(ignoreActiveGeneration = true)
-            if (!closed.get() && !unloaded) {
-                state.set(if (deferredModelUnload.get()) RuntimeState.DEGRADED else RuntimeState.READY)
-            }
+            settleRuntimeStateAfterExecution()
         }
     }
 
@@ -673,11 +670,18 @@ class RuntimeOrchestrator(
             }
             failEvaluationBatch(bindings, lifecycle, listener, failure)
         } finally {
-            val unloaded = attemptDeferredModelUnload(ignoreActiveGeneration = true)
-            if (contextReleaseFailed) {
-                state.set(RuntimeState.DEGRADED)
-            } else if (!closed.get() && !unloaded) {
-                state.set(if (deferredModelUnload.get()) RuntimeState.DEGRADED else RuntimeState.READY)
+            settleRuntimeStateAfterExecution(contextReleaseFailed)
+        }
+    }
+
+    /** Do not overwrite a native/session release failure reported during terminal cleanup. */
+    private fun settleRuntimeStateAfterExecution(contextReleaseFailed: Boolean = false) {
+        val unloaded = attemptDeferredModelUnload(ignoreActiveGeneration = true)
+        if (contextReleaseFailed) {
+            state.set(RuntimeState.DEGRADED)
+        } else if (!closed.get() && !unloaded) {
+            state.updateAndGet { observed ->
+                if (observed == RuntimeState.DEGRADED || deferredModelUnload.get()) RuntimeState.DEGRADED else RuntimeState.READY
             }
         }
     }

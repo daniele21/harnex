@@ -6,73 +6,55 @@ Owner: runtime-core / llama-cpp backend (coordination; no duplicate implementati
 Canonical scope: workstream.simplicity-first-runtime
 Read when: choosing the next evidence-backed simplification of the Harnex runtime
 Last reviewed: 2026-11-19
-Source checkpoint: `dev@ed7aa3034338c65fbf815c7fd86116399bd61191`
+Source checkpoint: `dev@7057690134260a59de9b74e38e058a582eff01f3`
 
-## Product intent and decision
+## Goal and boundaries
 
-- **Depth:** PRODUCT_FEATURE for SDK ease of use; PRODUCT_NONE for behavior-preserving runtime cleanup. Embedded SDK distribution/model-support expansion would be PRODUCT_STRATEGIC.
-- **Consumer/job:** Android developers need safe, reliable local LLM inference without managing JNI, model residency, sessions, Binder and recovery. Maintainers need one clear owner per resource/transition.
-- **Desired outcome:** less domain-neutral integration boilerplate and fewer competing/duplicate runtime paths, without sacrificing functionality. Measure decision points, contracts and error paths—not LOC or module count alone.
-- **Decision:** NARROW_SCOPE. Preserve existing one-decode, bounded-model, fail-closed Host design. Improve the existing Consumer journey; extract only proven duplicate logic; qualify memory and upstream separately.
-- **Non-goals:** full rewrite, new agent/RAG framework, silent retry/cloud fallback, arbitrary GGUF promises, more resident models, GPU, generic module consolidation or extra state machines.
-- **Risk/assumptions:** VALUE medium (visible boilerplate, independent-user value unmeasured); USABILITY high (connection vs authorized readiness); FEASIBILITY high (JNI, Android memory and concurrency); VIABILITY medium (SDK ABI/RedactGuard/release identity). Test whether two consumers truly duplicate stable semantics *before* adding a convenience API. JNI Base64 overhead is unmeasured.
-- **Success:** existing Host/Consumer authorization and generation semantics, cancellation/terminal-once, bounded resources, privacy-safe diagnostics, exact backend/model identity and direct consumer compatibility remain intact. Observe independent integrator time-to-first-inference/repair burden with consent, not content telemetry.
+- **Decision:** NARROW_SCOPE. Preserve one-decode scheduling, bounded residency and fail-closed shared Host. Simplify only proven duplication and invariant violations; do not optimize for line count.
+- **Product axis:** PRODUCT_NONE for behavior-preserving runtime cleanup; PRODUCT_FEATURE for SDK ease of use; embedded distribution/model support would be PRODUCT_STRATEGIC.
+- **Consumer/job:** Android developers need dependable local inference without owning native lifecycle; maintainers need one explicit owner per resource and terminal transition.
+- **Non-goals:** rewrite, second orchestration manager, new agent/RAG platform, unbounded residency, automatic retry, silent cloud fallback, generic module collapse, speculative JNI protocol changes.
+- **Risks:** VALUE medium (actual integrator burden still unmeasured), USABILITY high (authorization/readiness semantics), FEASIBILITY high (native memory/concurrency), VIABILITY medium (SDK/RedactGuard compatibility). Measure integration effort rather than infer it from LOC.
+- **Acceptance:** preserve lifecycle, session isolation, bounded/cancellable resources, single terminal, explicit failure, privacy-safe diagnostics, backend/model identity and direct-consumer compatibility.
 
-## Prioritized risks and canonical owners
+## Canonical owners and open decisions
 
-| ID | Priority | Source observation | Smallest sufficient response |
-| --- | --- | --- | --- |
-| C1 | P0 | Hello Harnex coordinates assignment/preset/activate/prepare/session/generate/close; 489-line gateway. RedactGuard owns a 607-line runtime and 310-line control-plane coordinator; not all logic is reusable. | **Existing CIH** `docs/workstreams/consumer-integration-resilience.md`: clarify setup/recovery; integrate generic-text PR #577; inspect duplication before any new public API. |
-| C2 | P0 | Memory admission/context planning exists, but reviewed production `MEASURED` profiles remain absent. | **Existing MEM/Q35**: physical exact-model/device qualification. Do not create a new memory governor or claim emulator evidence proves safety. |
-| C3 | P1 | `RuntimeOrchestrator.kt` has 1,469 lines and duplicated normal/guard completion branches. | **SIMP-10/20 DONE**: normal and guard completion share one terminal projection, with lifecycle owners unchanged. |
-| C4 | P1/P2 | `llama_jni.cpp` 1,353 lines; positional responses and Base64 streaming. | **SIMP-30**: profile cost/maintainability before changing JNI wire protocol. |
-| C5 | P2 | Production `llama.cpp` pin `b9637`/`aedb2a5e…`; v0.3 candidate PR #490 remains unmerged. | **Existing LLUP/LLRT** only: evaluate v1 in isolation; no pin upgrade without Android and physical qualification. |
-| C6 | Separate strategic question | Public Maven Consumer SDK alpha.11 uses shared Binder Host; in-process runtime exists but no standalone external embedded distribution claim. | Consider an embedded packaging spike only after explicit product demand/constraints. |
-| C7 | No action by default | 35 Gradle modules; high count is not evidence of harmful ownership. | Keep until measurable navigation/build/dependency cost warrants consolidation. |
+| Scope | Owner and decision |
+| --- | --- |
+| Model/context physical transitions and coordination | `RuntimeOrchestrator`; no extra manager |
+| Decode queue/cancellation | `SingleDecodeScheduler` |
+| Session reservation/close | `SessionLifecycle` |
+| Resident model handle | `ModelResidencyLifecycle` |
+| Deterministic resolved configuration | `GenerationPlanningPolicy` / `ResolvedRequestConfiguration` |
+| Consumer setup/recovery (C1) | CIH: `docs/workstreams/consumer-integration-resilience.md`; no public API until independent consumer value is demonstrated |
+| Memory admission/physical limits (C2) | MEM/Q35; no `MEASURED` production profile implied by deterministic tests |
+| JNI data protocol (C4, SIMP-30) | BLOCKED pending cost/maintainability measurement; Base64 protects token-fragment transport across JNI; positional responses alone are not a reason to rewrite |
+| `llama.cpp` source pin and model qualification | LLUP/LLRT; production pin `b9637`. Upstream v1.0.0 not certified for Android/JNI/GGUF; don't conflate source compatibility and release evidence |
+| Embedded SDK, module count | No change without demonstrated consumer need or measured cost |
 
-## SIMP-00 findings (read-only; no executable PASS claim)
+## Integrated changes — evidence is in the PRs/tests
 
-- `RuntimeOrchestrator` owns physical model/context transitions; `SessionLifecycle`, `ModelResidencyLifecycle` and `SingleDecodeScheduler` already own separate session reservations, residency state and bounded queue/cancel. **KEEP these owners.**
-- `executeGeneration` repeats `completeGeneration` for normal completion vs guard stop, differing only in stop metrics. Existing `RuntimeOrchestratorTest` covers streaming, cancellation/races and successful guard stop; PR #584 consolidated the duplicate call and added a terminal-once assertion, with STRONG tests green. **DONE**.
-- `executeEvaluationBatch` previously repeated cleanup across four catches. **SIMP-25 DONE** in PR #591: one cleanup path preserves typed errors, cancel semantics, terminal-once and exactly-once release attempts.
-- **SIMP-26 DONE** in PR #592: both the successful-path native batch release exception and failure-path cleanup exception retain the terminal error and leave `RuntimeState.DEGRADED` after worker completion. A per-operation release-failure flag avoids a second state owner. This is truthful health reporting, not native recovery or a permanent degradation policy.
-- `MemoryAdmissionControllerTest`, `MemoryAwareContextPlannerTest`, `RuntimeMemoryAdmissionIntegrationTest` and residency/session integration tests cover deterministic policy, not representative RAM/thermal qualification. **KEEP existing policy; measure on devices.**
-- JNI Base64 avoids treating arbitrary UTF-8 token fragments as safe modified-UTF-8 Java strings; using byte arrays would add native buffer handling. Positional `Array<String>` is maintenance friction but not a proven bottleneck. **KEEP pending measurement; no speculative rewrite.**
-- Upstream `llama.cpp v1.0.0` (2026-11-13) has exact source commit `b1b770d90d94cad9e9ea5b993bdbc383a522fb28` (annotated tag `a6d1a74dbebce3a16f4f2ceddbf38c21a08d8674`). Some core native API calls remain available but deprecated public APIs were removed. This is **not** CMake/JNI/build/GGUF certification; LLUP owns that decision.
+| Slice | Status | Outcome / evidence |
+| --- | --- | --- |
+| SIMP-00/10/20 | DONE | Existing owner map and guard/terminal-once refactor, PR #584 |
+| SIMP-25 | DONE | One batch failure-cleanup path, PR #591, `dev@dfa1675` |
+| SIMP-26 | DONE | Batch native release failure preserves `DEGRADED`, PR #592, `dev@48ea57d`; no automatic recovery policy |
+| SIMP-27 | DONE | Ordinary preparation/streaming/finalization readable within one owner, PR #594, `dev@d5fb979` |
+| SIMP-28 | DONE | Shared immutable metadata/backend request projections; separate batch/ordinary lifecycle, PR #596, `dev@ed7aa303` |
+| SIMP-29 | IN REVIEW | Audit and truthful health on failed deferred ordinary-session release, PR #598; exact-head integration STRONG pending |
+| SIMP-30 | BLOCKED | JNI protocol investigation: KEEP until measurable justification and native/device evidence |
 
-## Work graph — independent writes, early convergence
+## SIMP-29 — residual-complexity audit and change
 
-| ID | State | Work / owner | Exit evidence |
-| --- | --- | --- | --- |
-| SIMP-00 | DONE | Source map above, risks and minimal candidate; docs only | Owner/test/consumer trace and decision without speculative abstraction |
-| SIMP-10 | DONE | `core/runtime-core` test guard/cancel/terminal semantics; PR #584 | Existing focused tests + terminal-once assertion green at candidate |
-| SIMP-20 | DONE | `core/runtime-core` one duplicate terminal-path refactor; PR #584, depends SIMP-10 | No public contract/state-owner drift; exact-head scoped/strong CI and direct consumers |
-| SIMP-25 | DONE | Consolidate `executeEvaluationBatch` duplicated failure cleanup; PR #591 | Exact-head Android STRONG and regression tests passed; merged in `dev@dfa1675` |
-| SIMP-26 | DONE | Preserve truthful `DEGRADED` on batch context release failure; PR #592 | Exact-head Android STRONG, two worker-idle regression tests, Repository validation and merge to `dev@48ea57d`; physical native qualification remains separate |
-| SIMP-27 | DONE | PR #594 split ordinary generation into in-class preparation, streaming, terminal projection and one typed failure path; no new resource owner or public API | Exact-head integration Android STRONG, runtime tests, direct consumer compilation, Spotless/Detekt and Repository validation passed; merged to `dev@d5fb979`. Physical ARM64/GGUF evidence is not claimed |
-| SIMP-28 | DONE | PR #596 now shares the two immutable generation projections through `ResolvedRequestConfiguration` for ordinary generation and batch, preserving distinct lifecycle and cancellation semantics | Exact-head integration Android STRONG, direct consumers, regression tests and Repository validation PASS; merged in `dev@ed7aa303`. No public contract/JNI change or physical Android claim |
-| SIMP-30 | BLOCKED | `backends/llama-cpp` JNI protocol cost investigation; independent of SIMP-20, after SIMP-00 | KEEP or one evidence-backed minimal edit with native/ARM64 packaging and device check |
+Source: `dev@70576901`, `RuntimeOrchestrator.kt` 1,404 lines. Source-line spans (not formal cyclomatic complexity): `executeEvaluationBatch` 115; `generateEvaluationBatch` 89; `streamGeneration` 84; `prepareGeneration` 57; `prepareEvaluationBatchCase` 44.
 
-- **Parallel owners:** CIH handles SDK, MEM/Q35 handles physical qualification, LLUP handles upstream pin. SIMP-20 and SIMP-30 may progress in parallel only without shared JNI/Kotlin protocol or public contract changes. PR #577 is integrated and supersedes closed #562; preserve the canonical Hello Harnex sample.
-- **Convergence:** CIH consumer proof + MEM/Q35 evidence + SIMP runtime tests; LLUP and embedded SDK have separate decisions. After each accepted slice, transfer settled details to code/tests/SDK/memory/architecture owners; delete this workstream once complete.
-- **Stop rule:** refuse an extraction that adds competing owners, adapters or more complexity than it removes.
+- **KEEP separate:** batch owns its dedicated native context, per-case cancellation/attribution and disabled thinking; ordinary generation owns streaming, guard stops and explicit cancellation barriers. Consolidating the similar prompt/context planning blocks would add callback/checkpoint complexity without a proven maintenance benefit.
+- **Smallest proven change:** the two worker `finally` blocks repeated deferred-unload/READY/DEGRADED state logic. When a deferred `releaseSession` failed during an ordinary terminal, it marked `DEGRADED` and then the ordinary `finally` overwrote it with `READY`. One in-class finalization helper now respects an existing `DEGRADED` state; batch retains its release-failure precedence.
+- **Regression:** after the decode worker is idle, failed ordinary native context release remains `DEGRADED`, produces one terminal, attempts release once and allows a later explicit session-close retry. Existing batch cleanup, guard, queue/cancel, streaming and memory tests must remain green.
+- **Limit:** truthful health reporting is **not** recovery. A later independent prepare/retry and physical native qualifications are separate policy/evidence questions. Do not start further refactors merely to lower LOC.
 
-## SIMP-28: one configuration projection, distinct execution policies
+## Validation and completion
 
-- Both paths now project `ResolvedRequestConfiguration` and `BackendPromptPlan` to `EffectiveGenerationMetadata` and `BackendGenerationRequest` as methods of the existing immutable `ResolvedRequestConfiguration` in the generation-planning file; this avoids drifting field mappings without adding methods to the planning policy, new managers or state.
-- The caller supplies the **actual context size**: materialized ordinary context versus per-sequence evaluation-batch allocation. It also supplies backend reasoning control for ordinary generation while evaluation batching deliberately passes `null` and rejects thinking mode.
-- Batch still owns one dedicated native context, exactly-once release and per-case outcome attribution. Ordinary generation keeps streaming, guard-stop semantics, terminal-once and cancellation behavior. No cross-path error/cancellation abstraction is introduced.
-
-## Validation and execution
-
-- Plan/audit: PRODUCT_NONE docs, DELIVERY ITERATION → INTEGRATION, **LEAN**; repository documentation checks.
-- Runtime terminal/lifecycle changes: PRODUCT_NONE if behavior-preserving, **STRONG** when resource/concurrency semantics are touched, selector may escalate. Verify normal/guard/cancel/queue/context/session, Consumer compatibility, code formatting and exact candidate/base.
-- Native/JNI/upstream changes: **STRONG/FULL** depending on selector; Kotlin/host-native, ARM64 package/R8 and affected GGUF/quality probes. Pin changes invalidate measured performance evidence.
-- Public SDK modifications: ABI + Maven external fixture, Hello Harnex and RedactGuard compatibility and Binder/two-APK E2E.
-- Missing deterministic Android tooling is **REMOTE_AUTOMATED**; representative physical GGUF/RAM/thermal/signer evidence is **REAL_ENVIRONMENT** and separately blocking when applicable. A PR or a green unrelated run is not proof of release readiness.
-
-## Resume checkpoint
-
-- Base at audit: `dev@b5def37`; SIMP-25 and SIMP-26 are integrated through `dev@3fb6043` (including PR #593 documentation). SIMP-27 is integrated through PR #594 (`dev@d5fb979`) with exact-head integration STRONG and Repository validation. Refresh live base, PRs and selectors before the next change. SIMP-28 is now integrated through PR #596 (`dev@ed7aa303`), with one canonical configuration projection and no new orchestration manager.
-- PR #584 integrated the terminal-once simplification into `dev` as `dfaccd3` after STRONG automated validation; PR #577 integrated the generic-text onboarding as `52b9cf4`. PR #578 Binder invalidation was integrated in `dev` as `c2ab02d` after STRONG Android and external Consumer validation.
-- Production pin remains `b9637`; v1.0.0 is an unqualified candidate. No generic import/embedded SDK/public convenience API has been implemented by SIMP.
+- **Product:** PRODUCT_NONE. **Delivery:** ITERATION -> INTEGRATION. **Validation:** STRONG for native-context cleanup, concurrency and lifecycle. **Execution:** REMOTE_AUTOMATED for deterministic Android gates; REAL_ENVIRONMENT for applicable physical GGUF/memory/thermal/OEM/signing evidence.
+- At integration: exact candidate/base, reviewed full diff, Android STRONG runtime regressions and direct consumer compilations, Repository validation, formatting/Detekt, canonical docs. Never turn an unrelated green run or emulator proof into native/device readiness.
+- **Stop rule:** don't add state owners, adapters, suppressions or abstractions that cost more than they remove. Let completed details live in code/tests/PR evidence; keep this workstream focused on open decisions and remove it when truly complete.
