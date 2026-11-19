@@ -109,7 +109,7 @@ def summarize(records, head, revision, repeats, contexts):
             "contextPeakObservedIncrementBytes": max(0, peak_context - context_create["pssBeforeKb"]) * 1024,
             "postUnloadResidualDeltaKb": phases["settled_after_unload"]["pssAfterKb"] - baseline,
             "minimumAvailableBytes": min(p["minimumAvailableBytes"] for p in phases.values()),
-            "maximumThermalStatus": max(p["thermalAfter"] for p in phases.values()),
+            "maximumThermalStatus": max(max(p["thermalBefore"], p["thermalAfter"]) for p in phases.values()),
         })
     require(set(grouped) == expected, "Missing tier/context case")
     require(all(len(samples) == repeats for samples in grouped.values()), "Incomplete or duplicated cold repetitions")
