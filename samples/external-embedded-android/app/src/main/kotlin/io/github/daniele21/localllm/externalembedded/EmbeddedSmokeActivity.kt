@@ -88,8 +88,10 @@ class EmbeddedSmokeActivity : Activity() {
                 listOf(ConversationMessage(ConversationRole.USER, "What is my name?")),
             )
             show("Completed two explicit, stateless Messages requests")
-        } catch (error: Exception) {
-            show("Stopped: ${error.javaClass.simpleName}")
+        } catch (error: IllegalStateException) {
+            show("Stopped: ${error.message ?: error.javaClass.simpleName}")
+        } catch (error: IllegalArgumentException) {
+            show("Invalid input: ${error.javaClass.simpleName}")
         } finally {
             session?.let { current -> runCatching { sdk?.closeSession(current) } }
             runCatching { sdk?.close() }
