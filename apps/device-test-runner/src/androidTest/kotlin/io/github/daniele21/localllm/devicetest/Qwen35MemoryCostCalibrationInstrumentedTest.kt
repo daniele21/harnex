@@ -46,6 +46,8 @@ class Qwen35MemoryCostCalibrationInstrumentedTest {
         }
         val tier = required("tier")
         require(tier == "0.8b" || tier == "2b") { "Unsupported calibration tier" }
+        require(required("harnessCommit").matches(Regex("[0-9a-f]{40}"))) { "Invalid Harness commit identity" }
+        require(required("runtimeProfileVersion").toInt() == 1) { "Unsupported candidate runtime profile version" }
         val digest = ModelDigest(required("modelSha256").lowercase())
         val relativePath = required("modelRelativePath")
         require(!File(relativePath).isAbsolute) { "Model path must be relative" }
