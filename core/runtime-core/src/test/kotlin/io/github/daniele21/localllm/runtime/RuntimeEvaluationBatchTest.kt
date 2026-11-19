@@ -478,6 +478,7 @@ private class BatchFakeInferenceBackend :
     var batchGenerationCalls = 0
     var batchContextReleaseCalls = 0
     var lastBatchConfiguration: BackendEvaluationBatchContextConfiguration? = null
+
     @Volatile var lastBatchRequests: List<BackendGenerationRequest> = emptyList()
     var blockOrdinaryGeneration: CountDownLatch? = null
     var blockBatchGeneration: CountDownLatch? = null
