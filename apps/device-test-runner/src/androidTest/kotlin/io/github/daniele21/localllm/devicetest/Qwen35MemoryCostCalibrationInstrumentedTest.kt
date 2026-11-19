@@ -121,7 +121,10 @@ class Qwen35MemoryCostCalibrationInstrumentedTest {
                     ),
                 ) { _, _ -> true }
             }
-            assertTrue("Native generation must complete", outcome is BackendGenerationOutcome.Completed)
+            assertTrue(
+                "Native generation must emit tokens",
+                outcome is BackendGenerationOutcome.Completed && outcome.metrics.outputTokens > 0,
+            )
             recorder.measure("context_release") {
                 backend.releaseContext(requireNotNull(nativeContext))
                 nativeContext = null
