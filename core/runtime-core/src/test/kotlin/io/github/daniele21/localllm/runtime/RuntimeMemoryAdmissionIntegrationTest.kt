@@ -27,15 +27,15 @@ import io.github.daniele21.localllm.store.ModelStore
 import io.github.daniele21.localllm.store.ModelStoreSnapshot
 import io.github.daniele21.localllm.store.StoredModel
 import io.github.daniele21.localllm.store.VerificationResult
-import java.io.File
-import java.util.Collections
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 class RuntimeMemoryAdmissionIntegrationTest {
     @Test
