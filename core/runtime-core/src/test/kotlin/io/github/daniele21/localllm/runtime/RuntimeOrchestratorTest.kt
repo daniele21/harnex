@@ -660,7 +660,7 @@ private class FakeInferenceBackend : InferenceBackend {
 
     override fun releaseContext(context: BackendContextHandle) {
         releaseCalls += 1
-        if (failContextRelease) throw IllegalStateException("Native context release failed")
+        check(!failContextRelease) { "Native context release failed" }
     }
 
     override fun generate(
