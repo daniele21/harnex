@@ -79,6 +79,14 @@ The observability path now includes:
 
 The regression evaluator currently thresholds PSS peak/residual and available-memory floor. Native-heap and thermal signals remain available raw evidence and may be added to policy only when their interpretation is defined.
 
+## MEM-B — physical native cost calibration preparation
+
+A separate candidate-only physical runner, `scripts/run-qwen35-memory-cost-calibration.sh`, now exercises the production ARM64 `LlamaCppInferenceBackend` on the exact curated Qwen3.5 0.8B and 2B Q4_K_M artifacts. The runner uses pinned llama.cpp and a clean Harness identity, private model staging, a serialized thermal-start gate, independent cold instrumentation repetitions and a hashed evidence manifest. By default it covers 1024/2048-token contexts; 4096/8192 require explicit selection and physical headroom review. The previous QRT-40 lifecycle suite is unchanged and remains separately required.
+
+The native calibration instrumentation samples process PSS (200 ms cadence and boundaries), available system memory, Java/native heaps, Android low-memory state and thermal state across backend initialization, model load, context creation, fixed native generation, context release, model unload and settled shutdown. It does **not** collect prompts or generated text in evidence. Observed sampled peaks are **lower bounds**, not guaranteed physical maxima.
+
+`scripts/summarize-qwen35-memory-calibration.py` validates complete comparable repetitions and exact backend/model/runtime/device/configuration identities. It produces only `CANDIDATE_UNREVIEWED` envelopes with no automatic `MEASURED` promotion or safety margin. Native isolated costs are not yet full Harnex end-to-end admission costs; the published production registry still has **no MEASURED entries**. Physical execution on representative ARM64 devices and explicit review remain outstanding. In particular, a calibrated 1024/2048 subset does not qualify untested context tiers.
+
 ## Remaining gap: representative-device evidence
 
 No repository/JVM/emulator test can close the remaining milestones. MEM-7 and MEM-8 require controlled physical runs that capture at least:
