@@ -134,14 +134,17 @@ class EmbeddedSmokeActivity : Activity() {
             GenerationListener { event ->
                 when (event) {
                     is GenerationEvent.TextDelta -> show(event.text)
+
                     is GenerationEvent.Completed -> {
                         show("Answer: ${event.answerOutput}")
                         done.countDown()
                     }
+
                     is GenerationEvent.Failed -> {
                         failure.set(event.error.code)
                         done.countDown()
                     }
+
                     else -> Unit
                 }
             },
