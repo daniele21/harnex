@@ -30,15 +30,16 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Configuration for an in-process Android inference engine. Model choice is explicit; Harnex
  * reviews the permitted model/profile pair. This does not represent a chat conversation.
  */
-data class EmbeddedConfiguration(
-    val modelId: String,
-    val systemInstructions: String? = null,
-) {
+data class EmbeddedConfiguration(val modelId: String, val systemInstructions: String? = null) {
     init {
         require(modelId.isNotBlank()) { "Embedded model ID must not be blank" }
-        require(systemInstructions == null ||
-            (systemInstructions.isNotBlank() && systemInstructions.length <= MAX_SYSTEM_INSTRUCTIONS &&
-                '\u0000' !in systemInstructions)) {
+        require(
+            systemInstructions == null ||
+                (
+                    systemInstructions.isNotBlank() && systemInstructions.length <= MAX_SYSTEM_INSTRUCTIONS &&
+                        '\u0000' !in systemInstructions
+                ),
+        ) {
             "Embedded instructions must be nonblank, bounded and NUL-free"
         }
     }
@@ -61,10 +62,7 @@ enum class EmbeddedModelReadiness {
  * thread. Callbacks can arrive from runtime threads; the application dispatches them to its UI.
  * The application owns its conversation/history and sends an explicit message list for every turn.
  */
-class EmbeddedRuntime private constructor(
-    context: Context,
-    private val resolved: ResolvedUseCase,
-) : AutoCloseable {
+class EmbeddedRuntime private constructor(context: Context, private val resolved: ResolvedUseCase) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val modelStore = FileSystemModelStore(File(context.noBackupFilesDir, MODEL_DIRECTORY))
     private val registry =
