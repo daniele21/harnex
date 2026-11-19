@@ -42,11 +42,11 @@ That Play run observed the **same Play App Signing SHA-256 digest for Harnex and
 
 CA-0..4 are integrated; concrete model/runtime/residency authority stays in Harnex. OMB-6B identity approval, OMB-8 measured quality execution and physical evidence remain open. Model-evaluation work is integrated through EVAL-D-09. Local inference Activity/audit is integrated under ADR 0017 with bounded encrypted app-private history and verified Binder caller attribution; normal telemetry stays content-free.
 
-## Embedded SDK commercial-app enablement (plan only)
+## Embedded Android SDK (development integration)
 
-The [embedded Android SDK workstream](workstreams/embedded-android-sdk.md) prepares a **separately distributable, single-APK local inference path** for independent commercial Android apps. ADR 0010, `transports/in-process`, `RuntimeOrchestrator`, `apps/device-test-runner` and verified model lifecycle modules are reusable foundations; the published SDK today remains the **Shared Host/Binder Consumer SDK**, not a tested embedded Maven artifact.
+The [embedded Android SDK workstream](workstreams/embedded-android-sdk.md) owns the one-APK in-process mode alongside the existing Shared Host/Binder Consumer SDK. Through [PR #606](https://github.com/daniele21/harnex/pull/606), the development branch integrates `integrations/android-embedded-sdk`: explicit Qwen3.5 2B Q4_K_M selection, app-private verified download/install, runtime preparation, stateless `GenerationInput.Messages`, streaming/cancellation and technical-session cleanup. Harnex reuses `RuntimeOrchestrator`, the secure downloader, verified installer and llama.cpp backend; the consuming app owns conversation state and UI.
 
-No embedded SDK artifact, standalone external embedded-app E2E or physical commercial-app qualification is claimed. The next step is **EMB-00**, to freeze the narrow embedded API/composition and audit/model-readiness boundaries before packaging and independent-consumer proof. App-owned conversation storage, history selection and chat UI are explicitly outside Harnex.
+The Maven staging workflow packages the transitive runtime AARs and the independent `samples/external-embedded-android` fixture assembles from Maven coordinates only, including ARM64 JNI. This is **development/automated integration evidence**, not a published production SDK or a successful native GGUF generation. Public versioned publication, real on-device GGUF inference, cancellation/process lifecycle, memory/thermal and representative physical ARM64 qualification remain open under EMB-40/50 and are blocking for release/commercial-app handoff, not this `dev` integration.
 
 ## Release evidence state
 
