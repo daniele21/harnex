@@ -11,12 +11,11 @@ class MemoryAdmissionTelemetryTest {
     @Test
     fun `shadow rejection is informational and is never reported as enforced admission`() {
         val repository = InMemoryTelemetryRepository()
-        val telemetry = RuntimeTelemetry(repository, EpochClock { 1_000L })
+        val telemetry = RuntimeTelemetry(repository, EpochClock { 1_000L }, enforceMemoryAdmission = false)
 
         telemetry.memoryAdmission(
             resource = MemoryAdmissionResource.MODEL,
             outcome = MemoryAdmissionOutcome.REJECT,
-            enforced = false,
             decisionReason = MemoryAwareModelLoadRejectReason.MEMORY_COST_ESTIMATE_UNAVAILABLE.name,
         )
 
