@@ -96,60 +96,6 @@ internal class GenerationPlanningPolicy(private val seedSource: SeedSource) {
         )
     }
 
-    /** The same effective settings describe an ordinary context or a batch sequence. */
-    fun effectiveMetadata(
-        resolved: ResolvedRequestConfiguration,
-        promptPlan: BackendPromptPlan,
-        contextSize: Int,
-    ): EffectiveGenerationMetadata = EffectiveGenerationMetadata(
-        preset = resolved.preset?.ref,
-        temperature = resolved.temperature,
-        topP = resolved.topP,
-        topK = resolved.topK,
-        minP = resolved.minP,
-        presencePenalty = resolved.presencePenalty,
-        repeatPenalty = resolved.repeatPenalty,
-        repeatLastN = resolved.repeatLastN,
-        requestedSeedPolicy = resolved.seedPolicy.toType(),
-        effectiveSeed = resolved.effectiveSeed,
-        maxOutputTokens = resolved.maxOutputTokens,
-        contextSize = contextSize,
-        promptTokenCount = promptPlan.tokenCount,
-        chatTemplateId = promptPlan.chatTemplateId,
-        chatTemplateSource = promptPlan.chatTemplateSource,
-        systemPromptVersion = resolved.systemPromptVersion,
-        thinkingMode = resolved.thinkingMode,
-    )
-
-    /** The batch caller passes no reasoning control; ordinary generation may provide a backend transition. */
-    fun backendRequest(
-        request: GenerationRequest,
-        resolved: ResolvedRequestConfiguration,
-        promptPlan: BackendPromptPlan,
-        reasoningControl: BackendReasoningControl?,
-    ): BackendGenerationRequest = BackendGenerationRequest(
-        requestId = request.requestId.value,
-        prompt = promptPlan.prompt,
-        maxOutputTokens = resolved.maxOutputTokens,
-        temperature = resolved.temperature,
-        topP = resolved.topP,
-        topK = resolved.topK,
-        minP = resolved.minP,
-        presencePenalty = resolved.presencePenalty,
-        repeatPenalty = resolved.repeatPenalty,
-        repeatLastN = resolved.repeatLastN,
-        seed = resolved.effectiveSeed,
-        outputConstraint = request.outputConstraint,
-        stopTokenIds = promptPlan.stopTokenIds,
-        stopSequences = promptPlan.stopSequences,
-        reasoningControl = reasoningControl,
-    )
-
-    private fun SeedPolicy.toType(): SeedPolicyType = when (this) {
-        SeedPolicy.Random -> SeedPolicyType.RANDOM
-        is SeedPolicy.Fixed -> SeedPolicyType.FIXED
-    }
-
     fun validateOutputConstraint(
         outputConstraint: OutputConstraint,
         resolved: ResolvedRequestConfiguration,
@@ -345,6 +291,55 @@ internal data class ResolvedRequestConfiguration(
     val systemPrompt: String?,
     val contextPreference: ContextPreference,
     val guardPolicy: GenerationGuardPolicy,
-)
+) {
+    /** The supplied context size is actual ordinary capacity or per-sequence batch capacity. */
+    fun effectiveMetadata(promptPlan: BackendPromptPlan, contextSize: Int): EffectiveGenerationMetadata = EffectiveGenerationMetadata(
+        preset = preset?.ref,
+        temperature = temperature,
+        topP = topP,
+        topK = topK,
+        minP = minP,
+        presencePenalty = presencePenalty,
+        repeatPenalty = repeatPenalty,
+        repeatLastN = repeatLastN,
+        requestedSeedPolicy = seedPolicy.toType(),
+        effectiveSeed = effectiveSeed,
+        maxOutputTokens = maxOutputTokens,
+        contextSize = contextSize,
+        promptTokenCount = promptPlan.tokenCount,
+        chatTemplateId = promptPlan.chatTemplateId,
+        chatTemplateSource = promptPlan.chatTemplateSource,
+        systemPromptVersion = systemPromptVersion,
+        thinkingMode = thinkingMode,
+    )
+
+    /** Ordinary generation may pass reasoning control; evaluation batching passes null. */
+    fun backendRequest(
+        request: GenerationRequest,
+        promptPlan: BackendPromptPlan,
+        reasoningControl: BackendReasoningControl?,
+    ): BackendGenerationRequest = BackendGenerationRequest(
+        requestId = request.requestId.value,
+        prompt = promptPlan.prompt,
+        maxOutputTokens = maxOutputTokens,
+        temperature = temperature,
+        topP = topP,
+        topK = topK,
+        minP = minP,
+        presencePenalty = presencePenalty,
+        repeatPenalty = repeatPenalty,
+        repeatLastN = repeatLastN,
+        seed = effectiveSeed,
+        outputConstraint = request.outputConstraint,
+        stopTokenIds = promptPlan.stopTokenIds,
+        stopSequences = promptPlan.stopSequences,
+        reasoningControl = reasoningControl,
+    )
+
+    private fun SeedPolicy.toType(): SeedPolicyType = when (this) {
+        SeedPolicy.Random -> SeedPolicyType.RANDOM
+        is SeedPolicy.Fixed -> SeedPolicyType.FIXED
+    }
+}
 
 internal class GenerationPlanningException(val reason: ConfigurationErrorCode, message: String) : IllegalArgumentException(message)
