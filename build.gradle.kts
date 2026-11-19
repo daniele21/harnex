@@ -49,7 +49,14 @@ val embeddedSdkVersion =
 
 subprojects {
     if (path in embeddedPublishingModules) {
-        group = "io.github.daniele21.localllm"
+        // Two internal Gradle projects are named "contracts". Give observability a distinct
+        // component identity to prevent Gradle variant resolution from selecting itself.
+        group =
+            if (path == ":observability:contracts") {
+                "io.github.daniele21.localllm.observability"
+            } else {
+                "io.github.daniele21.localllm"
+            }
         version = embeddedSdkVersion.get()
         plugins.withId("com.android.library") {
             // Existing Consumer artifacts apply Android before maven-publish.
