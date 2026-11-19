@@ -49,10 +49,12 @@ val embeddedSdkVersion =
 
 subprojects {
     if (path in embeddedPublishingModules) {
-        pluginManager.apply("maven-publish")
         group = "io.github.daniele21.localllm"
         version = embeddedSdkVersion.get()
         plugins.withId("com.android.library") {
+            // Existing Consumer artifacts apply Android before maven-publish.
+            // Preserve that plugin ordering for the new publication graph.
+            pluginManager.apply("maven-publish")
             extensions.configure<com.android.build.api.dsl.LibraryExtension> {
                 publishing {
                     singleVariant("release") {
