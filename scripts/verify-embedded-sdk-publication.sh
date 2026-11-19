@@ -40,7 +40,9 @@ for module in core:contracts "${modules[@]}"; do
     observability:contracts) artifact="observability-contracts" ;;
     integrations:android-embedded-sdk) artifact="embedded-android" ;;
   esac
-  base="$REPOSITORY/io/github/daniele21/localllm/$artifact/$SDK_VERSION/$artifact-$SDK_VERSION"
+  group_path="io/github/daniele21/localllm"
+  if [[ "$module" == "observability:contracts" ]]; then group_path="$group_path/observability"; fi
+  base="$REPOSITORY/$group_path/$artifact/$SDK_VERSION/$artifact-$SDK_VERSION"
   for ext in aar pom; do
     [[ -s "$base.$ext" ]] || {
       echo "Missing embedded SDK artifact: $base.$ext" >&2
