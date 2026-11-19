@@ -17,6 +17,7 @@ on:
       - 'transports/in-process/**'
       - 'backends/llama-cpp/**'
       - 'integrations/android-embedded-sdk/**'
+      - 'samples/external-embedded-android/**'
       - 'scripts/verify-embedded-sdk-publication.sh'
   push:
     branches: [dev]
@@ -24,6 +25,7 @@ on:
       - '.github/workflows/embedded-sdk.yml'
       - 'build.gradle.kts'
       - 'integrations/android-embedded-sdk/**'
+      - 'samples/external-embedded-android/**'
       - 'scripts/verify-embedded-sdk-publication.sh'
   workflow_dispatch:
 
