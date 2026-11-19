@@ -38,7 +38,7 @@ val embeddedPublishingModules =
         ":models:model-download",
         ":models:model-install",
         ":backends:llama-cpp",
-        ":observability:contracts",
+        // Diagnostic: isolate publication-induced task cycles in observability.
         ":transports:in-process",
         ":integrations:android-embedded-sdk",
     )
