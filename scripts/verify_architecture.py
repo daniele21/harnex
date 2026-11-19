@@ -59,6 +59,22 @@ def is_forbidden_production_edge(source: str, target: str) -> bool:
         return dependency in {"backends", "transports", "integrations", "evaluation"}
     if owner == "transports":
         return dependency not in {"core", "transports"} or (dependency == "core" and target != "core:contracts")
+    if source == "integrations:android-embedded-sdk":
+        # This SDK is the composition root of the app-private runtime data plane.
+        # Keep the specific reviewed inward edges explicit; do not relax service-host
+        # or transport ownership or allow any dependency on apps, UI or Binder.
+        embedded_owners = {
+            "core:contracts",
+            "core:runtime-core",
+            "models:model-profile",
+            "models:model-store",
+            "models:model-catalog",
+            "models:model-download",
+            "models:model-install",
+            "backends:llama-cpp",
+            "transports:in-process",
+        }
+        return target not in embedded_owners
     if owner == "integrations":
         return target not in {"core:contracts", "transports:android-binder-contract"}
     if owner == "models":
