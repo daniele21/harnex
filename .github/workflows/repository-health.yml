@@ -53,6 +53,8 @@ jobs:
           bash -n scripts/run-llrt6-physical-evidence.sh
           bash -n scripts/run-llrt9-width4-diagnostic.sh
           bash -n scripts/run-qwen35-lifecycle-acceptance.sh
+          bash -n scripts/run-qwen35-memory-cost-calibration.sh
+          python3 scripts/test_summarize_qwen35_memory_calibration.py
           python3 scripts/test_package_artifact_metadata.py
           python3 scripts/test_verify_no_tracked_generated_artifacts.py
           python3 scripts/test_llrt6_physical_evidence.py
