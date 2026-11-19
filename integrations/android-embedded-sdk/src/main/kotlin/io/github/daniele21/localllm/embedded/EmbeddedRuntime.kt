@@ -2,6 +2,22 @@ package io.github.daniele21.localllm.embedded
 
 import android.content.Context
 import android.os.Looper
+import io.github.daniele21.localllm.catalog.CuratedModelCatalog
+import io.github.daniele21.localllm.catalog.EmbeddedCatalogTargets
+import io.github.daniele21.localllm.download.AllowedSourceHost
+import io.github.daniele21.localllm.download.AllowlistedHttpsSourcePolicy
+import io.github.daniele21.localllm.download.DownloadCancellationToken
+import io.github.daniele21.localllm.download.DownloadProgressObserver
+import io.github.daniele21.localllm.download.FileSystemVerifiedDownloadAccess
+import io.github.daniele21.localllm.download.ModelDownloadResult
+import io.github.daniele21.localllm.download.NeverCancelled
+import io.github.daniele21.localllm.download.SecureModelDownloader
+import io.github.daniele21.localllm.download.VerifiedDownloadHandle
+import io.github.daniele21.localllm.install.ModelInstallationObserver
+import io.github.daniele21.localllm.install.ModelInstallationResult
+import io.github.daniele21.localllm.install.ResolvedInstallationProfile
+import io.github.daniele21.localllm.install.VerifiedModelInstaller
+import io.github.daniele21.localllm.llamacpp.LlamaCppGgufArtifactInspector
 import io.github.daniele21.localllm.contracts.ApplicationId
 import io.github.daniele21.localllm.contracts.ConversationMessage
 import io.github.daniele21.localllm.contracts.GenerationHandle
@@ -82,6 +98,41 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
         )
     private val client: LocalLlmClient = InProcessLocalLlmClient(runtime)
 
+    private val provisioning by lazy {
+        val release = CuratedModelCatalog.releases.single { it.id.modelId.value == EmbeddedModelPolicy.INITIAL_MODEL_ID }
+        require(EmbeddedCatalogTargets.LOCAL_TEXT_GENERATION in release.allowedTargets) {
+            "Model is not authorized for embedded installation"
+        }
+        val downloadRoot = File(context.noBackupFilesDir, VERIFIED_DOWNLOAD_DIRECTORY)
+        val downloads =
+            SecureModelDownloader(
+                rootDirectory = downloadRoot,
+                sourcePolicy =
+                    AllowlistedHttpsSourcePolicy(
+                        setOf(
+                            AllowedSourceHost("huggingface.co", includeSubdomains = true),
+                            AllowedSourceHost("hf.co", includeSubdomains = true),
+                        ),
+                    ),
+            )
+        downloads.recoverInterruptedDownloads()
+        val verifiedAccess = FileSystemVerifiedDownloadAccess(downloadRoot)
+        val installer =
+            VerifiedModelInstaller(
+                stagingDirectory = File(context.cacheDir, INSTALL_STAGING_DIRECTORY),
+                verifiedDownloads = verifiedAccess,
+                inspector = LlamaCppGgufArtifactInspector(),
+                modelStore = modelStore,
+            )
+        EmbeddedModelProvisioning(
+            release = release,
+            target = EmbeddedCatalogTargets.LOCAL_TEXT_GENERATION,
+            profile = ResolvedInstallationProfile(release.profileKey, resolved.model.artifact),
+            download = downloads::download,
+            install = installer::install,
+        )
+    }
+
     val modelId: String = EmbeddedModelPolicy.INITIAL_MODEL_ID
     val applicationId: ApplicationId = resolved.binding.applicationId
     val useCaseId: UseCaseId = resolved.binding.useCaseId
@@ -92,6 +143,29 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
         val digest = resolved.model.artifact.digest
         if (modelStore.find(digest) == null) return EmbeddedModelReadiness.NOT_INSTALLED
         return if (modelStore.verify(digest).valid) EmbeddedModelReadiness.VERIFIED else EmbeddedModelReadiness.INVALID
+    }
+
+    /**
+     * Verified HTTPS transfer to app-private storage. The result's handle is needed by installModel.
+     * May block for a large GGUF: call on a worker thread. Closing the SDK cancels the transfer.
+     */
+    fun downloadModel(
+        observer: DownloadProgressObserver = DownloadProgressObserver {},
+        cancellationToken: DownloadCancellationToken = NeverCancelled,
+    ): ModelDownloadResult {
+        requireWorkerThread()
+        checkOpen()
+        return provisioning.download(observer, DownloadCancellationToken { closed.get() || cancellationToken.isCancelled() })
+    }
+
+    /** Revalidate GGUF metadata, import atomically, and check SHA-256 before prepare(). */
+    fun installModel(
+        handle: VerifiedDownloadHandle,
+        observer: ModelInstallationObserver = ModelInstallationObserver {},
+    ): ModelInstallationResult {
+        requireWorkerThread()
+        checkOpen()
+        return provisioning.install(handle, observer)
     }
 
     fun prepare(): PrepareResult {
@@ -146,6 +220,8 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
 
     companion object {
         internal const val MODEL_DIRECTORY = "harnex-embedded-models"
+        internal const val VERIFIED_DOWNLOAD_DIRECTORY = "harnex-embedded-verified-downloads"
+        internal const val INSTALL_STAGING_DIRECTORY = "harnex-embedded-install-staging"
 
         /** No Binder service, Host installation, Host authorization or prompt-content audit store. */
         fun open(context: Context, configuration: EmbeddedConfiguration): EmbeddedRuntime {
