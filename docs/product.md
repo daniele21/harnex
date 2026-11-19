@@ -80,7 +80,7 @@ A consumer app can use local AI as a governed Android capability: **embedded SDK
 ## Success signals
 
 - **Acceptance:** supported embedded and Shared Host/Consumer contracts, lifecycle/failure semantics and relevant operator journeys pass claim-matched automated and physical release evidence for the exact candidate.
-- **Outcome:** an independent embedded app can run inference without a separately installed Host, while a shared Consumer can authorize, execute, recover and diagnose via the Host without duplicating Harnex-owned runtime/model policy. RedactGuard is the current shared reference; the external embedded-app proof is planned, not implemented.
+- **Outcome:** an independent embedded app can run inference without a separately installed Host, while a shared Consumer can authorize, execute, recover and diagnose via the Host without duplicating Harnex-owned runtime/model policy. RedactGuard is the current shared reference; the external embedded-app Maven-only build proof is implemented, while physical GGUF inference and release qualification remain outstanding.
 - **Product impact:** growth in credible consumer use, lower integration/support friction, stable task success and representative-device quality are stronger signals than feature count. Use privacy-safe evidence; analytics are not required by default.
 
 ## Canonical product sources
