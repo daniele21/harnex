@@ -14,7 +14,7 @@ EMBEDDED_SDK_VERSION=0.1.0-SNAPSHOT bash scripts/verify-embedded-sdk-publication
 
 This publishes release AARs to `build/embedded-sdk-repository` and assembles the
 independent sample APK using **only** that staged Maven repository. The script
-checks the `arm64-v8a` JNI library in the published backend AAR and final APK.
+checks the `arm64-v8a` JNI library in the published backend AAR and final APK. The sample also sets `android.packaging.jniLibs.useLegacyPackaging = true` so Android extracts `.so` files to `applicationInfo.nativeLibraryDir`, which the current llama.cpp backend expects. Apply the same setting in external consumer apps until Harnex supports non-extracted JNI installation.
 It must not use `project(...)`, `includeBuild(...)`, or a source checkout as a
 dependency. An AAR/compile success is **not** evidence of real GGUF generation.
 
