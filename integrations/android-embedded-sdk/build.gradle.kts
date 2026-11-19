@@ -30,6 +30,8 @@ dependencies {
     implementation(project(":models:model-profile"))
     implementation(project(":models:model-store"))
     implementation(project(":models:model-catalog"))
+    api(project(":models:model-download"))
+    api(project(":models:model-install"))
     implementation(project(":transports:in-process"))
     implementation(project(":backends:llama-cpp"))
 
