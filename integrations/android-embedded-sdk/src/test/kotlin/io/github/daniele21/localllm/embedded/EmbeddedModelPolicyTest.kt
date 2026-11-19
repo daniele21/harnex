@@ -1,8 +1,8 @@
 package io.github.daniele21.localllm.embedded
 
-import io.github.daniele21.localllm.contracts.GenerationInput
 import io.github.daniele21.localllm.contracts.ConversationMessage
 import io.github.daniele21.localllm.contracts.ConversationRole
+import io.github.daniele21.localllm.contracts.GenerationInput
 import io.github.daniele21.localllm.models.OutputMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
