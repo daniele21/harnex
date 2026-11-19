@@ -6,7 +6,7 @@ Owner: runtime-core / llama-cpp backend (coordination; no duplicate implementati
 Canonical scope: workstream.simplicity-first-runtime
 Read when: choosing the next evidence-backed simplification of the Harnex runtime
 Last reviewed: 2026-11-19
-Source checkpoint: `dev@ed7aa3034338c65fbf815c7fd86116399bd61191`
+Source checkpoint: `dev@7057690134260a59de9b74e38e058a582eff01f3`
 
 ## Product intent and decision
 
@@ -51,6 +51,7 @@ Source checkpoint: `dev@ed7aa3034338c65fbf815c7fd86116399bd61191`
 | SIMP-26 | DONE | Preserve truthful `DEGRADED` on batch context release failure; PR #592 | Exact-head Android STRONG, two worker-idle regression tests, Repository validation and merge to `dev@48ea57d`; physical native qualification remains separate |
 | SIMP-27 | DONE | PR #594 split ordinary generation into in-class preparation, streaming, terminal projection and one typed failure path; no new resource owner or public API | Exact-head integration Android STRONG, runtime tests, direct consumer compilation, Spotless/Detekt and Repository validation passed; merged to `dev@d5fb979`. Physical ARM64/GGUF evidence is not claimed |
 | SIMP-28 | DONE | PR #596 now shares the two immutable generation projections through `ResolvedRequestConfiguration` for ordinary generation and batch, preserving distinct lifecycle and cancellation semantics | Exact-head integration Android STRONG, direct consumers, regression tests and Repository validation PASS; merged in `dev@ed7aa303`. No public contract/JNI change or physical Android claim |
+| SIMP-29 | IN REVIEW | Audit the remaining branch/ownership complexity and preserve truthful runtime health when ordinary session-release cleanup fails during terminal delivery | Single shared execution-finalization policy (ordinary + batch), deferred-session-release regression with worker-idle assertion, terminal-once and explicit release retry; exact-head STRONG validation before integration |
 | SIMP-30 | BLOCKED | `backends/llama-cpp` JNI protocol cost investigation; independent of SIMP-20, after SIMP-00 | KEEP or one evidence-backed minimal edit with native/ARM64 packaging and device check |
 
 - **Parallel owners:** CIH handles SDK, MEM/Q35 handles physical qualification, LLUP handles upstream pin. SIMP-20 and SIMP-30 may progress in parallel only without shared JNI/Kotlin protocol or public contract changes. PR #577 is integrated and supersedes closed #562; preserve the canonical Hello Harnex sample.
@@ -62,6 +63,15 @@ Source checkpoint: `dev@ed7aa3034338c65fbf815c7fd86116399bd61191`
 - Both paths now project `ResolvedRequestConfiguration` and `BackendPromptPlan` to `EffectiveGenerationMetadata` and `BackendGenerationRequest` as methods of the existing immutable `ResolvedRequestConfiguration` in the generation-planning file; this avoids drifting field mappings without adding methods to the planning policy, new managers or state.
 - The caller supplies the **actual context size**: materialized ordinary context versus per-sequence evaluation-batch allocation. It also supplies backend reasoning control for ordinary generation while evaluation batching deliberately passes `null` and rejects thinking mode.
 - Batch still owns one dedicated native context, exactly-once release and per-case outcome attribution. Ordinary generation keeps streaming, guard-stop semantics, terminal-once and cancellation behavior. No cross-path error/cancellation abstraction is introduced.
+
+## SIMP-29 — measured residual complexity and narrow follow-up
+
+Source audit: `dev@70576901`, 1,404 lines in `RuntimeOrchestrator.kt`. Local source-line counts (including method declarations, not a cyclomatic-complexity tool): `executeEvaluationBatch` 115, `generateEvaluationBatch` 89, `streamGeneration` 84, `prepareGeneration` 57 and `prepareEvaluationBatchCase` 44.
+
+- **Keep separate:** evaluation-batch and ordinary flows have different resource ownership, streaming, terminal/cancellation and reasoning controls. The shared planning sequence still differs in cancellation checkpoints and batch thinking restrictions; extracting it with new callback/state plumbing is not yet a simplification.
+- **Validated duplication candidate:** both execution `finally` blocks repeated deferred-unload and READY/DEGRADED state handling. In the ordinary path, a deferred `releaseSession` failure can mark `DEGRADED` during terminal cleanup, then the generation `finally` could overwrite it with `READY`. Preserve the existing state owner by settling both operations in one helper, without adding recovery policy or a new manager.
+- **Acceptance:** failed ordinary session context release leaves runtime `DEGRADED` after the decode worker finishes; retains exactly one terminal event, no repeat native release in cleanup, and permits a later explicit session-close retry. Existing batch release-failure cases continue to pass. Do not claim automatic recovery or physical-device proof.
+- **Stop criterion:** no further extraction based on file size alone. Follow-up should inspect a reproducible invariant violation or actual duplicated transformation before editing a new boundary.
 
 ## Validation and execution
 
