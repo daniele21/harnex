@@ -84,7 +84,7 @@ class EmbeddedRuntime private constructor(
         )
     private val client: LocalLlmClient = InProcessLocalLlmClient(runtime)
 
-    val modelId: String = resolved.model.artifact.fileName
+    val modelId: String = EmbeddedModelPolicy.INITIAL_MODEL_ID
     val applicationId: ApplicationId = resolved.binding.applicationId
     val useCaseId: UseCaseId = resolved.binding.useCaseId
 
