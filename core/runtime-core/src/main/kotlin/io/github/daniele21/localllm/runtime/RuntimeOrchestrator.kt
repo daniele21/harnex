@@ -69,7 +69,7 @@ class RuntimeOrchestrator(
     private val sessions = ConcurrentHashMap<SessionId, SessionDescriptor>()
     private val closed = AtomicBoolean(false)
     private val deferredModelUnload = AtomicBoolean(false)
-    private val runtimeTelemetry = RuntimeTelemetry(telemetryRepository, epochClock)
+    private val runtimeTelemetry = RuntimeTelemetry(telemetryRepository, epochClock, enforceMemoryAdmission)
     private val generationPlanning = GenerationPlanningPolicy(seedSource)
     private val modelResidency = ModelResidencyLifecycle()
 
@@ -845,7 +845,6 @@ class RuntimeOrchestrator(
             is MemoryAwareEvaluationBatchContextDecision.Allow -> {
                 runtimeTelemetry.memoryAdmission(
                     resource = MemoryAdmissionResource.CONTEXT,
-                    enforced = enforceMemoryAdmission,
                     outcome = if (decision.downshifted) MemoryAdmissionOutcome.DOWNSHIFT else MemoryAdmissionOutcome.ALLOW,
                     estimate = decision.estimate,
                     requestedContextTokens = requestedAggregate,
@@ -857,7 +856,6 @@ class RuntimeOrchestrator(
             is MemoryAwareEvaluationBatchContextDecision.Reject -> {
                 runtimeTelemetry.memoryAdmission(
                     resource = MemoryAdmissionResource.CONTEXT,
-                    enforced = enforceMemoryAdmission,
                     outcome = MemoryAdmissionOutcome.REJECT,
                     decisionReason = decision.reason.name,
                     admissionReason = decision.admissionReason,
@@ -979,7 +977,6 @@ class RuntimeOrchestrator(
             is MemoryAwareContextDecision.Allow -> {
                 runtimeTelemetry.memoryAdmission(
                     resource = MemoryAdmissionResource.CONTEXT,
-                    enforced = enforceMemoryAdmission,
                     outcome = if (decision.downshifted) MemoryAdmissionOutcome.DOWNSHIFT else MemoryAdmissionOutcome.ALLOW,
                     estimate = decision.estimate,
                     requestedContextTokens = contextPlan.requestedContextTokens,
@@ -991,7 +988,6 @@ class RuntimeOrchestrator(
             is MemoryAwareContextDecision.Reject -> {
                 runtimeTelemetry.memoryAdmission(
                     resource = MemoryAdmissionResource.CONTEXT,
-                    enforced = enforceMemoryAdmission,
                     outcome = MemoryAdmissionOutcome.REJECT,
                     decisionReason = decision.reason.name,
                     admissionReason = decision.admissionReason,
@@ -1126,7 +1122,6 @@ class RuntimeOrchestrator(
         when (decision) {
             is MemoryAwareModelLoadDecision.Allow -> runtimeTelemetry.memoryAdmission(
                 resource = MemoryAdmissionResource.MODEL,
-                enforced = enforceMemoryAdmission,
                 outcome = MemoryAdmissionOutcome.ALLOW,
                 estimate = decision.estimate,
             )
@@ -1134,7 +1129,6 @@ class RuntimeOrchestrator(
             is MemoryAwareModelLoadDecision.Reject -> {
                 runtimeTelemetry.memoryAdmission(
                     resource = MemoryAdmissionResource.MODEL,
-                    enforced = enforceMemoryAdmission,
                     outcome = MemoryAdmissionOutcome.REJECT,
                     decisionReason = decision.reason.name,
                     admissionReason = decision.admissionReason,
