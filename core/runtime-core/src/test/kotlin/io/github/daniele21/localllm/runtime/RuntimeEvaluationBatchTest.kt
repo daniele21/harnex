@@ -64,6 +64,48 @@ class RuntimeEvaluationBatchTest {
     }
 
     @Test
+    fun `batch preserves per-case sampling overrides with no reasoning control`() {
+        val fixture = BatchRuntimeFixture()
+        val initial = fixture.batchRequest("batch-settings", fixture.sessions(2))
+        val requests = initial.requests.mapIndexed { index, request ->
+            request.copy(
+                overrides = GenerationOverrides(
+                    maxOutputTokens = 20 + index,
+                    temperature = 0.3f + index * 0.2f,
+                    topP = 0.8f,
+                    topK = 12,
+                    minP = 0.07f,
+                    presencePenalty = 0.2f,
+                    repeatPenalty = 1.1f,
+                    repeatLastN = 32,
+                    seed = 17L + index,
+                ),
+            )
+        }
+        val terminal = CountDownLatch(1)
+        var outcome: RuntimeEvaluationBatchOutcome? = null
+
+        fixture.runtime.generateEvaluationBatch(
+            initial.copy(requests = requests),
+            RuntimeEvaluationBatchListener {
+                outcome = it
+                terminal.countDown()
+            },
+        )
+
+        assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        assertTrue(outcome is RuntimeEvaluationBatchOutcome.Completed)
+        val projected = fixture.backend.lastBatchRequests
+        assertEquals(requests.map { it.requestId.value }, projected.map { it.requestId })
+        assertEquals(listOf(20, 21), projected.map { it.maxOutputTokens })
+        assertEquals(listOf(17L, 18L), projected.map { it.seed })
+        assertEquals(listOf(0.07f, 0.07f), projected.map { it.minP })
+        assertEquals(listOf(0.2f, 0.2f), projected.map { it.presencePenalty })
+        assertTrue(projected.all { it.reasoningControl == null })
+        fixture.close()
+    }
+
+    @Test
     fun `batch is one scheduler operation behind an active ordinary generation`() {
         val fixture = BatchRuntimeFixture()
         fixture.backend.blockOrdinaryGeneration = CountDownLatch(1)
@@ -436,6 +478,7 @@ private class BatchFakeInferenceBackend :
     var batchGenerationCalls = 0
     var batchContextReleaseCalls = 0
     var lastBatchConfiguration: BackendEvaluationBatchContextConfiguration? = null
+    @Volatile var lastBatchRequests: List<BackendGenerationRequest> = emptyList()
     var blockOrdinaryGeneration: CountDownLatch? = null
     var blockBatchGeneration: CountDownLatch? = null
     var batchFailure: Throwable? = null
@@ -516,6 +559,7 @@ private class BatchFakeInferenceBackend :
         context: BackendEvaluationBatchContextHandle,
         requests: List<BackendGenerationRequest>,
     ): BackendEvaluationBatchResult {
+        lastBatchRequests = requests
         batchGenerationCalls += 1
         batchGenerationStarted.countDown()
         blockBatchGeneration?.await()
