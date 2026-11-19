@@ -58,13 +58,15 @@ done
 
 IFS=',' read -r -a CONTEXT_TIERS <<< "$CONTEXTS"
 (( ${#CONTEXT_TIERS[@]} > 0 )) || { echo "Missing context tiers" >&2; exit 2; }
-declare -A SEEN_CONTEXTS=()
+SEEN_CONTEXTS=","
 for tier in "${CONTEXT_TIERS[@]}"; do
     case "$tier" in 1024|2048|4096|8192) ;; *)
         echo "Unsupported Qwen3.5 context tier: $tier" >&2; exit 2 ;;
     esac
-    [[ -z "${SEEN_CONTEXTS[$tier]:-}" ]] || { echo "Duplicate context tier" >&2; exit 2; }
-    SEEN_CONTEXTS["$tier"]=1
+    case "$SEEN_CONTEXTS" in
+        *,"$tier",*) echo "Duplicate context tier" >&2; exit 2 ;;
+    esac
+    SEEN_CONTEXTS="$SEEN_CONTEXTS$tier,"
 done
 
 command -v "$ADB_BIN" >/dev/null || { echo "adb is required" >&2; exit 2; }
@@ -143,7 +145,10 @@ read_thermal_status() {
 wait_for_thermal_gate() {
     while true; do
         thermal="$(read_thermal_status)"
-        if (( thermal <= THERMAL_START_MAX )); then return 0; fi
+        if (( thermal <= THERMAL_START_MAX )); then
+            echo "Thermal start gate satisfied: status=$thermal limit=$THERMAL_START_MAX"
+            return 0
+        fi
         echo "Thermal status=$thermal; cooling before next serialized case"
         sleep 30
     done
@@ -208,7 +213,8 @@ python3 scripts/summarize-qwen35-memory-calibration.py \
     --repeats "$REPEATS" --contexts "$CONTEXTS"
 
 python3 - "$RUN_DIR" "$HARNESS_COMMIT" "$BACKEND_REVISION" "$DEVICE_MODEL" \
-    "$DEVICE_RELEASE" "$DEVICE_SDK" "$DEVICE_ABI" "$EXPECTED_08B_SHA" "$EXPECTED_2B_SHA" <<'PY'
+    "$DEVICE_RELEASE" "$DEVICE_SDK" "$DEVICE_ABI" "$EXPECTED_08B_SHA" "$EXPECTED_2B_SHA" \
+    "$CONTEXTS" "$REPEATS" "$THERMAL_START_MAX" <<'PY'
 import hashlib
 import json
 import sys
@@ -231,6 +237,9 @@ payload = {
     "abi": sys.argv[7],
     "model08bDigest": sys.argv[8],
     "model2bDigest": sys.argv[9],
+    "contextTiers": [int(value) for value in sys.argv[10].split(",")],
+    "coldRepetitions": int(sys.argv[11]),
+    "thermalStartMax": int(sys.argv[12]),
     "rawEvidenceSha256": digest(root / "raw-memory-cost.jsonl"),
     "candidateSummarySha256": digest(root / "candidate-summary.json"),
     "caseLogDigests": {log.name: digest(log) for log in logs},
