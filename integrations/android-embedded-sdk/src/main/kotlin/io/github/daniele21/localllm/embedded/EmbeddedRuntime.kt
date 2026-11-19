@@ -38,7 +38,7 @@ data class EmbeddedConfiguration(val modelId: String, val systemInstructions: St
                 (
                     systemInstructions.isNotBlank() && systemInstructions.length <= MAX_SYSTEM_INSTRUCTIONS &&
                         '\u0000' !in systemInstructions
-                ),
+                    ),
         ) {
             "Embedded instructions must be nonblank, bounded and NUL-free"
         }
