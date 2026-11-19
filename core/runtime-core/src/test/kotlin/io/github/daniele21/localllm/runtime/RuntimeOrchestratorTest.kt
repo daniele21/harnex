@@ -86,6 +86,29 @@ class RuntimeOrchestratorTest {
     }
 
     @Test
+    fun `backend failure after preparation emits one typed terminal failure`() {
+        val fixture = RuntimeFixture()
+        fixture.backend.generateFailureCode = "GENERATION_FAILED"
+        val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)
+        val events = Collections.synchronizedList(mutableListOf<GenerationEvent>())
+        val terminal = CountDownLatch(1)
+
+        fixture.runtime.generate(
+            fixture.request("backend-failure", session),
+            GenerationListener { event ->
+                events += event
+                if (event is GenerationEvent.Completed || event is GenerationEvent.Failed) terminal.countDown()
+            },
+        )
+
+        assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        assertEquals(listOf("Queued", "Prepared", "Started", "Failed"), events.map { it::class.simpleName })
+        assertEquals(1, events.count { it is GenerationEvent.Completed || it is GenerationEvent.Failed })
+        assertTrue((events.last() as GenerationEvent.Failed).error is LocalLlmError.NativeRuntime)
+        fixture.close()
+    }
+
+    @Test
     fun `auto context uses the smallest approved capacity after exact prompt planning`() {
         val fixture = RuntimeFixture()
         val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)

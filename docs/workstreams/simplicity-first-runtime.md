@@ -6,7 +6,7 @@ Owner: runtime-core / llama-cpp backend (coordination; no duplicate implementati
 Canonical scope: workstream.simplicity-first-runtime
 Read when: choosing the next evidence-backed simplification of the Harnex runtime
 Last reviewed: 2026-11-19
-Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
+Source checkpoint: `dev@3fb6043ca61ff4d8c520c731deda69f74e70de38`
 
 ## Product intent and decision
 
@@ -49,6 +49,7 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 | SIMP-20 | DONE | `core/runtime-core` one duplicate terminal-path refactor; PR #584, depends SIMP-10 | No public contract/state-owner drift; exact-head scoped/strong CI and direct consumers |
 | SIMP-25 | DONE | Consolidate `executeEvaluationBatch` duplicated failure cleanup; PR #591 | Exact-head Android STRONG and regression tests passed; merged in `dev@dfa1675` |
 | SIMP-26 | DONE | Preserve truthful `DEGRADED` on batch context release failure; PR #592 | Exact-head Android STRONG, two worker-idle regression tests, Repository validation and merge to `dev@48ea57d`; physical native qualification remains separate |
+| SIMP-27 | IN PROGRESS | Split ordinary `executeGeneration` into in-class preparation, streaming, and finalization on a dedicated branch; no new state/resource owner or public API | Preserve queued/prepared/started/delta/terminal event order, planning and streaming cancellation, guard-stop success, typed errors, deferred unload and exactly-one terminal; Android STRONG + Repository validation before integration |
 | SIMP-30 | BLOCKED | `backends/llama-cpp` JNI protocol cost investigation; independent of SIMP-20, after SIMP-00 | KEEP or one evidence-backed minimal edit with native/ARM64 packaging and device check |
 
 - **Parallel owners:** CIH handles SDK, MEM/Q35 handles physical qualification, LLUP handles upstream pin. SIMP-20 and SIMP-30 may progress in parallel only without shared JNI/Kotlin protocol or public contract changes. PR #577 is integrated and supersedes closed #562; preserve the canonical Hello Harnex sample.
@@ -65,6 +66,6 @@ Source checkpoint: `dev@b5def37ade90d0bb208f2acc540a6540efb48761`
 
 ## Resume checkpoint
 
-- Base at audit: `dev@b5def37`; SIMP-25 and SIMP-26 are integrated through `dev@48ea57d`. Refresh live base, PRs and selectors before implementation/merge.
+- Base at audit: `dev@b5def37`; SIMP-25 and SIMP-26 are integrated through `dev@3fb6043` (including PR #593 documentation). SIMP-27 is on `agent/simp-generation-phases-20261119`, awaiting exact-head integration gates. Refresh live base, PRs and selectors before implementation/merge.
 - PR #584 integrated the terminal-once simplification into `dev` as `dfaccd3` after STRONG automated validation; PR #577 integrated the generic-text onboarding as `52b9cf4`. PR #578 Binder invalidation was integrated in `dev` as `c2ab02d` after STRONG Android and external Consumer validation.
 - Production pin remains `b9637`; v1.0.0 is an unqualified candidate. No generic import/embedded SDK/public convenience API has been implemented by SIMP.
