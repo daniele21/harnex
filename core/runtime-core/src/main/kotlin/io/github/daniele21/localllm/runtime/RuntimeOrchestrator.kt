@@ -3,7 +3,6 @@ package io.github.daniele21.localllm.runtime
 import io.github.daniele21.localllm.contracts.ApplicationId
 import io.github.daniele21.localllm.contracts.ConfigurationErrorCode
 import io.github.daniele21.localllm.contracts.ContextPolicy
-import io.github.daniele21.localllm.contracts.EffectiveGenerationMetadata
 import io.github.daniele21.localllm.contracts.GenerationContentType
 import io.github.daniele21.localllm.contracts.GenerationEvent
 import io.github.daniele21.localllm.contracts.GenerationHandle
@@ -17,8 +16,6 @@ import io.github.daniele21.localllm.contracts.PrepareResult
 import io.github.daniele21.localllm.contracts.RequestId
 import io.github.daniele21.localllm.contracts.RuntimeSnapshot
 import io.github.daniele21.localllm.contracts.RuntimeState
-import io.github.daniele21.localllm.contracts.SeedPolicy
-import io.github.daniele21.localllm.contracts.SeedPolicyType
 import io.github.daniele21.localllm.contracts.SessionId
 import io.github.daniele21.localllm.contracts.SessionKind
 import io.github.daniele21.localllm.contracts.SessionOptions
@@ -427,25 +424,7 @@ class RuntimeOrchestrator(
             throw GenerationCancelledException()
         }
         val executionEvidence = backend.executionEvidence(contextResult.context)
-        val effective = EffectiveGenerationMetadata(
-            preset = resolved.preset?.ref,
-            temperature = resolved.temperature,
-            topP = resolved.topP,
-            topK = resolved.topK,
-            minP = resolved.minP,
-            presencePenalty = resolved.presencePenalty,
-            repeatPenalty = resolved.repeatPenalty,
-            repeatLastN = resolved.repeatLastN,
-            requestedSeedPolicy = resolved.seedPolicy.toType(),
-            effectiveSeed = resolved.effectiveSeed,
-            maxOutputTokens = resolved.maxOutputTokens,
-            contextSize = contextResult.context.contextSize,
-            promptTokenCount = promptPlan.tokenCount,
-            chatTemplateId = promptPlan.chatTemplateId,
-            chatTemplateSource = promptPlan.chatTemplateSource,
-            systemPromptVersion = resolved.systemPromptVersion,
-            thinkingMode = resolved.thinkingMode,
-        )
+        val effective = generationPlanning.effectiveMetadata(resolved, promptPlan, contextResult.context.contextSize)
         effectivePromptSink.publish(request.requestId, promptPlan.prompt)
         runtimeTelemetry.prepared(
             requestId = request.requestId,
@@ -514,23 +493,7 @@ class RuntimeOrchestrator(
                 ),
             )
         }
-        val backendRequest = BackendGenerationRequest(
-            requestId = request.requestId.value,
-            prompt = promptPlan.prompt,
-            maxOutputTokens = resolved.maxOutputTokens,
-            temperature = resolved.temperature,
-            topP = resolved.topP,
-            topK = resolved.topK,
-            minP = resolved.minP,
-            presencePenalty = resolved.presencePenalty,
-            repeatPenalty = resolved.repeatPenalty,
-            repeatLastN = resolved.repeatLastN,
-            seed = resolved.effectiveSeed,
-            outputConstraint = request.outputConstraint,
-            stopTokenIds = promptPlan.stopTokenIds,
-            stopSequences = promptPlan.stopSequences,
-            reasoningControl = reasoningControl,
-        )
+        val backendRequest = generationPlanning.backendRequest(request, resolved, promptPlan, reasoningControl)
         lifecycle.ensureNotCancelled()
         val outcome = backend.generate(contextResult.context, backendRequest) { text, generatedTokens ->
             if (lifecycle.isCancellationRequested()) {
@@ -638,25 +601,7 @@ class RuntimeOrchestrator(
             ensureEvaluationBatchNotCancelled(lifecycle)
             val executionEvidence = backend.executionEvidence(context)
             prepared.forEach { preparedCase ->
-                val effective = EffectiveGenerationMetadata(
-                    preset = preparedCase.resolved.preset?.ref,
-                    temperature = preparedCase.resolved.temperature,
-                    topP = preparedCase.resolved.topP,
-                    topK = preparedCase.resolved.topK,
-                    minP = preparedCase.resolved.minP,
-                    presencePenalty = preparedCase.resolved.presencePenalty,
-                    repeatPenalty = preparedCase.resolved.repeatPenalty,
-                    repeatLastN = preparedCase.resolved.repeatLastN,
-                    requestedSeedPolicy = preparedCase.resolved.seedPolicy.toType(),
-                    effectiveSeed = preparedCase.resolved.effectiveSeed,
-                    maxOutputTokens = preparedCase.resolved.maxOutputTokens,
-                    contextSize = perSequenceContextSize,
-                    promptTokenCount = preparedCase.promptPlan.tokenCount,
-                    chatTemplateId = preparedCase.promptPlan.chatTemplateId,
-                    chatTemplateSource = preparedCase.promptPlan.chatTemplateSource,
-                    systemPromptVersion = preparedCase.resolved.systemPromptVersion,
-                    thinkingMode = preparedCase.resolved.thinkingMode,
-                )
+                val effective = generationPlanning.effectiveMetadata(preparedCase.resolved, preparedCase.promptPlan, perSequenceContextSize)
                 runtimeTelemetry.prepared(
                     requestId = preparedCase.binding.request.requestId,
                     configuration = effective,
@@ -848,23 +793,7 @@ class RuntimeOrchestrator(
             promptPlan = promptPlan,
             contextPlan = contextPlan,
             promptPlanningMs = promptPlanningMs,
-            backendRequest = BackendGenerationRequest(
-                requestId = binding.request.requestId.value,
-                prompt = promptPlan.prompt,
-                maxOutputTokens = resolved.maxOutputTokens,
-                temperature = resolved.temperature,
-                topP = resolved.topP,
-                topK = resolved.topK,
-                minP = resolved.minP,
-                presencePenalty = resolved.presencePenalty,
-                repeatPenalty = resolved.repeatPenalty,
-                repeatLastN = resolved.repeatLastN,
-                seed = resolved.effectiveSeed,
-                outputConstraint = binding.request.outputConstraint,
-                stopTokenIds = promptPlan.stopTokenIds,
-                stopSequences = promptPlan.stopSequences,
-                reasoningControl = null,
-            ),
+            backendRequest = generationPlanning.backendRequest(binding.request, resolved, promptPlan, null),
         )
     }
 
@@ -1085,11 +1014,6 @@ class RuntimeOrchestrator(
                 session.context = null
             }
         }
-    }
-
-    private fun SeedPolicy.toType(): SeedPolicyType = when (this) {
-        SeedPolicy.Random -> SeedPolicyType.RANDOM
-        is SeedPolicy.Fixed -> SeedPolicyType.FIXED
     }
 
     private fun BackendException.toPublicError(): LocalLlmError {
