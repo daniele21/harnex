@@ -38,7 +38,7 @@ val embeddedPublishingModules =
         ":models:model-download",
         ":models:model-install",
         ":backends:llama-cpp",
-        // Diagnostic: isolate publication-induced task cycles in observability.
+        ":observability:contracts",
         ":transports:in-process",
         ":integrations:android-embedded-sdk",
     )
@@ -72,7 +72,12 @@ subprojects {
                 publications {
                     register<org.gradle.api.publish.maven.MavenPublication>("embeddedRelease") {
                         groupId = project.group.toString()
-                        artifactId = if (project.path == ":integrations:android-embedded-sdk") "embedded-android" else project.name
+                        artifactId =
+                            when (project.path) {
+                                ":integrations:android-embedded-sdk" -> "embedded-android"
+                                ":observability:contracts" -> "observability-contracts"
+                                else -> project.name
+                            }
                         version = project.version.toString()
                         afterEvaluate { from(components["release"]) }
                     }
