@@ -70,6 +70,10 @@ LLRT-7C is not on the critical path for CPU-side Q35-6 acceptance and should pro
 3. PR #428 (`feat/q35-lifecycle-memory-evidence`) integrated QRT-20 as merge `47598663378dc4c342e84c67219f94aae4a91f0a` after exact-head Repository health, Validate and Package Android Artifacts all passed.
 4. Physical QRT-40 must start from one clean, fixed `dev` identity after this documentation synchronization. Once the physical wave starts, do not pull or otherwise change Harness identity between its constituent cases.
 
+## MEM-B candidate cost evidence (separate from QRT-40)
+
+The independent `scripts/run-qwen35-memory-cost-calibration.sh` and `Qwen35MemoryCostCalibrationInstrumentedTest` prepare an exact-identity, thermal-gated physical native memory-cost matrix. It samples model/context/generation peaks, after-release residuals and system headroom; the parser accepts only complete repeated cases and marks outputs `CANDIDATE_UNREVIEWED`. QRT-40 lifecycle evidence and representative QRT-50 benchmarks retain their existing gates. The MEM-B script does not substitute for either, is not a source of automatic profile promotion, and has no physical results until executed on representative ARM64 hardware.
+
 ## Physical acceptance boundary
 
 The canonical same-device lifecycle wave must cover, for both curated tiers where applicable:
