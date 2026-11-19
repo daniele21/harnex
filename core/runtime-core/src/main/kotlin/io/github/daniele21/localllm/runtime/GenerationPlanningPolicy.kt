@@ -2,10 +2,12 @@ package io.github.daniele21.localllm.runtime
 
 import io.github.daniele21.localllm.contracts.ConfigurationErrorCode
 import io.github.daniele21.localllm.contracts.ContextPolicy
+import io.github.daniele21.localllm.contracts.EffectiveGenerationMetadata
 import io.github.daniele21.localllm.contracts.GenerationInput
 import io.github.daniele21.localllm.contracts.GenerationRequest
 import io.github.daniele21.localllm.contracts.OutputConstraint
 import io.github.daniele21.localllm.contracts.SeedPolicy
+import io.github.daniele21.localllm.contracts.SeedPolicyType
 import io.github.daniele21.localllm.contracts.SessionOptions
 import io.github.daniele21.localllm.contracts.ThinkingMode
 import io.github.daniele21.localllm.models.ContextPreference
@@ -92,6 +94,60 @@ internal class GenerationPlanningPolicy(private val seedSource: SeedSource) {
             contextPreference = preset?.contextPreference ?: ContextPreference(),
             guardPolicy = defaults.guardPolicy,
         )
+    }
+
+    /** The same effective settings describe an ordinary context or a batch sequence. */
+    fun effectiveMetadata(
+        resolved: ResolvedRequestConfiguration,
+        promptPlan: BackendPromptPlan,
+        contextSize: Int,
+    ): EffectiveGenerationMetadata = EffectiveGenerationMetadata(
+        preset = resolved.preset?.ref,
+        temperature = resolved.temperature,
+        topP = resolved.topP,
+        topK = resolved.topK,
+        minP = resolved.minP,
+        presencePenalty = resolved.presencePenalty,
+        repeatPenalty = resolved.repeatPenalty,
+        repeatLastN = resolved.repeatLastN,
+        requestedSeedPolicy = resolved.seedPolicy.toType(),
+        effectiveSeed = resolved.effectiveSeed,
+        maxOutputTokens = resolved.maxOutputTokens,
+        contextSize = contextSize,
+        promptTokenCount = promptPlan.tokenCount,
+        chatTemplateId = promptPlan.chatTemplateId,
+        chatTemplateSource = promptPlan.chatTemplateSource,
+        systemPromptVersion = resolved.systemPromptVersion,
+        thinkingMode = resolved.thinkingMode,
+    )
+
+    /** The batch caller passes no reasoning control; ordinary generation may provide a backend transition. */
+    fun backendRequest(
+        request: GenerationRequest,
+        resolved: ResolvedRequestConfiguration,
+        promptPlan: BackendPromptPlan,
+        reasoningControl: BackendReasoningControl?,
+    ): BackendGenerationRequest = BackendGenerationRequest(
+        requestId = request.requestId.value,
+        prompt = promptPlan.prompt,
+        maxOutputTokens = resolved.maxOutputTokens,
+        temperature = resolved.temperature,
+        topP = resolved.topP,
+        topK = resolved.topK,
+        minP = resolved.minP,
+        presencePenalty = resolved.presencePenalty,
+        repeatPenalty = resolved.repeatPenalty,
+        repeatLastN = resolved.repeatLastN,
+        seed = resolved.effectiveSeed,
+        outputConstraint = request.outputConstraint,
+        stopTokenIds = promptPlan.stopTokenIds,
+        stopSequences = promptPlan.stopSequences,
+        reasoningControl = reasoningControl,
+    )
+
+    private fun SeedPolicy.toType(): SeedPolicyType = when (this) {
+        SeedPolicy.Random -> SeedPolicyType.RANDOM
+        is SeedPolicy.Fixed -> SeedPolicyType.FIXED
     }
 
     fun validateOutputConstraint(
