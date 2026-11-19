@@ -44,6 +44,7 @@ include(
     ":observability:android-resource-probe",
     ":observability:benchmark-engine",
     ":transports:in-process",
+    ":integrations:android-embedded-sdk",
     ":transports:android-binder-contract",
     ":transports:android-binder-client",
     ":integrations:android-service-host",

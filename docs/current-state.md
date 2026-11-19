@@ -5,7 +5,7 @@ Document type: current-state
 Owner: repository
 Canonical scope: state.repository
 Read when: determining the integrated baseline, open blockers or next repository work block
-Last reviewed: 2026-09-09
+Last reviewed: 2026-11-19
 
 This is the operational ledger for integrated state, blockers and immediate work. Capability history belongs in [`roadmap.md`](roadmap.md); milestone detail stays in focused workstreams.
 
@@ -41,6 +41,12 @@ That Play run observed the **same Play App Signing SHA-256 digest for Harnex and
 ### Consumer API, OMBRA, evaluation and audit
 
 CA-0..4 are integrated; concrete model/runtime/residency authority stays in Harnex. OMB-6B identity approval, OMB-8 measured quality execution and physical evidence remain open. Model-evaluation work is integrated through EVAL-D-09. Local inference Activity/audit is integrated under ADR 0017 with bounded encrypted app-private history and verified Binder caller attribution; normal telemetry stays content-free.
+
+## Embedded Android SDK (development integration)
+
+The [embedded Android SDK workstream](workstreams/embedded-android-sdk.md) owns the one-APK in-process mode alongside the existing Shared Host/Binder Consumer SDK. Through [PR #606](https://github.com/daniele21/harnex/pull/606), the development branch integrates `integrations/android-embedded-sdk`: explicit Qwen3.5 2B Q4_K_M selection, app-private verified download/install, runtime preparation, stateless `GenerationInput.Messages`, streaming/cancellation and technical-session cleanup. Harnex reuses `RuntimeOrchestrator`, the secure downloader, verified installer and llama.cpp backend; the consuming app owns conversation state and UI.
+
+The Maven staging workflow packages the transitive runtime AARs and the independent `samples/external-embedded-android` fixture assembles from Maven coordinates only, including ARM64 JNI. This is **development/automated integration evidence**, not a published production SDK or a successful native GGUF generation. Public versioned publication, real on-device GGUF inference, cancellation/process lifecycle, memory/thermal and representative physical ARM64 qualification remain open under EMB-40/50 and are blocking for release/commercial-app handoff, not this `dev` integration.
 
 ## Release evidence state
 

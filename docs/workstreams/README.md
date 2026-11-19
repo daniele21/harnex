@@ -5,7 +5,7 @@ Document type: documentation-governance
 Owner: repository
 Canonical scope: documentation.workstreams
 Read when: creating, locating, updating or finalizing a bounded implementation workstream
-Last reviewed: 2026-09-09
+Last reviewed: 2026-11-19
 
 This directory is the canonical home for repository-level **temporary implementation workstreams** that must preserve dependency, sequencing or handoff state across pull requests or coding agents.
 
@@ -19,6 +19,7 @@ A workstream belongs here only while it is active. It is not a second project-st
 - [`control-plane-state-reconciliation.md`](control-plane-state-reconciliation.md) — coordinates startup reconciliation of persisted mandatory built-in control-plane state, conservative upgrade repair, cross-surface consistency and the dependent physical upgrade/two-APK gates.
 - [`background-process-lifecycle-hardening.md`](background-process-lifecycle-hardening.md) — coordinates detached logical inference jobs, Binder reconnect/reconciliation, started/background host execution and process-recovery evidence without coupling UI/transport lifetime to runtime/model lifetime.
 - [`consumer-integration-resilience.md`](consumer-integration-resilience.md) — reduces and hardens external Android app integration using existing SDK/Host ownership, typed failure guidance, golden-path proof and independent-consumer tests.
+- [`embedded-android-sdk.md`](embedded-android-sdk.md) — prepares an independently distributed embedded Android inference SDK, verified model provisioning and clean-room external-app integration without a separate Host.
 
 ## Lifecycle
 

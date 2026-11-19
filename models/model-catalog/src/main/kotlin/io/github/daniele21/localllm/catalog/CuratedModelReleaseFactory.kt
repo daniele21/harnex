@@ -30,6 +30,7 @@ internal object CuratedModelReleaseFactory {
         licenseId: String,
         sourceUrl: String,
         useCases: Set<String>,
+        allowEmbeddedLocalTextGeneration: Boolean = false,
     ): CatalogModelRelease = CatalogModelRelease(
         id =
         CatalogReleaseId(
@@ -60,6 +61,8 @@ internal object CuratedModelReleaseFactory {
         allowedTargets =
         (useCases + phoneTestUseCases).mapTo(linkedSetOf()) { useCase ->
             CatalogTarget(phoneTestApplicationId, UseCaseId(useCase))
+        }.apply {
+            if (allowEmbeddedLocalTextGeneration) add(EmbeddedCatalogTargets.LOCAL_TEXT_GENERATION)
         },
         profileKey = ModelProfileKey(profileKey),
         license =
