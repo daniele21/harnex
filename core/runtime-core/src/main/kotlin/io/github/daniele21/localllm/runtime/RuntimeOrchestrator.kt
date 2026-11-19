@@ -588,6 +588,7 @@ class RuntimeOrchestrator(
         }
 
         var context: BackendEvaluationBatchContextHandle? = null
+        var contextReleaseFailed = false
         try {
             val executionStartedAt = clock.nowNanos()
             val prepared = bindings.map { binding -> prepareEvaluationBatchCase(binding) }
@@ -671,7 +672,9 @@ class RuntimeOrchestrator(
             }
             val releasing = context
             context = null
-            releaseEvaluationBatchContext(batchBackend, releasing)
+            val release = runCatching { releaseEvaluationBatchContext(batchBackend, releasing) }
+            contextReleaseFailed = release.isFailure
+            release.getOrThrow()
             results.forEach { result ->
                 when (result) {
                     is RuntimeEvaluationBatchCaseResult.Completed -> runtimeTelemetry.completed(result.requestId, result.metrics)
@@ -686,7 +689,7 @@ class RuntimeOrchestrator(
             context?.let { activeContext ->
                 context = null
                 runCatching { releaseEvaluationBatchContext(batchBackend, activeContext) }
-                    .onFailure { state.set(RuntimeState.DEGRADED) }
+                    .onFailure { contextReleaseFailed = true }
             }
             val failure = when (error) {
                 is GenerationCancelledException -> LocalLlmError.Cancelled()
@@ -697,7 +700,9 @@ class RuntimeOrchestrator(
             failEvaluationBatch(bindings, lifecycle, listener, failure)
         } finally {
             val unloaded = attemptDeferredModelUnload(ignoreActiveGeneration = true)
-            if (!closed.get() && !unloaded) {
+            if (contextReleaseFailed) {
+                state.set(RuntimeState.DEGRADED)
+            } else if (!closed.get() && !unloaded) {
                 state.set(if (deferredModelUnload.get()) RuntimeState.DEGRADED else RuntimeState.READY)
             }
         }
