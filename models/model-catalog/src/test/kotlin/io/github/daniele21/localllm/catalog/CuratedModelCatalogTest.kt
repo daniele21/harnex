@@ -45,6 +45,21 @@ class CuratedModelCatalogTest {
     }
 
     @Test
+    fun embeddedLocalInferenceTargetExposesOnlyReviewedModelWithoutWideningPhoneTargets() {
+        val releases =
+            CatalogQueries.releasesForTarget(
+                CuratedModelCatalog.document(GENERATED_AT, EXPIRES_AT),
+                EmbeddedCatalogTargets.LOCAL_TEXT_GENERATION,
+            )
+
+        assertEquals(listOf("qwen35-2b-q4-k-m"), releases.map { it.id.modelId.value })
+        assertTrue(releases.single().availability == CatalogAvailability.CANDIDATE)
+        assertTrue(releases.single().allowedTargets.contains(EmbeddedCatalogTargets.LOCAL_TEXT_GENERATION))
+        assertTrue(CuratedModelCatalog.releases.filterNot { it.id.modelId.value == "qwen35-2b-q4-k-m" }
+            .none { EmbeddedCatalogTargets.LOCAL_TEXT_GENERATION in it.allowedTargets })
+    }
+
+    @Test
     fun fourBReleaseSetContainsOnlyUnslothFourBitArtifacts() {
         val releases = CuratedModelCatalog.releases.filter { it.id.modelId.value.startsWith("qwen35-4b-") }
 
