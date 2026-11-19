@@ -23,7 +23,7 @@ PHASES = (
     "settled_after_unload",
 )
 APPROVED_CONTEXTS = {1024, 2048, 4096, 8192}
-SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+GIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 
 
 def require(condition, detail):
@@ -85,7 +85,7 @@ def validate_sample(record, head, revision, device_identity):
 
 
 def summarize(records, head, revision, repeats, contexts):
-    require(SHA256.fullmatch(head) and SHA256.fullmatch(revision), "Invalid commit/backend identity")
+    require(GIT_SHA.fullmatch(head) and GIT_SHA.fullmatch(revision), "Invalid commit/backend identity")
     require(repeats >= 3, "At least three independent cold repetitions are required")
     require(contexts and set(contexts).issubset(APPROVED_CONTEXTS) and len(contexts) == len(set(contexts)), "Invalid approved context set")
     expected = {(tier, context) for tier in CURATED for context in contexts}
