@@ -24,19 +24,16 @@ internal class EmbeddedModelProvisioning(
     private val download: (ModelDownloadRequest, DownloadProgressObserver, DownloadCancellationToken) -> ModelDownloadResult,
     private val install: (ModelInstallationRequest, ModelInstallationObserver) -> ModelInstallationResult,
 ) {
-    fun download(
-        observer: DownloadProgressObserver,
-        cancellationToken: DownloadCancellationToken,
-    ): ModelDownloadResult = download(ModelDownloadRequest(release.artifact), observer, cancellationToken)
+    fun download(observer: DownloadProgressObserver, cancellationToken: DownloadCancellationToken): ModelDownloadResult =
+        download(ModelDownloadRequest(release.artifact), observer, cancellationToken)
 
-    fun install(handle: VerifiedDownloadHandle, observer: ModelInstallationObserver): ModelInstallationResult =
-        install(
-            ModelInstallationRequest(
-                handle = handle,
-                release = release,
-                target = target,
-                profile = profile,
-            ),
-            observer,
-        )
+    fun install(handle: VerifiedDownloadHandle, observer: ModelInstallationObserver): ModelInstallationResult = install(
+        ModelInstallationRequest(
+            handle = handle,
+            release = release,
+            target = target,
+            profile = profile,
+        ),
+        observer,
+    )
 }
