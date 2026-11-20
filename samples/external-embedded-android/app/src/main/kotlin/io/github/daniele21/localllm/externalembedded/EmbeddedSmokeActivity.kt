@@ -3,12 +3,12 @@ package io.github.daniele21.localllm.externalembedded
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
-import android.os.Build
-import android.provider.MediaStore
-import java.util.concurrent.Executors
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import android.widget.TextView
+import java.util.concurrent.Executors
 
 /**
  * Standalone Android chat consumer. Runtime, model and cancellation use Harnex Embedded SDK;
