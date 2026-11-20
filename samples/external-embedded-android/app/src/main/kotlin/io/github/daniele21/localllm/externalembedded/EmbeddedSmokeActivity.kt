@@ -366,7 +366,9 @@ class EmbeddedSmokeActivity : Activity() {
                         showMetrics(terminal.metrics, requestMessages.size, start)
                     }
                 }
+
                 is GenerationEvent.Failed -> completeTurnFailure(input, bubble, "${terminal.error.code} · ${terminal.error.message}")
+
                 else -> completeTurnFailure(input, bubble, "Generation ended without a terminal event")
             }
         } catch (failure: IllegalStateException) {
@@ -395,8 +397,8 @@ class EmbeddedSmokeActivity : Activity() {
         val elapsed = SystemClock.elapsedRealtime() - started
         postUi {
             showStatus("Answer complete · ${history.completedTurns()} temporary turns")
-            diagnostics.text = "TTFT ${ttft} ms · ${metrics.totalMs} ms engine · ${elapsed} ms wall · " +
-                "${metrics.outputTokens ?: "—"} tokens · $rate tok/s · PSS ${pssMb()} MB · ${messagesSent} messages"
+            diagnostics.text = "TTFT $ttft ms · ${metrics.totalMs} ms engine · $elapsed ms wall · " +
+                "${metrics.outputTokens ?: "—"} tokens · $rate tok/s · PSS ${pssMb()} MB · $messagesSent messages"
         }
     }
 
@@ -420,10 +422,13 @@ class EmbeddedSmokeActivity : Activity() {
                 cornerRadius = dp(15).toFloat()
             }
         }
-        messages.addView(item, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = dp(10)
-            if (isUser) marginStart = dp(35) else marginEnd = dp(25)
-        })
+        messages.addView(
+            item,
+            LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(10)
+                if (isUser) marginStart = dp(35) else marginEnd = dp(25)
+            },
+        )
         scrollToBottom()
         return item
     }
@@ -436,13 +441,15 @@ class EmbeddedSmokeActivity : Activity() {
     }
 
     private fun showWelcome() {
-        messages.addView(label(
-            "Private by design\n\nThis chat runs with Qwen3.5 2B inside this app. " +
-                "Messages stay in memory only, and only the last six completed turns " +
-                "are considered for each request. Start by preparing the model.",
-            15f,
-            Color.rgb(78, 91, 114),
-        ).apply { setPadding(dp(8), dp(16), dp(8), dp(16)) })
+        messages.addView(
+            label(
+                "Private by design\n\nThis chat runs with Qwen3.5 2B inside this app. " +
+                    "Messages stay in memory only, and only the last six completed turns " +
+                    "are considered for each request. Start by preparing the model.",
+                15f,
+                Color.rgb(78, 91, 114),
+            ).apply { setPadding(dp(8), dp(16), dp(8), dp(16)) },
+        )
     }
 
     private fun showStatus(message: String) {
