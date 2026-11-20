@@ -67,7 +67,7 @@ class DebugChatJourneyActivity : Activity() {
                         screen.updateControls(phase)
                     }
                 }
-            }, (index + 1) * 600L)
+            }, (index + 1) * 2_000L)
         }
     }
 
