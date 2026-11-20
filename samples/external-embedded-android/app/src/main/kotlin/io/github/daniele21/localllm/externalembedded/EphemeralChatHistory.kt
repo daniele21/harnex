@@ -9,10 +9,7 @@ import java.util.ArrayDeque
  * Each generation receives a complete, bounded Messages snapshot; only completed turns
  * are retained. Restarting the app loses this history (the installed GGUF remains).
  */
-internal class EphemeralChatHistory(
-    private val maxTurns: Int = 6,
-    private val maxContextChars: Int = 6_000,
-) {
+internal class EphemeralChatHistory(private val maxTurns: Int = 6, private val maxContextChars: Int = 6_000) {
     private val turns = ArrayDeque<Pair<String, String>>()
 
     fun messagesFor(userText: String): List<ConversationMessage> {
