@@ -49,7 +49,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     private val cancelled = AtomicBoolean(false)
     private val destroyed = AtomicBoolean(false)
     private val activeGeneration = AtomicReference<GenerationHandle?>(null)
-    private val phase = AtomicReference(ChatPhase.NEEDS_MODEL)
+    private val state = ChatSessionState()
     private val ids = AtomicLong(0L)
 
     // Both values are accessed only by the serial worker.
@@ -57,7 +57,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     private var session: SessionId? = null
 
     fun prepare() {
-        if (!phase.compareAndSet(ChatPhase.NEEDS_MODEL, ChatPhase.PREPARING)) return
+        if (!state.beginPreparation()) return
         cancelled.set(false)
         observer.onPhase(ChatPhase.PREPARING)
         worker.execute {
@@ -72,18 +72,18 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 check(prepared.ready) { "Model preparation failed: ${prepared.detail}" }
                 session = runtime.openSession()
                 check(!cancelled.get() && !destroyed.get()) { "Preparation cancelled" }
-                check(phase.compareAndSet(ChatPhase.PREPARING, ChatPhase.READY)) { "Preparation cancelled" }
+                check(state.completePreparation()) { "Preparation cancelled" }
                 observer.onStatus("Ready · all inference stays on this device")
                 observer.onDiagnostics("Verified model · process PSS ${Debug.getPss() / 1024} MB")
                 observer.onPhase(ChatPhase.READY)
             } catch (failure: IllegalStateException) {
                 closeRuntime()
-                phase.set(ChatPhase.NEEDS_MODEL)
+                state.requirePreparation()
                 observer.onStatus("Setup stopped · ${failure.message ?: "not ready"}")
                 observer.onPhase(ChatPhase.NEEDS_MODEL)
             } catch (failure: IllegalArgumentException) {
                 closeRuntime()
-                phase.set(ChatPhase.NEEDS_MODEL)
+                state.requirePreparation()
                 observer.onStatus("Setup stopped · ${failure.message ?: "invalid model configuration"}")
                 observer.onPhase(ChatPhase.NEEDS_MODEL)
             }
@@ -100,8 +100,9 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
             observer.onStatus("Message limit: ${EphemeralChatHistory.MAX_USER_CHARS} characters")
             return false
         }
-        if (!phase.compareAndSet(ChatPhase.READY, ChatPhase.GENERATING)) return false
+        if (destroyed.get() || state.current() != ChatPhase.READY) return false
         cancelled.set(false)
+        if (!state.beginGeneration()) return false
         val id = ids.incrementAndGet()
         observer.onTurnStarted(id, input)
         observer.onPhase(ChatPhase.GENERATING)
@@ -110,9 +111,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     }
 
     fun stop() {
-        val current = phase.get()
-        if (current != ChatPhase.PREPARING && current != ChatPhase.GENERATING) return
-        if (!phase.compareAndSet(current, ChatPhase.STOPPING)) return
+        if (!state.requestStop()) return
         cancelled.set(true)
         activeGeneration.get()?.cancel()
         observer.onPhase(ChatPhase.STOPPING)
@@ -120,7 +119,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     }
 
     fun clearConversation(): Boolean {
-        if (phase.get() != ChatPhase.READY) return false
+        if (state.current() != ChatPhase.READY) return false
         worker.execute { history.reset() }
         observer.onStatus("New chat · context cleared")
         observer.onDiagnostics("Temporary conversation reset; verified GGUF retained")
@@ -130,6 +129,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     fun close() {
         if (!destroyed.compareAndSet(false, true)) return
         cancelled.set(true)
+        state.requirePreparation()
         activeGeneration.get()?.cancel()
         worker.execute { closeRuntime() }
         worker.shutdown()
@@ -168,12 +168,8 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
             observer.onStatus("Generation interrupted")
         } finally {
             activeGeneration.set(null)
-            if (destroyed.get()) {
-                phase.set(ChatPhase.NEEDS_MODEL)
-            } else if (phase.get() != ChatPhase.NEEDS_MODEL) {
-                phase.set(ChatPhase.READY)
-            }
-            observer.onPhase(phase.get())
+            if (destroyed.get()) state.requirePreparation()
+            observer.onPhase(state.settleGeneration())
         }
     }
 
@@ -181,7 +177,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         when (val terminal = result.terminal) {
             is GenerationEvent.Completed -> {
                 val answer = terminal.answerOutput.ifBlank { result.streamedAnswer }
-                if (cancelled.get() || destroyed.get()) {
+                if (!state.acceptCompletion() || destroyed.get()) {
                     observer.onTurnFinished(id, "Stopped · partial output was not saved", false, input)
                 } else if (answer.isBlank()) {
                     observer.onTurnFinished(id, "The model returned no answer", false, input)
