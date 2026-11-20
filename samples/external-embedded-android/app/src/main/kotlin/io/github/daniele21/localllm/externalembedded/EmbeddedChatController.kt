@@ -132,8 +132,10 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         }
         val textError = when {
             input.isBlank() -> "Write a message before sending"
+
             input.length > EphemeralChatHistory.MAX_USER_CHARS ->
                 "Message limit: ${EphemeralChatHistory.MAX_USER_CHARS} characters"
+
             else -> null
         }
         val validationError = imageError ?: textError
