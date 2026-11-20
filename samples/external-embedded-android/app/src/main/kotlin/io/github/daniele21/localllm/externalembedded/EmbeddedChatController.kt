@@ -123,27 +123,22 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     }
 
     fun send(text: String, imageBytes: ByteArray? = null): Boolean {
-        if (imageBytes != null) {
-            if (!visionReady.get()) {
-                observer.onVisionStatus("Tap Prepare vision first")
-                return false
-            }
-            if (imageBytes.isEmpty() || imageBytes.size > MAX_IMAGE_BYTES) {
-                observer.onVisionStatus("Selected image is invalid or too large")
-                return false
-            }
-        }
         val input = text.trim()
-        val validationError = when {
-            input.isBlank() -> "Write a message before sending"
-
-            input.length > EphemeralChatHistory.MAX_USER_CHARS ->
-                "Message limit: ${EphemeralChatHistory.MAX_USER_CHARS} characters"
-
+        val imageError = when {
+            imageBytes == null -> null
+            !visionReady.get() -> "Tap Prepare vision first"
+            imageBytes.isEmpty() || imageBytes.size > MAX_IMAGE_BYTES -> "Selected image is invalid or too large"
             else -> null
         }
+        val textError = when {
+            input.isBlank() -> "Write a message before sending"
+            input.length > EphemeralChatHistory.MAX_USER_CHARS ->
+                "Message limit: ${EphemeralChatHistory.MAX_USER_CHARS} characters"
+            else -> null
+        }
+        val validationError = imageError ?: textError
         if (validationError != null) {
-            observer.onStatus(validationError)
+            if (imageError != null) observer.onVisionStatus(validationError) else observer.onStatus(validationError)
             return false
         }
         if (destroyed.get() || visionPreparing.get() || state.current() != ChatPhase.READY) return false

@@ -155,7 +155,7 @@ class SecureModelDownloader(
                 journal.remove(operationId)
                 lastFailure = error.failure
                 if (error.failure.code == DownloadFailureCode.DOWNLOAD_CANCELLED) {
-                    if (!preservePartialOnCancel) partial?.delete()
+                    discardOnCancellation(partial, preservePartialOnCancel)
                     reporter.emit(DownloadStage.CANCELLED, reporter.lastBytes, attempt, force = true)
                     return ModelDownloadResult.Cancelled(operationId, error.failure)
                 }
@@ -163,7 +163,7 @@ class SecureModelDownloader(
                 if (!error.failure.retryable || attempt == configuration.retryPolicy.maxAttempts) break
                 reporter.emit(DownloadStage.RETRY_WAIT, reporter.lastBytes, attempt, force = true)
                 retryDelay(attempt, cancellationToken)?.let { cancellation ->
-                    if (!preservePartialOnCancel) partial?.delete()
+                    discardOnCancellation(partial, preservePartialOnCancel)
                     reporter.emit(DownloadStage.CANCELLED, reporter.lastBytes, attempt, force = true)
                     return ModelDownloadResult.Cancelled(operationId, cancellation)
                 }
@@ -177,7 +177,7 @@ class SecureModelDownloader(
                 if (attempt == configuration.retryPolicy.maxAttempts) break
                 reporter.emit(DownloadStage.RETRY_WAIT, reporter.lastBytes, attempt, force = true)
                 retryDelay(attempt, cancellationToken)?.let { cancellation ->
-                    if (!preservePartialOnCancel) partial?.delete()
+                    discardOnCancellation(partial, preservePartialOnCancel)
                     reporter.emit(DownloadStage.CANCELLED, reporter.lastBytes, attempt, force = true)
                     return ModelDownloadResult.Cancelled(operationId, cancellation)
                 }
@@ -197,6 +197,10 @@ class SecureModelDownloader(
             operationId,
             lastFailure ?: DownloadFailure(DownloadFailureCode.INTERNAL_FAILURE, false, "unknown"),
         )
+    }
+
+    private fun discardOnCancellation(partial: File?, preservePartialOnCancel: Boolean) {
+        if (!preservePartialOnCancel) partial?.delete()
     }
 
     /**
@@ -353,7 +357,8 @@ class SecureModelDownloader(
         }
     }
 
-    @Suppress("ThrowsCount")
+    // JNI/client-facing error codes must not expose raw filesystem or network exception messages.
+    @Suppress("SwallowedException", "ThrowsCount")
     private fun transfer(
         response: DownloadTransportResponse,
         partial: File,
