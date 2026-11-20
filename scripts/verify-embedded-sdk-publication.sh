@@ -75,6 +75,23 @@ if [[ -f samples/external-embedded-android/settings.gradle.kts ]]; then
     echo "External APK is missing the transitive native backend" >&2
     exit 1
   fi
+  if ! unzip -Z1 "$apk" | grep -Fx 'lib/arm64-v8a/libharnex_whisper_stt.so'; then
+    echo "External APK is missing the independent Whisper Small Q5 JNI backend" >&2
+    exit 1
+  fi
+  # Only the JNI entry point should be exported from Whisper's own static ggml.
+  # The Harnex llama backend may still package its own dynamic ggml CPU variants.
+  ndk_tools="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin"
+  if [[ -x "$ndk_tools/llvm-readelf" ]]; then
+    whisper_so="$(mktemp)"
+    unzip -p "$apk" 'lib/arm64-v8a/libharnex_whisper_stt.so' > "$whisper_so"
+    if "$ndk_tools/llvm-readelf" --dyn-syms "$whisper_so" | grep -E ' GLOBAL .* (ggml_|whisper_)'; then
+      rm -f "$whisper_so"
+      echo "Whisper JNI exports upstream ggml/whisper symbols, risking collisions" >&2
+      exit 1
+    fi
+    rm -f "$whisper_so"
+  fi
 
   # Retain only a verified, independently built APK for physical-device smoke testing.
   # This is a CI/debug sample, not a release-signed Harnex Host or an SDK publication.

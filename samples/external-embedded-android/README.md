@@ -111,3 +111,35 @@ surfaces while the app is in use. UI state is reset upon Activity recreation;
 the installed model remains in its app-private directory. Debug APK signing
 may differ between CI runs: uninstall the previous smoke demo if Android
 rejects an update signature. The real Harnex Host app is independent.
+
+## Optional local voice input (development)
+
+The independent Android chat sample can also dictate text with **Whisper Small
+multilingual Q5_1**. This is **not** part of the public Harnex Embedded SDK:
+the microphone, model and `whisper.cpp` JNI adapter belong to this app. The
+voice path never calls a cloud recognition service.
+
+1. Prepare the existing Qwen3.5 model as usual.
+2. Tap **Prepare Whisper Small Q5** (first use downloads ~190 MB over HTTPS;
+   exact size and SHA-256 are verified before the private GGML file becomes ready).
+3. Tap **Record voice**, grant Android microphone permission, and speak Italian
+   for up to 30 seconds. **Finish recording** stops capture and starts local
+   recognition. **Cancel audio** prevents a late transcript from appearing.
+4. Edit the resulting text in the composer and press the existing **Send**
+   button. The chat still sends only explicit text to Harnex Qwen3.5.
+
+The microphone and the transcription are never active in the background. Audio
+lives only in bounded memory and is discarded when processing finishes; no
+recordings/transcripts enter normal logs or persistent app storage. Offline
+recognition works after the model has been downloaded and verified. Transcribing
+and Qwen text generation do not overlap in the UI.
+
+Whisper is compiled from **whisper.cpp v1.8.4 at exact SHA
+`9386f239401074690479731c1e41683fbbeac557`**, statically linking its own
+ggml and hiding those symbols from Harnex's independent llama.cpp native AAR.
+Only `arm64-v8a` is targeted. A successful build/emulator UI run does **not**
+qualify real Italian STT, concurrency, RAM or temperature on physical phones.
+
+See [Voice Input feature/architecture](../../docs/features/embedded-voice-input.md)
+for model identity, architectural boundaries, cancellation behavior, acceptance
+gates and representative-device requirements.

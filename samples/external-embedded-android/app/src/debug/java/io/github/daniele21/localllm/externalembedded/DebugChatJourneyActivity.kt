@@ -29,6 +29,28 @@ class DebugChatJourneyActivity : Activity() {
             },
             onSend = ::send,
             onStop = ::stop,
+            onPrepareVoice = {
+                screen.setVoiceStatus("Whisper Small Q5 ready · UI-only test")
+                screen.updateVoicePhase(VoicePhase.READY)
+            },
+            onVoice = {
+                // This is a UI-only synthetic transcript; no microphone or native STT.
+                screen.updateVoicePhase(VoicePhase.RECORDING)
+                screen.setVoiceStatus("Recording · UI-only test")
+                handler.postDelayed({
+                    screen.updateVoicePhase(VoicePhase.TRANSCRIBING)
+                    screen.setVoiceStatus("Transcribing · UI-only test")
+                    handler.postDelayed({
+                        screen.updateVoicePhase(VoicePhase.READY)
+                        screen.insertTranscript("Dettatura locale di prova")
+                        screen.setVoiceStatus("Voice transcript ready · UI-only test")
+                    }, 400L)
+                }, 400L)
+            },
+            onCancelVoice = {
+                screen.updateVoicePhase(VoicePhase.READY)
+                screen.setVoiceStatus("Voice cancelled · UI-only test")
+            },
             onNewChat = {
                 if (phase == ChatPhase.READY) {
                     screen.resetConversation()
