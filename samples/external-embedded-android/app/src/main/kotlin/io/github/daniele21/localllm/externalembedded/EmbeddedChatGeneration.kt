@@ -36,29 +36,29 @@ internal class EmbeddedChatGeneration {
         val lastRendered = AtomicLong(0L)
         val started = SystemClock.elapsedRealtime()
         val listener = GenerationListener { event ->
-                when (event) {
-                    is GenerationEvent.TextDelta -> {
-                        val stillActive = !cancelled.get() && !destroying.get()
-                        if (event.contentType == GenerationContentType.ANSWER && stillActive && terminal.get() == null) {
-                            val answer = synchronized(stream) {
-                                stream.append(event.text)
-                                stream.toString()
-                            }
-                            val now = SystemClock.elapsedRealtime()
-                            if (now - lastRendered.get() >= 90L) {
-                                lastRendered.set(now)
-                                onAnswerDelta(answer)
-                            }
+            when (event) {
+                is GenerationEvent.TextDelta -> {
+                    val stillActive = !cancelled.get() && !destroying.get()
+                    if (event.contentType == GenerationContentType.ANSWER && stillActive && terminal.get() == null) {
+                        val answer = synchronized(stream) {
+                            stream.append(event.text)
+                            stream.toString()
+                        }
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - lastRendered.get() >= 90L) {
+                            lastRendered.set(now)
+                            onAnswerDelta(answer)
                         }
                     }
-
-                    is GenerationEvent.Completed, is GenerationEvent.Failed -> {
-                        if (terminal.compareAndSet(null, event)) finished.countDown()
-                    }
-
-                    else -> Unit
                 }
+
+                is GenerationEvent.Completed, is GenerationEvent.Failed -> {
+                    if (terminal.compareAndSet(null, event)) finished.countDown()
+                }
+
+                else -> Unit
             }
+        }
         val handle = if (imageBytes == null) {
             engine.generate(session, messages, listener, overrides = GenerationOverrides(maxOutputTokens = 256))
         } else {
