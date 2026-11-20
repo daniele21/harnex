@@ -1,0 +1,44 @@
+name: Resumable transfer Kotlin format probe (read-only)
+
+on:
+  push:
+    branches: [agent/resumable-format-probe-4]
+
+permissions:
+  contents: read
+
+jobs:
+  spotless:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install SDK
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Apply repo-owned formatter only to ephemeral checkout
+        run: ./gradlew --no-configuration-cache spotlessApply
+      - name: Emit source file diffs to ephemeral read-only CI logs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64
+          import pathlib
+          import subprocess
+
+          paths = subprocess.check_output(
+              ["git", "diff", "--name-only", "--", "*.kt"], text=True
+          ).splitlines()
+          for name in paths:
+              data = base64.b64encode(pathlib.Path(name).read_bytes()).decode("ascii")
+              print(f"FORMATTED_FILE_BEGIN::{name}::{data}::FORMATTED_FILE_END", flush=True)
+          PY
