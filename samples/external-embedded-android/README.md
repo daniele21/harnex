@@ -56,7 +56,9 @@ The app asks for `INTERNET` only because model provisioning needs HTTPS. The
 SDK has no Host/Binder or cloud-inference fallback. Inputs and outputs stay in
 the app's visible screen and are not sent to ordinary logs. The demo has a
 Cancel button that cancels transfer or inference. The actions remain in a
-high-contrast bottom bar while status/output can scroll. The staging workflow
+high-contrast bottom bar while status/output can scroll. The standalone
+Activity owns its toolbar and applies Android system-bar/display-cutout insets
+so edge-to-edge windows cannot obscure the status or the controls. The staging workflow
 tests a no-native x86_64 Android API 35 emulator canary and asserts both buttons
 are visible and clickable, retaining screenshot and accessibility-tree evidence.
 This tests UI only; real ARM64/GGUF inference is a separate physical-device gate.
