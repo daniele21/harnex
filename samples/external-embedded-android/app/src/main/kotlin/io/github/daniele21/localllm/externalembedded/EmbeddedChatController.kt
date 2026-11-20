@@ -74,7 +74,8 @@ internal class EmbeddedChatController(
                 val prepared = runtime.prepare()
                 check(prepared.ready) { "Model preparation failed: ${prepared.detail}" }
                 session = runtime.openSession()
-                phase.set(ChatPhase.READY)
+                check(!cancelled.get() && !destroyed.get()) { "Preparation cancelled" }
+                check(phase.compareAndSet(ChatPhase.PREPARING, ChatPhase.READY)) { "Preparation cancelled" }
                 observer.onStatus("Ready · all inference stays on this device")
                 observer.onDiagnostics("Verified model · process PSS ${Debug.getPss() / 1024} MB")
                 observer.onPhase(ChatPhase.READY)
@@ -139,6 +140,7 @@ internal class EmbeddedChatController(
 
     private fun runTurn(id: Long, input: String) {
         try {
+            check(!cancelled.get() && !destroyed.get()) { "Generation cancelled before start" }
             val sdk = checkNotNull(engine) { "Runtime not prepared" }
             val technicalSession = checkNotNull(session) { "Native session not prepared" }
             val messages = history.messagesFor(input)
@@ -169,7 +171,11 @@ internal class EmbeddedChatController(
             observer.onStatus("Generation interrupted")
         } finally {
             activeGeneration.set(null)
-            if (phase.get() != ChatPhase.NEEDS_MODEL) phase.set(ChatPhase.READY)
+            if (destroyed.get()) {
+                phase.set(ChatPhase.NEEDS_MODEL)
+            } else if (phase.get() != ChatPhase.NEEDS_MODEL) {
+                phase.set(ChatPhase.READY)
+            }
             observer.onPhase(phase.get())
         }
     }
