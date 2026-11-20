@@ -17,7 +17,9 @@ class EmbeddedSmokeActivity :
     private lateinit var screen: EmbeddedChatScreen
     private lateinit var controller: EmbeddedChatController
     private lateinit var voice: SpeechInputController
-    @Volatile private var chatPhase: ChatPhase = ChatPhase.NEEDS_MODEL
+
+    @Volatile
+    private var chatPhase: ChatPhase = ChatPhase.NEEDS_MODEL
     private var activeRunId = -1L
     private var answerBubble: TextView? = null
 
@@ -65,9 +67,13 @@ class EmbeddedSmokeActivity :
     }
 
     private fun send() {
-        if (voice.current() == VoicePhase.RECORDING || voice.current() == VoicePhase.TRANSCRIBING ||
+        if (
+            voice.current() == VoicePhase.RECORDING ||
+            voice.current() == VoicePhase.TRANSCRIBING ||
             voice.current() == VoicePhase.CANCELLING
-        ) return
+        ) {
+            return
+        }
         val message = screen.prompt.text.toString()
         if (controller.send(message)) screen.prompt.text.clear()
     }

@@ -261,7 +261,11 @@ internal class EmbeddedChatScreen(
             voicePhase == VoicePhase.TRANSCRIBING || voicePhase == VoicePhase.CANCELLING
         voicePrepareButton.visibility = if (voicePhase == VoicePhase.NEEDS_MODEL ||
             voicePhase == VoicePhase.PREPARING
-        ) View.VISIBLE else View.GONE
+        ) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
         voicePrepareButton.isEnabled = ready && voicePhase == VoicePhase.NEEDS_MODEL
         voicePrepareButton.text = if (voicePhase == VoicePhase.PREPARING) {
             "Preparing voice…"
@@ -270,13 +274,21 @@ internal class EmbeddedChatScreen(
         }
         voiceButton.visibility = if (voicePhase == VoicePhase.READY ||
             voicePhase == VoicePhase.RECORDING
-        ) View.VISIBLE else View.GONE
+        ) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
         voiceButton.text = if (voicePhase == VoicePhase.RECORDING) "Finish recording" else "Record voice"
         voiceButton.isEnabled = ready
         voiceCancelButton.visibility = if (voicePhase == VoicePhase.PREPARING ||
             voicePhase == VoicePhase.RECORDING || voicePhase == VoicePhase.TRANSCRIBING ||
             voicePhase == VoicePhase.CANCELLING
-        ) View.VISIBLE else View.GONE
+        ) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
         voiceCancelButton.isEnabled = voicePhase != VoicePhase.CANCELLING
         val canEdit = ready && !voiceBusy
         prompt.isEnabled = canEdit

@@ -121,10 +121,13 @@ internal class SpeechInputController(private val context: Context, private val o
             val transcript = WhisperNative.transcribe(verified.absolutePath, samples, cancelled).trim()
             if (cancelled.get() || destroyed.get()) return
             if (state.completeTranscription()) {
-                observer.onVoiceStatus(
-                    if (transcript.isBlank()) "No speech recognized · try again" else
-                        "Transcribed locally in ${SystemClock.elapsedRealtime() - started} ms · review before Send",
-                )
+                val status =
+                    if (transcript.isBlank()) {
+                        "No speech recognized · try again"
+                    } else {
+                        "Transcribed locally in ${SystemClock.elapsedRealtime() - started} ms · review before Send"
+                    }
+                observer.onVoiceStatus(status)
                 observer.onVoicePhase(VoicePhase.READY)
                 if (transcript.isNotBlank()) observer.onVoiceTranscript(transcript)
             }

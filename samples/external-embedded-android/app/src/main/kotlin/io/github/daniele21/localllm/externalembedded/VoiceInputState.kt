@@ -3,7 +3,7 @@ package io.github.daniele21.localllm.externalembedded
 import java.util.concurrent.atomic.AtomicReference
 
 /** App-local speech lifecycle, independent of Harnex's ChatSessionState. */
-internal enum class VoicePhase {
+enum class VoicePhase {
     NEEDS_MODEL,
     PREPARING,
     READY,
