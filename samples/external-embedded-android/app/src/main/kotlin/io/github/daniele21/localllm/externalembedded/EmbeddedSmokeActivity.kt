@@ -3,17 +3,25 @@ package io.github.daniele21.localllm.externalembedded
 import android.app.Activity
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Bundle
+import android.os.Debug
+import android.os.SystemClock
+import android.view.Gravity
+import android.view.View
 import android.view.WindowInsets
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import io.github.daniele21.localllm.contracts.ConversationMessage
-import io.github.daniele21.localllm.contracts.ConversationRole
+import io.github.daniele21.localllm.contracts.GenerationContentType
 import io.github.daniele21.localllm.contracts.GenerationEvent
+import io.github.daniele21.localllm.contracts.GenerationHandle
 import io.github.daniele21.localllm.contracts.GenerationListener
+import io.github.daniele21.localllm.contracts.GenerationMetrics
+import io.github.daniele21.localllm.contracts.GenerationOverrides
 import io.github.daniele21.localllm.contracts.SessionId
 import io.github.daniele21.localllm.download.DownloadCancellationToken
 import io.github.daniele21.localllm.download.DownloadProgressObserver
@@ -21,7 +29,9 @@ import io.github.daniele21.localllm.download.ModelDownloadResult
 import io.github.daniele21.localllm.embedded.EmbeddedConfiguration
 import io.github.daniele21.localllm.embedded.EmbeddedModelReadiness
 import io.github.daniele21.localllm.embedded.EmbeddedRuntime
+import io.github.daniele21.localllm.install.ModelInstallationObserver
 import io.github.daniele21.localllm.install.ModelInstallationResult
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -29,217 +39,451 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Deliberately independent one-APK proof: no Host, Binder, project dependency or chat manager.
- * Installs the reviewed GGUF on request and runs two stateless Messages requests.
+ * Independent single-APK chat demo consuming Maven artifacts only.
+ * History and rendering belong exclusively to this Activity, never to Harnex.
  */
 class EmbeddedSmokeActivity : Activity() {
     private val worker = Executors.newSingleThreadExecutor()
     private val cancelled = AtomicBoolean(false)
+    private val destroying = AtomicBoolean(false)
+    private val activeGeneration = AtomicReference<GenerationHandle?>(null)
+    private val history = EphemeralChatHistory()
+
+    // SDK and technical session are used only on the dedicated worker.
+    private var sdk: EmbeddedRuntime? = null
+    private var session: SessionId? = null
+
+    // UI state stays on the Android main thread.
+    private var ready = false
+    private var busy = false
     private lateinit var status: TextView
-    private lateinit var runButton: Button
+    private lateinit var diagnostics: TextView
+    private lateinit var messages: LinearLayout
+    private lateinit var scroll: ScrollView
+    private lateinit var prompt: EditText
+    private lateinit var setupButton: Button
+    private lateinit var sendButton: Button
+    private lateinit var stopButton: Button
+    private lateinit var resetButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Keep the primary action visible independently of status/output size and text scaling.
-        // A real-device smoke report showed only the status text, with no usable controls.
-        val padding = (16 * resources.displayMetrics.density).toInt()
-        val controlHeight = (56 * resources.displayMetrics.density).toInt()
-        status = TextView(this).apply {
-            text = "Ready to run the embedded model smoke test"
-            textSize = 16f
-            setTextColor(Color.rgb(45, 55, 72))
-            setPadding(padding, padding, padding, padding)
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(248, 249, 252))
         }
-        runButton = Button(this).apply {
-            text = "Download / Install / Generate"
-            isAllCaps = false
-            setTextColor(Color.WHITE)
-            backgroundTintList = ColorStateList.valueOf(Color.rgb(37, 91, 191))
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(14), dp(18), dp(14))
+            setBackgroundColor(Color.rgb(25, 29, 40))
+        }
+        header.addView(label("Harnex · Local Chat", 22f, Color.WHITE))
+        header.addView(label("EMBEDDED DEMO  ·  QWEN3.5 2B  ·  ON-DEVICE", 11f, Color.rgb(188, 201, 224)))
+        outer.addView(header)
+
+        val setupPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(8))
+        }
+        status = label("Model not ready · start local setup", 15f, Color.rgb(38, 54, 79)).apply {
+            contentDescription = "Model status"
+        }
+        diagnostics = label("No generation yet · temporary history only", 12f, Color.rgb(91, 103, 121))
+        setupButton = actionButton("Prepare local model", true).apply {
+            setOnClickListener { beginSetup() }
+        }
+        setupPanel.addView(status)
+        setupPanel.addView(diagnostics)
+        setupPanel.addView(setupButton, LinearLayout.LayoutParams(-1, dp(48)).apply {
+            topMargin = dp(8)
+        })
+        outer.addView(setupPanel)
+
+        scroll = ScrollView(this).apply {
+            clipToPadding = false
+            isFillViewport = true
+        }
+        messages = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+        }
+        scroll.addView(messages)
+        outer.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        showWelcome()
+
+        val composer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setBackgroundColor(Color.WHITE)
+        }
+        prompt = EditText(this).apply {
+            hint = "Type a message…"
+            minLines = 1
+            maxLines = 3
+            textSize = 16f
+            setSingleLine(false)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        }
+        composer.addView(prompt, LinearLayout.LayoutParams(-1, -2))
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        sendButton = actionButton("Send", true).apply {
+            setOnClickListener { sendMessage() }
+        }
+        stopButton = actionButton("Stop", false).apply {
             setOnClickListener {
-                isEnabled = false
-                cancelled.set(false)
-                worker.execute {
-                    runSmoke()
-                    runOnUiThread { if (!isDestroyed) isEnabled = true }
+                cancelled.set(true)
+                activeGeneration.get()?.cancel()
+                showStatus("Cancellation requested…")
+            }
+        }
+        resetButton = actionButton("New chat", false).apply {
+            setOnClickListener {
+                if (!busy) {
+                    history.reset()
+                    messages.removeAllViews()
+                    showWelcome()
+                    diagnostics.text = "History cleared · model remains ready"
+                    showStatus("New chat · no earlier messages are sent")
                 }
             }
         }
-        val cancelButton = Button(this).apply {
-            text = "Cancel"
-            isAllCaps = false
-            setTextColor(Color.rgb(45, 55, 72))
-            backgroundTintList = ColorStateList.valueOf(Color.rgb(230, 234, 242))
-            setOnClickListener { cancelled.set(true) }
+        for (button in listOf(sendButton, stopButton, resetButton)) {
+            actions.addView(button, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+                marginStart = dp(2)
+                marginEnd = dp(2)
+            })
         }
+        composer.addView(actions)
+        outer.addView(composer)
 
-        val title = TextView(this).apply {
-            text = "Harnex Embedded SDK Smoke"
-            textSize = 23f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.rgb(27, 29, 36))
-            setPadding(padding, padding, padding, padding)
-        }
-        val output = ScrollView(this).apply {
-            isFillViewport = true
-            addView(status)
-        }
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(padding, padding / 2, padding, padding)
-            addView(
-                runButton,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, controlHeight),
-            )
-            addView(
-                cancelButton,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, controlHeight),
-            )
-        }
-        val screen = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.WHITE)
-            addView(
-                title,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
-            )
-            addView(
-                output,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
-            )
-            addView(
-                actions,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
-            )
-        }
-        // Android 15/16 edge-to-edge can put the entire Activity content behind the
-        // action/status bars. An owned toolbar plus real window insets keeps status
-        // and both buttons reachable on device and in the emulator.
-        screen.setOnApplyWindowInsetsListener { view, insets ->
+        outer.setOnApplyWindowInsetsListener { view, insets ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val safeArea = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                view.setPadding(0, safeArea.top, 0, safeArea.bottom)
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                val keyboard = insets.getInsets(WindowInsets.Type.ime())
+                view.setPadding(0, bars.top, 0, maxOf(bars.bottom, keyboard.bottom))
             } else {
                 @Suppress("DEPRECATION")
                 view.setPadding(0, insets.systemWindowInsetTop, 0, insets.systemWindowInsetBottom)
             }
             insets
         }
-        setContentView(screen)
-        screen.requestApplyInsets()
+        setContentView(outer)
+        outer.requestApplyInsets()
+        updateControls()
     }
 
-    private fun runSmoke() {
-        var sdk: EmbeddedRuntime? = null
-        var session: SessionId? = null
-        try {
-            show("Opening in-process SDK")
-            sdk = EmbeddedRuntime.open(applicationContext, EmbeddedConfiguration("qwen35-2b-q4-k-m"))
-            ensureModel(sdk)
-            check(!cancelled.get()) { "Smoke test cancelled" }
-            val ready = sdk.prepare()
-            check(ready.ready) { "Prepare failed: ${ready.detail}" }
-            session = sdk.openSession()
-
-            streamOnce(
-                sdk,
-                session,
-                listOf(
-                    ConversationMessage(ConversationRole.USER, "My name is Mario."),
-                    ConversationMessage(ConversationRole.ASSISTANT, "Hello Mario."),
-                    ConversationMessage(ConversationRole.USER, "What is my name?"),
-                ),
-            )
-            check(!cancelled.get()) { "Smoke test cancelled" }
-            streamOnce(
-                sdk,
-                session,
-                listOf(ConversationMessage(ConversationRole.USER, "What is my name?")),
-            )
-            show("Completed two explicit, stateless Messages requests")
-        } catch (error: IllegalStateException) {
-            show("Stopped: ${error.message ?: error.javaClass.simpleName}")
-        } catch (error: IllegalArgumentException) {
-            show("Invalid input: ${error.javaClass.simpleName}")
-        } finally {
-            session?.let { current -> runCatching { sdk?.closeSession(current) } }
-            runCatching { sdk?.close() }
-        }
-    }
-
-    private fun ensureModel(sdk: EmbeddedRuntime) {
-        when (sdk.modelReadiness()) {
-            EmbeddedModelReadiness.VERIFIED -> return
-            EmbeddedModelReadiness.INVALID -> error("Installed GGUF is invalid; repair is required")
-            EmbeddedModelReadiness.NOT_INSTALLED -> Unit
-        }
-        show("Downloading verified GGUF to app-private storage")
-        val downloaded = sdk.downloadModel(
-            observer = DownloadProgressObserver { progress ->
-                show("Download: ${progress.bytesDownloaded} / ${progress.expectedBytes} bytes")
-            },
-            cancellationToken = DownloadCancellationToken { cancelled.get() },
-        )
-        val handle = when (downloaded) {
-            is ModelDownloadResult.Success -> downloaded.handle
-            is ModelDownloadResult.Cancelled -> error("Download cancelled")
-            is ModelDownloadResult.Failure -> error("Download failed: ${downloaded.failure.code}")
-            is ModelDownloadResult.AlreadyRunning -> error("Download already running")
-        }
-        show("Installing verified GGUF")
-        val installed = sdk.installModel(handle)
-        check(installed is ModelInstallationResult.Success) {
-            "Installation failed: ${(installed as ModelInstallationResult.Failure).code}"
-        }
-        check(sdk.modelReadiness() == EmbeddedModelReadiness.VERIFIED) {
-            "Installed model did not verify"
-        }
-    }
-
-    private fun streamOnce(sdk: EmbeddedRuntime, session: SessionId, messages: List<ConversationMessage>) {
-        val done = CountDownLatch(1)
-        val failure = AtomicReference<String?>(null)
-        val handle = sdk.generate(
-            session,
-            messages,
-            GenerationListener { event ->
-                when (event) {
-                    is GenerationEvent.TextDelta -> show(event.text)
-
-                    is GenerationEvent.Completed -> {
-                        show("Answer: ${event.answerOutput}")
-                        done.countDown()
-                    }
-
-                    is GenerationEvent.Failed -> {
-                        failure.set(event.error.code)
-                        done.countDown()
-                    }
-
-                    else -> Unit
+    private fun beginSetup() {
+        if (busy || ready) return
+        cancelled.set(false)
+        busy = true
+        updateControls()
+        worker.execute {
+            try {
+                showStatus("Opening Harnex in-process runtime…")
+                val engine = EmbeddedRuntime.open(applicationContext, EmbeddedConfiguration(MODEL_ID))
+                sdk = engine
+                ensureModel(engine)
+                check(!cancelled.get()) { "Setup cancelled" }
+                showStatus("Preparing GGUF in local runtime…")
+                val result = engine.prepare()
+                check(result.ready) { "Prepare failed: ${result.detail}" }
+                session = engine.openSession()
+                postUi {
+                    ready = true
+                    busy = false
+                    showStatus("Ready · inference stays on this device")
+                    diagnostics.text = "Model verified · app PSS ${pssMb()} MB · no cloud"
+                    updateControls()
                 }
-            },
-        )
-        var checks = 0
-        while (!done.await(250, TimeUnit.MILLISECONDS)) {
-            if (cancelled.get()) handle.cancel()
-            if (++checks >= 480) {
-                handle.cancel()
-                error("Generation exceeded 120 seconds")
+            } catch (failure: IllegalStateException) {
+                setupFailed(failure.message ?: "Setup stopped")
+            } catch (failure: IllegalArgumentException) {
+                setupFailed(failure.message ?: "Invalid model configuration")
             }
         }
-        check(failure.get() == null) { "Generation failed: ${failure.get()}" }
     }
 
-    private fun show(message: String) {
-        runOnUiThread {
-            if (!isDestroyed) status.text = message
+    private fun setupFailed(reason: String) {
+        closeRuntime()
+        postUi {
+            ready = false
+            busy = false
+            showStatus("Setup stopped · $reason")
+            updateControls()
+        }
+    }
+
+    private fun ensureModel(engine: EmbeddedRuntime) {
+        when (engine.modelReadiness()) {
+            EmbeddedModelReadiness.VERIFIED -> {
+                showStatus("Previously installed model verified")
+                return
+            }
+            EmbeddedModelReadiness.INVALID -> error("Installed GGUF is invalid; repair required")
+            EmbeddedModelReadiness.NOT_INSTALLED -> Unit
+        }
+        showStatus("Downloading the reviewed GGUF…")
+        var lastUpdate = 0L
+        val result = engine.downloadModel(
+            observer = DownloadProgressObserver { progress ->
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastUpdate > 350L) {
+                    lastUpdate = now
+                    val total = progress.expectedBytes?.let { "/ ${it / MIB} MB" } ?: ""
+                    showStatus("Downloading · ${progress.bytesDownloaded / MIB} MB$total")
+                }
+            },
+            cancellationToken = DownloadCancellationToken { cancelled.get() || destroying.get() },
+        )
+        val handle = when (result) {
+            is ModelDownloadResult.Success -> result.handle
+            is ModelDownloadResult.Cancelled -> error("Download cancelled")
+            is ModelDownloadResult.Failure -> error("Download failed: ${result.failure.code}")
+            is ModelDownloadResult.AlreadyRunning -> error("Download already running")
+        }
+        check(!cancelled.get()) { "Setup cancelled" }
+        val installed = engine.installModel(
+            handle,
+            ModelInstallationObserver { progress ->
+                showStatus("Installing GGUF · ${progress.stage.name.lowercase().replace('_', ' ')}")
+            },
+        )
+        when (installed) {
+            is ModelInstallationResult.Success -> Unit
+            is ModelInstallationResult.Failure -> error("Installation failed: ${installed.code} (${installed.detail})")
+        }
+        check(engine.modelReadiness() == EmbeddedModelReadiness.VERIFIED) {
+            "Installed model failed verification"
+        }
+    }
+
+    private fun sendMessage() {
+        if (!ready || busy) return
+        val input = prompt.text.toString().trim()
+        if (input.isBlank()) {
+            showStatus("Write a message before sending")
+            return
+        }
+        if (input.length > EphemeralChatHistory.MAX_USER_CHARS) {
+            showStatus("Messages are limited to ${EphemeralChatHistory.MAX_USER_CHARS} characters")
+            return
+        }
+        busy = true
+        cancelled.set(false)
+        prompt.text.clear()
+        updateControls()
+        addBubble("YOU", input, true)
+        val assistant = addBubble("HARNEX · QWEN3.5", "Thinking locally…", false)
+        worker.execute { runGeneration(input, assistant) }
+    }
+
+    private fun runGeneration(input: String, bubble: TextView) {
+        val engine = sdk
+        val technicalSession = session
+        if (engine == null || technicalSession == null) {
+            completeTurnFailure(input, bubble, "Runtime is not ready")
+            return
+        }
+        try {
+            val requestMessages = history.messagesFor(input)
+            val finished = CountDownLatch(1)
+            val outcome = AtomicReference<GenerationEvent?>(null)
+            val stream = StringBuilder()
+            var lastRendered = 0L
+            val start = SystemClock.elapsedRealtime()
+            showStatus("Generating · ${requestMessages.size} explicit messages")
+            val handle = engine.generate(
+                technicalSession,
+                requestMessages,
+                GenerationListener { event ->
+                    when (event) {
+                        is GenerationEvent.TextDelta -> if (event.contentType == GenerationContentType.ANSWER) {
+                            val text = synchronized(stream) {
+                                stream.append(event.text)
+                                stream.toString()
+                            }
+                            val now = SystemClock.elapsedRealtime()
+                            if (now - lastRendered > 90L) {
+                                lastRendered = now
+                                updateBubble(bubble, text)
+                            }
+                        }
+                        is GenerationEvent.Completed, is GenerationEvent.Failed -> {
+                            if (outcome.compareAndSet(null, event)) finished.countDown()
+                        }
+                        else -> Unit
+                    }
+                },
+                overrides = GenerationOverrides(maxOutputTokens = 256),
+            )
+            activeGeneration.set(handle)
+            var elapsedChecks = 0
+            while (!finished.await(250, TimeUnit.MILLISECONDS)) {
+                if (cancelled.get() || destroying.get()) handle.cancel()
+                if (++elapsedChecks >= 480) {
+                    handle.cancel()
+                    error("Generation timed out after 120 seconds")
+                }
+            }
+            activeGeneration.compareAndSet(handle, null)
+            when (val terminal = outcome.get()) {
+                is GenerationEvent.Completed -> {
+                    val answer = terminal.answerOutput.ifBlank { synchronized(stream) { stream.toString() } }
+                    if (cancelled.get() || destroying.get()) {
+                        completeTurnFailure(input, bubble, "Cancelled · partial output was not saved")
+                    } else if (answer.isBlank()) {
+                        completeTurnFailure(input, bubble, "The model returned no answer")
+                    } else {
+                        history.complete(input, answer)
+                        updateBubble(bubble, answer)
+                        showMetrics(terminal.metrics, requestMessages.size, start)
+                    }
+                }
+                is GenerationEvent.Failed -> completeTurnFailure(input, bubble, "${terminal.error.code} · ${terminal.error.message}")
+                else -> completeTurnFailure(input, bubble, "Generation ended without a terminal event")
+            }
+        } catch (failure: IllegalStateException) {
+            completeTurnFailure(input, bubble, failure.message ?: "Generation stopped")
+        } catch (failure: IllegalArgumentException) {
+            completeTurnFailure(input, bubble, failure.message ?: "Invalid request")
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            completeTurnFailure(input, bubble, "Generation interrupted")
+        } finally {
+            activeGeneration.set(null)
+            postUi {
+                busy = false
+                updateControls()
+            }
+        }
+    }
+
+    private fun showMetrics(metrics: GenerationMetrics, messagesSent: Int, started: Long) {
+        val rate = metrics.decodeTokensPerSecond?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
+        val ttft = metrics.timeToFirstTokenMs?.toString() ?: "—"
+        val elapsed = SystemClock.elapsedRealtime() - started
+        postUi {
+            showStatus("Answer complete · ${history.completedTurns()} temporary turns")
+            diagnostics.text = "TTFT ${ttft} ms · ${metrics.totalMs} ms engine · ${elapsed} ms wall · " +
+                "${metrics.outputTokens ?: "—"} tokens · $rate tok/s · PSS ${pssMb()} MB · ${messagesSent} messages"
+        }
+    }
+
+    private fun completeTurnFailure(input: String, bubble: TextView, reason: String) {
+        updateBubble(bubble, "Not saved · $reason")
+        postUi {
+            prompt.setText(input)
+            showStatus("Stopped · $reason")
+            diagnostics.text = "No failed or partial answer was added to history · PSS ${pssMb()} MB"
+        }
+    }
+
+    private fun addBubble(author: String, body: String, isUser: Boolean): TextView {
+        val item = TextView(this).apply {
+            text = "$author\n$body"
+            textSize = 15f
+            setTextColor(if (isUser) Color.WHITE else Color.rgb(34, 47, 70))
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = GradientDrawable().apply {
+                setColor(if (isUser) Color.rgb(37, 91, 191) else Color.WHITE)
+                cornerRadius = dp(15).toFloat()
+            }
+        }
+        messages.addView(item, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = dp(10)
+            if (isUser) marginStart = dp(35) else marginEnd = dp(25)
+        })
+        scrollToBottom()
+        return item
+    }
+
+    private fun updateBubble(bubble: TextView, text: String) {
+        postUi {
+            bubble.text = "HARNEX · QWEN3.5\n$text"
+            scrollToBottom()
+        }
+    }
+
+    private fun showWelcome() {
+        messages.addView(label(
+            "Private by design\n\nThis chat runs with Qwen3.5 2B inside this app. " +
+                "Messages stay in memory only, and only the last six completed turns " +
+                "are considered for each request. Start by preparing the model.",
+            15f,
+            Color.rgb(78, 91, 114),
+        ).apply { setPadding(dp(8), dp(16), dp(8), dp(16)) })
+    }
+
+    private fun showStatus(message: String) {
+        postUi { status.text = message }
+    }
+
+    private fun updateControls() {
+        setupButton.visibility = if (ready) View.GONE else View.VISIBLE
+        setupButton.isEnabled = !busy
+        sendButton.isEnabled = ready && !busy
+        prompt.isEnabled = ready && !busy
+        stopButton.isEnabled = busy
+        resetButton.isEnabled = ready && !busy
+    }
+
+    private fun scrollToBottom() {
+        scroll.post { if (!isDestroyed) scroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun label(value: String, size: Float, color: Int) = TextView(this).apply {
+        text = value
+        textSize = size
+        setTextColor(color)
+        setPadding(dp(2), dp(4), dp(2), dp(4))
+    }
+
+    private fun actionButton(text: String, primary: Boolean) = Button(this).apply {
+        this.text = text
+        isAllCaps = false
+        textSize = 14f
+        setTextColor(if (primary) Color.WHITE else Color.rgb(36, 50, 71))
+        backgroundTintList = ColorStateList.valueOf(
+            if (primary) Color.rgb(37, 91, 191) else Color.rgb(231, 236, 245),
+        )
+    }
+
+    private fun postUi(action: () -> Unit) {
+        runOnUiThread { if (!destroying.get() && !isDestroyed) action() }
+    }
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+    private fun pssMb() = Debug.getPss() / 1024
+
+    private fun closeRuntime() {
+        val engine = sdk
+        val id = session
+        session = null
+        sdk = null
+        if (engine != null) {
+            if (id != null) runCatching { engine.closeSession(id) }
+            runCatching { engine.close() }
         }
     }
 
     override fun onDestroy() {
+        destroying.set(true)
         cancelled.set(true)
+        activeGeneration.get()?.cancel()
+        worker.execute { closeRuntime() }
         worker.shutdown()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val MODEL_ID = "qwen35-2b-q4-k-m"
+        const val MIB = 1024L * 1024L
     }
 }
