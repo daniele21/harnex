@@ -12,12 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Uses Harnex's reviewed download/installation policy; it never owns model files. */
 internal object EmbeddedModelPreparation {
-    fun ensureReady(
-        engine: EmbeddedRuntime,
-        cancelled: AtomicBoolean,
-        destroyed: AtomicBoolean,
-        onStatus: (String) -> Unit,
-    ) {
+    fun ensureReady(engine: EmbeddedRuntime, cancelled: AtomicBoolean, destroyed: AtomicBoolean, onStatus: (String) -> Unit) {
         when (engine.modelReadiness()) {
             EmbeddedModelReadiness.VERIFIED -> {
                 onStatus("Previously installed model verified")
@@ -25,6 +20,7 @@ internal object EmbeddedModelPreparation {
             }
 
             EmbeddedModelReadiness.INVALID -> error("Installed GGUF is invalid; repair required")
+
             EmbeddedModelReadiness.NOT_INSTALLED -> Unit
         }
         onStatus("Downloading the reviewed GGUF…")
