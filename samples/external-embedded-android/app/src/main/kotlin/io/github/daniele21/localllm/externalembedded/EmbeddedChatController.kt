@@ -162,9 +162,9 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         } catch (failure: IllegalArgumentException) {
             observer.onTurnFinished(id, failure.message ?: "Invalid request", false, input)
             observer.onStatus("Invalid request; no answer saved")
-        } catch (_: InterruptedException) {
+        } catch (failure: InterruptedException) {
             Thread.currentThread().interrupt()
-            observer.onTurnFinished(id, "Generation interrupted", false, input)
+            observer.onTurnFinished(id, failure.message ?: "Generation interrupted", false, input)
             observer.onStatus("Generation interrupted")
         } finally {
             activeGeneration.set(null)
