@@ -2,6 +2,10 @@ package io.github.daniele21.localllm.externalembedded
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
+import android.os.Build
+import android.provider.MediaStore
+import java.util.concurrent.Executors
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.TextView
@@ -16,6 +20,8 @@ class EmbeddedSmokeActivity :
     private lateinit var screen: EmbeddedChatScreen
     private lateinit var controller: EmbeddedChatController
     private lateinit var voice: SpeechInputController
+    private val photoWorker = Executors.newSingleThreadExecutor()
+    private var selectedPhoto: SelectedPhoto? = null
 
     @Volatile
     private var chatPhase: ChatPhase = ChatPhase.NEEDS_MODEL
@@ -50,6 +56,14 @@ class EmbeddedSmokeActivity :
             }
         }
 
+        override fun onVisionState(ready: Boolean, preparing: Boolean) {
+            this@EmbeddedSmokeActivity.ui { screen.updateVisionState(ready, preparing) }
+        }
+
+        override fun onVisionStatus(status: String) {
+            this@EmbeddedSmokeActivity.ui { screen.visionStatusText(status) }
+        }
+
         override fun onTurnFinished(id: Long, answer: String, saved: Boolean, retryPrompt: String?) {
             this@EmbeddedSmokeActivity.ui {
                 if (activeRunId != id) return@ui
@@ -74,6 +88,9 @@ class EmbeddedSmokeActivity :
             onPrepareVoice = { voice.prepare() },
             onVoice = { voiceAction() },
             onCancelVoice = { voice.cancel() },
+            onPrepareVision = { controller.prepareVision() },
+            onChoosePhoto = { choosePhoto() },
+            onRemovePhoto = { removePhoto() },
         )
         val content = screen.build()
         setContentView(content)
@@ -115,7 +132,12 @@ class EmbeddedSmokeActivity :
             return
         }
         val message = screen.prompt.text.toString()
-        if (controller.send(message)) screen.prompt.text.clear()
+        val photo = selectedPhoto
+        val accepted = if (photo == null) controller.send(message) else controller.sendImage(message, photo.jpegBytes)
+        if (accepted) {
+            screen.prompt.text.clear()
+            removePhoto()
+        }
     }
 
     private fun reset() {
@@ -123,7 +145,52 @@ class EmbeddedSmokeActivity :
         activeRunId = -1L
         answerBubble = null
         screen.prompt.text.clear()
+        removePhoto()
         screen.resetConversation()
+    }
+
+    private fun choosePhoto() {
+        if (chatPhase != ChatPhase.READY || voice.phase.isBusy) return
+        val request = if (Build.VERSION.SDK_INT >= 33) {
+            Intent(MediaStore.ACTION_PICK_IMAGES).apply { type = "image/*" }
+        } else {
+            Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "image/*"
+                addCategory(Intent.CATEGORY_OPENABLE)
+            }
+        }
+        startActivityForResult(request, PHOTO_REQUEST)
+    }
+
+    @Deprecated("Used for bounded Android Photo Picker compatibility on API 26+")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != PHOTO_REQUEST || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        screen.visionStatusText("Reading selected photo locally…")
+        photoWorker.execute {
+            val decoded = runCatching { PhotoDecoder.decode(contentResolver, uri) }
+            ui {
+                decoded.fold(
+                    onSuccess = { photo ->
+                        removePhoto()
+                        selectedPhoto = photo
+                        screen.showPhoto(photo.preview)
+                        screen.visionStatusText("Photo selected · type a question and tap Send")
+                    },
+                    onFailure = { failure ->
+                        screen.visionStatusText("Unable to read photo · ${failure.message ?: "try another image"}")
+                    },
+                )
+            }
+        }
+    }
+
+    private fun removePhoto() {
+        val previous = selectedPhoto
+        selectedPhoto = null
+        if (::screen.isInitialized) screen.removePhoto()
+        previous?.preview?.recycle()
     }
 
     override fun onVoicePhase(phase: VoicePhase) {
@@ -146,6 +213,8 @@ class EmbeddedSmokeActivity :
     }
 
     override fun onDestroy() {
+        photoWorker.shutdownNow()
+        removePhoto()
         voice.close()
         controller.close()
         super.onDestroy()
@@ -153,6 +222,7 @@ class EmbeddedSmokeActivity :
 
     private companion object {
         const val MIC_PERMISSION_REQUEST = 410
+        const val PHOTO_REQUEST = 421
     }
 }
 
