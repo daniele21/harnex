@@ -66,21 +66,6 @@ jobs:
         env:
           EMBEDDED_SDK_VERSION: 0.1.0-ci.${{ github.run_id }}
         run: bash scripts/verify-embedded-sdk-publication.sh
-      # Temporary formatting evidence on the warm, fully provisioned Android runner.
-      - name: Format standalone demo Kotlin sources for review
-        if: always()
-        run: ./gradlew --no-configuration-cache spotlessApply
-      - name: Upload canonical formatted demo sources
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: formatted-embedded-demo-${{ github.run_id }}
-          path: |
-            samples/external-embedded-android/app/src/main/kotlin/io/github/daniele21/localllm/externalembedded/EmbeddedSmokeActivity.kt
-            samples/external-embedded-android/app/src/main/kotlin/io/github/daniele21/localllm/externalembedded/EphemeralChatHistory.kt
-            samples/external-embedded-android/app/src/test/kotlin/io/github/daniele21/localllm/externalembedded/EphemeralChatHistoryTest.kt
-          if-no-files-found: error
-          retention-days: 1
       - name: Install Android API 35 UI emulator
         run: sdkmanager 'emulator' 'system-images;android-35;google_apis;x86_64'
       - name: Verify external smoke controls are visible on Android
