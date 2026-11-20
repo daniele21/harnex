@@ -121,7 +121,10 @@ class LlamaCppInferenceBackend(
         ) {
             is NativePromptPlanningResult.Success -> BackendPromptPlan(
                 prompt = result.plan.prompt,
-                tokenCount = result.plan.tokenCount,
+                // The byte image expands into visual tokens at the libmtmd boundary.
+                // Reserve a conservative capacity here; native evaluation verifies the actual limit.
+                tokenCount = result.plan.tokenCount +
+                    if (request.input is io.github.daniele21.localllm.contracts.GenerationInput.ImageQuestion) 2_048 else 0,
                 chatTemplateId = result.plan.chatTemplateId,
                 chatTemplateSource = result.plan.chatTemplateSource,
                 stopTokenIds = result.plan.stopTokenIds,
