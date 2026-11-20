@@ -19,6 +19,7 @@ on:
       - 'integrations/android-embedded-sdk/**'
       - 'samples/external-embedded-android/**'
       - 'scripts/verify-embedded-sdk-publication.sh'
+      - 'scripts/verify-embedded-smoke-ui-emulator.sh'
   push:
     branches: [dev]
     paths:
@@ -27,6 +28,7 @@ on:
       - 'integrations/android-embedded-sdk/**'
       - 'samples/external-embedded-android/**'
       - 'scripts/verify-embedded-sdk-publication.sh'
+      - 'scripts/verify-embedded-smoke-ui-emulator.sh'
   workflow_dispatch:
 
 permissions:
@@ -64,6 +66,18 @@ jobs:
         env:
           EMBEDDED_SDK_VERSION: 0.1.0-ci.${{ github.run_id }}
         run: bash scripts/verify-embedded-sdk-publication.sh
+      - name: Install Android API 35 UI emulator
+        run: sdkmanager 'emulator' 'system-images;android-35;google_apis;x86_64'
+      - name: Verify external smoke controls are visible on Android
+        run: bash scripts/verify-embedded-smoke-ui-emulator.sh
+      - name: Retain UI control evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: embedded-smoke-ui-evidence-${{ github.run_id }}
+          path: build/embedded-smoke-ui-evidence/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Upload installable Android embedded smoke APK
         uses: actions/upload-artifact@v4
         with:
