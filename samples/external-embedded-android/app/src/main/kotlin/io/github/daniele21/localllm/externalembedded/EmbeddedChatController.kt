@@ -154,7 +154,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         } catch (failure: GenerationTimeout) {
             closeRuntime()
             phase.set(ChatPhase.NEEDS_MODEL)
-            observer.onTurnFinished(id, "Generation timed out · reinitialize the model", false, input)
+            observer.onTurnFinished(id, failure.message ?: "Generation timed out; reinitialize the model", false, input)
             observer.onStatus("Generation timed out; model must be prepared again")
         } catch (failure: IllegalStateException) {
             observer.onTurnFinished(id, failure.message ?: "Generation unavailable", false, input)
