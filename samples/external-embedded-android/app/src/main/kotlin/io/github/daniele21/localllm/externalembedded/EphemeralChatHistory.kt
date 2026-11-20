@@ -21,7 +21,11 @@ internal class EphemeralChatHistory(
         }
         val prior = ArrayDeque<Pair<String, String>>()
         var chars = userText.length
-        for (turn in turns.reversed()) {
+        // Android's newer java.util.SequencedCollection.reversed() is unavailable on
+        // the JDK 17 that runs external-consumer JVM tests. Use Java 6 Deque API.
+        val newestFirst = turns.descendingIterator()
+        while (newestFirst.hasNext()) {
+            val turn = newestFirst.next()
             val next = turn.first.length + turn.second.length
             if (chars + next > maxContextChars) break
             chars += next
