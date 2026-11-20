@@ -5,6 +5,8 @@
 #include "gguf_metadata.h"
 #include "kv_cache_type_params.h"
 #include "llama.h"
+#include "mtmd.h"
+#include "mtmd-helper.h"
 #include "native_handle_registry.h"
 #include "prepared_prompt_cache.h"
 #include "json-schema-to-grammar.h"
@@ -17,6 +19,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <mutex>
 #include <string>
 #include <stdexcept>
@@ -978,7 +981,10 @@ std::vector<std::string> stream_text(
     std::int32_t max_reasoning_tokens,
     const std::string& reasoning_close_marker,
     const std::string& reasoning_forced_close_text,
-    JavaStreamingCallback& callback
+    JavaStreamingCallback& callback,
+    const unsigned char* image_data = nullptr,
+    std::size_t image_length = 0,
+    const std::string& projector_path = {}
 ) {
     const auto cancellation = cancellations.begin(request_id);
     if (!cancellation) {
@@ -1040,39 +1046,100 @@ std::vector<std::string> stream_text(
     if (!sampler) {
         return error_response("SAMPLER_FAILED", "Unable to create the llama.cpp sampler chain");
     }
-    auto prepared_prompt = record.model->prepared_prompt_cache.take(prompt);
-    std::vector<llama_token> prompt_tokens = prepared_prompt.has_value()
-        ? std::move(prepared_prompt.value())
-        : tokenize_prompt(vocab, prompt);
-    if (prompt_tokens.empty()) {
+
+    const bool with_image = image_data != nullptr;
+    if (with_image && (
+        image_length == 0 || image_length > 2 * 1024 * 1024 ||
+        projector_path.empty() || prompt.find(mtmd_default_marker()) == std::string::npos
+    )) {
+        return error_response("INVALID_ARGUMENT", "A bounded image, reviewed projector and media marker are required");
+    }
+
+    // The text path remains identical; only image requests enter pinned libmtmd.
+    auto prepared_prompt = with_image
+        ? std::optional<std::vector<llama_token>>{}
+        : record.model->prepared_prompt_cache.take(prompt);
+    std::vector<llama_token> prompt_tokens = with_image ? std::vector<llama_token>{} :
+        (prepared_prompt.has_value() ? std::move(prepared_prompt.value()) : tokenize_prompt(vocab, prompt));
+    if (!with_image && prompt_tokens.empty()) {
         return error_response("TOKENIZATION_FAILED", "Prompt tokenization returned no tokens");
     }
-    if (prompt_tokens.size() + static_cast<std::size_t>(max_output_tokens) > llama_n_ctx(record.context)) {
-        return error_response("CONTEXT_OVERFLOW", "Prompt and requested output exceed the configured context size");
+    std::size_t prompt_token_count = prompt_tokens.size();
+
+    std::unique_ptr<mtmd_context, decltype(&mtmd_free)> vision_context(nullptr, mtmd_free);
+    std::unique_ptr<mtmd_input_chunks, decltype(&mtmd_input_chunks_free)> vision_chunks(nullptr, mtmd_input_chunks_free);
+    if (with_image) {
+        if (cancellation->load(std::memory_order_acquire)) {
+            return cancelled_response(0, 0, 0, 0);
+        }
+        mtmd_context_params params = mtmd_context_params_default();
+        params.use_gpu = false;
+        params.warmup = false;
+        params.n_threads = 4;
+        vision_context.reset(mtmd_init_from_file(projector_path.c_str(), record.model->model, params));
+        if (!vision_context || !mtmd_support_vision(vision_context.get())) {
+            return error_response("UNSUPPORTED_MODEL", "The verified projector cannot be initialized for the model");
+        }
+        auto bitmap_wrapper = mtmd_helper_bitmap_init_from_buf(
+            vision_context.get(), image_data, image_length, false
+        );
+        std::unique_ptr<mtmd_bitmap, decltype(&mtmd_bitmap_free)> bitmap(
+            bitmap_wrapper.bitmap, mtmd_bitmap_free
+        );
+        if (!bitmap) {
+            return error_response("INVALID_ARGUMENT", "The selected image could not be decoded");
+        }
+        vision_chunks.reset(mtmd_input_chunks_init());
+        if (!vision_chunks) {
+            return error_response("INTERNAL", "Unable to allocate multimodal prompt chunks");
+        }
+        mtmd_input_text text = {prompt.c_str(), false, true};
+        const mtmd_bitmap* images[] = {bitmap.get()};
+        if (mtmd_tokenize(vision_context.get(), vision_chunks.get(), &text, images, 1) != 0) {
+            return error_response("TOKENIZATION_FAILED", "Multimodal input tokenization failed");
+        }
+        prompt_token_count = mtmd_helper_get_n_tokens(vision_chunks.get());
+    }
+    if (prompt_token_count == 0 || prompt_token_count + static_cast<std::size_t>(max_output_tokens) > llama_n_ctx(record.context)) {
+        return error_response("CONTEXT_OVERFLOW", "Prompt, image and requested output exceed context capacity");
     }
 
     ActiveGeneration active_generation;
     llama_memory_clear(llama_get_memory(record.context), true);
     const auto prompt_started = std::chrono::steady_clock::now();
-    for (std::size_t offset = 0; offset < prompt_tokens.size();) {
+    if (with_image) {
         if (cancellation->load(std::memory_order_acquire)) {
-            const auto prompt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - prompt_started
-            ).count();
-            return cancelled_response(prompt_tokens.size(), 0, prompt_ms, 0);
+            return cancelled_response(prompt_token_count, 0, 0, 0);
         }
-        const std::size_t remaining = prompt_tokens.size() - offset;
-        const std::int32_t chunk_size = static_cast<std::int32_t>(
-            std::min<std::size_t>(remaining, static_cast<std::size_t>(record.batch_size))
-        );
-        llama_batch prompt_batch = llama_batch_get_one(
-            const_cast<llama_token*>(prompt_tokens.data() + offset),
-            chunk_size
-        );
-        if (llama_decode(record.context, prompt_batch) != 0) {
-            return error_response("DECODE_FAILED", "llama.cpp failed while processing the prompt");
+        llama_pos new_n_past = 0;
+        if (mtmd_helper_eval_chunks(
+            vision_context.get(), record.context, vision_chunks.get(), 0, 0,
+            record.batch_size, true, &new_n_past
+        ) != 0) {
+            return error_response("DECODE_FAILED", "Multimodal prompt evaluation failed");
         }
-        offset += static_cast<std::size_t>(chunk_size);
+        vision_chunks.reset();
+        vision_context.reset(); // Release the projector before token decoding.
+    } else {
+        for (std::size_t offset = 0; offset < prompt_tokens.size();) {
+            if (cancellation->load(std::memory_order_acquire)) {
+                const auto prompt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - prompt_started
+                ).count();
+                return cancelled_response(prompt_token_count, 0, prompt_ms, 0);
+            }
+            const std::size_t remaining = prompt_tokens.size() - offset;
+            const std::int32_t chunk_size = static_cast<std::int32_t>(
+                std::min<std::size_t>(remaining, static_cast<std::size_t>(record.batch_size))
+            );
+            llama_batch prompt_batch = llama_batch_get_one(
+                const_cast<llama_token*>(prompt_tokens.data() + offset), chunk_size
+            );
+            if (llama_decode(record.context, prompt_batch) != 0) {
+                return error_response("DECODE_FAILED", "llama.cpp failed while processing the prompt");
+            }
+            offset += static_cast<std::size_t>(chunk_size);
+        }
     }
     const auto prompt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - prompt_started
@@ -1209,7 +1276,7 @@ std::vector<std::string> stream_text(
 
     if (cancelled) {
         return cancelled_response(
-            prompt_tokens.size(),
+            prompt_token_count,
             generated_tokens,
             prompt_ms,
             generation_ms,
@@ -1219,7 +1286,7 @@ std::vector<std::string> stream_text(
     }
     return terminal_response(
         "ok",
-        prompt_tokens.size(),
+        prompt_token_count,
         generated_tokens,
         prompt_ms,
         generation_ms,
