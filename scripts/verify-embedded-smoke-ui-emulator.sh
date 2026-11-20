@@ -112,11 +112,83 @@ assert len(editors) == 1 and editors[0]["enabled"] == "false", editors
 print("Embedded chat demo initial UI: visible model setup, disabled composer until ready, separate actions")
 PY
 
+# Exercise the *actual* chat screen against a debug-only UI journey fixture.
+# Synthetic strings never enter the Harnex runtime or real user chat.
+# The installed production smoke Activity remains independently asserted above.
+adb -s emulator-5554 shell screenrecord --time-limit 30 /sdcard/embedded-chat-ui.mp4 > "$evidence/recording.log" 2>&1 &
+record_pid=$!
+adb -s emulator-5554 shell am start -W -n "$package/.DebugChatJourneyActivity" > "$evidence/fixture-start.txt"
+
+capture_fixture() {
+  adb -s emulator-5554 shell uiautomator dump /sdcard/embedded-chat-fixture.xml >/dev/null
+  adb -s emulator-5554 pull /sdcard/embedded-chat-fixture.xml "$evidence/fixture-window.xml" >/dev/null
+}
+ui_center() {
+  python3 - "$evidence/fixture-window.xml" "$1" <<'PYCOORD'
+import re
+import sys
+import xml.etree.ElementTree as ET
+nodes = [n.attrib for n in ET.parse(sys.argv[1]).getroot().iter("node")]
+target = sys.argv[2]
+matches = [
+    n for n in nodes
+    if (n.get("class") == "android.widget.EditText" if target == "@editor" else n.get("text") == target)
+]
+assert len(matches) == 1, (target, matches)
+a, b, c, d = map(int, re.findall(r"\d+", matches[0]["bounds"]))
+assert c > a and d > b, (target, matches[0])
+print((a + c) // 2, (b + d) // 2)
+PYCOORD
+}
+assert_fixture_text() {
+  python3 - "$evidence/fixture-window.xml" "$1" <<'PYASSERT'
+import sys
+import xml.etree.ElementTree as ET
+nodes = [n.attrib.get("text", "") for n in ET.parse(sys.argv[1]).getroot().iter("node")]
+assert any(sys.argv[2] in text for text in nodes), (sys.argv[2], nodes)
+print(f"fixture verified: {sys.argv[2]}")
+PYASSERT
+}
+
+capture_fixture
+assert_fixture_text "UI-only emulator journey"
+adb -s emulator-5554 shell input tap $(ui_center "Prepare local model")
+capture_fixture
+assert_fixture_text "Ready · UI-only test"
+adb -s emulator-5554 shell input tap $(ui_center "@editor")
+adb -s emulator-5554 shell input text "hello"
+adb -s emulator-5554 shell input keyevent 4
+capture_fixture
+adb -s emulator-5554 shell input tap $(ui_center "Send")
+capture_fixture
+assert_fixture_text "Streaming · UI-only test"
+adb -s emulator-5554 shell input tap $(ui_center "Stop")
+capture_fixture
+assert_fixture_text "Stopped · UI-only test"
+assert_fixture_text "Not saved · UI-only cancellation test"
+adb -s emulator-5554 shell input tap $(ui_center "New chat")
+capture_fixture
+assert_fixture_text "New chat · UI-only test"
+adb -s emulator-5554 shell input tap $(ui_center "@editor")
+adb -s emulator-5554 shell input text "again"
+adb -s emulator-5554 shell input keyevent 4
+capture_fixture
+adb -s emulator-5554 shell input tap $(ui_center "Send")
+sleep 7
+capture_fixture
+assert_fixture_text "Completed · UI-only test"
+assert_fixture_text "Synthetic text for UI verification"
+adb -s emulator-5554 exec-out screencap -p > "$evidence/fixture-screenshot.png"
+wait "$record_pid"
+adb -s emulator-5554 pull /sdcard/embedded-chat-ui.mp4 "$evidence/fixture-journey.mp4" >/dev/null
+[[ -s "$evidence/fixture-journey.mp4" ]] || { echo "Missing full-media UI journey" >&2; exit 1; }
+echo "Embedded chat UI: real initial APK + synthetic full-media Send/Stop/New chat journey PASSED"
+
 cat > "$evidence/manifest.txt" <<EOF
 source_revision=$(git rev-parse HEAD)
 workflow_run=${GITHUB_RUN_ID:-local}
 execution_environment=android-api35-x86_64-emulator
 artifact_surface=standalone-embedded-smoke-apk-no-native-canary
-claim=launch-model-setup-and-disabled-composer-only
+claim=real-APK-initial-launch-plus-debug-only-synthetic-chat-ui-full-media
 physical-arm64-gguf-generation=not-tested
 EOF
