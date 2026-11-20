@@ -137,6 +137,13 @@ class EmbeddedSmokeActivity :
         ui { screen.insertTranscript(text) }
     }
 
+    override fun onStop() {
+        // Android can background the Activity without destroying it. Never leave
+        // its microphone or native transcription running out of sight.
+        voice.cancel()
+        super.onStop()
+    }
+
     override fun onDestroy() {
         voice.close()
         controller.close()
