@@ -28,10 +28,14 @@ internal object PhotoDecoder {
         val scale = minOf(1f, MAX_SIDE.toFloat() / maxOf(decoded.width, decoded.height))
         val image = if (scale < 1f) {
             Bitmap.createScaledBitmap(
-                decoded, (decoded.width * scale).toInt().coerceAtLeast(1),
-                (decoded.height * scale).toInt().coerceAtLeast(1), true,
+                decoded,
+                (decoded.width * scale).toInt().coerceAtLeast(1),
+                (decoded.height * scale).toInt().coerceAtLeast(1),
+                true,
             ).also { decoded.recycle() }
-        } else decoded
+        } else {
+            decoded
+        }
 
         val buffer = ByteArrayOutputStream()
         try {
