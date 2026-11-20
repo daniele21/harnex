@@ -1,245 +1,94 @@
 package io.github.daniele21.localllm.externalembedded
 
 import android.app.Activity
-import android.content.res.ColorStateList
-import android.graphics.Color
-import android.os.Build
 import android.os.Bundle
-import android.view.WindowInsets
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
-import io.github.daniele21.localllm.contracts.ConversationMessage
-import io.github.daniele21.localllm.contracts.ConversationRole
-import io.github.daniele21.localllm.contracts.GenerationEvent
-import io.github.daniele21.localllm.contracts.GenerationListener
-import io.github.daniele21.localllm.contracts.SessionId
-import io.github.daniele21.localllm.download.DownloadCancellationToken
-import io.github.daniele21.localllm.download.DownloadProgressObserver
-import io.github.daniele21.localllm.download.ModelDownloadResult
-import io.github.daniele21.localllm.embedded.EmbeddedConfiguration
-import io.github.daniele21.localllm.embedded.EmbeddedModelReadiness
-import io.github.daniele21.localllm.embedded.EmbeddedRuntime
-import io.github.daniele21.localllm.install.ModelInstallationResult
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Deliberately independent one-APK proof: no Host, Binder, project dependency or chat manager.
- * Installs the reviewed GGUF on request and runs two stateless Messages requests.
+ * Standalone Android chat consumer. Runtime, model and cancellation use Harnex Embedded SDK;
+ * conversation messages and UI state stay within this app.
  */
-class EmbeddedSmokeActivity : Activity() {
-    private val worker = Executors.newSingleThreadExecutor()
-    private val cancelled = AtomicBoolean(false)
-    private lateinit var status: TextView
-    private lateinit var runButton: Button
+class EmbeddedSmokeActivity :
+    Activity(),
+    ChatObserver {
+    private lateinit var screen: EmbeddedChatScreen
+    private lateinit var controller: EmbeddedChatController
+    private var activeRunId = -1L
+    private var answerBubble: TextView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Keep the primary action visible independently of status/output size and text scaling.
-        // A real-device smoke report showed only the status text, with no usable controls.
-        val padding = (16 * resources.displayMetrics.density).toInt()
-        val controlHeight = (56 * resources.displayMetrics.density).toInt()
-        status = TextView(this).apply {
-            text = "Ready to run the embedded model smoke test"
-            textSize = 16f
-            setTextColor(Color.rgb(45, 55, 72))
-            setPadding(padding, padding, padding, padding)
-        }
-        runButton = Button(this).apply {
-            text = "Download / Install / Generate"
-            isAllCaps = false
-            setTextColor(Color.WHITE)
-            backgroundTintList = ColorStateList.valueOf(Color.rgb(37, 91, 191))
-            setOnClickListener {
-                isEnabled = false
-                cancelled.set(false)
-                worker.execute {
-                    runSmoke()
-                    runOnUiThread { if (!isDestroyed) isEnabled = true }
-                }
-            }
-        }
-        val cancelButton = Button(this).apply {
-            text = "Cancel"
-            isAllCaps = false
-            setTextColor(Color.rgb(45, 55, 72))
-            backgroundTintList = ColorStateList.valueOf(Color.rgb(230, 234, 242))
-            setOnClickListener { cancelled.set(true) }
-        }
-
-        val title = TextView(this).apply {
-            text = "Harnex Embedded SDK Smoke"
-            textSize = 23f
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.rgb(27, 29, 36))
-            setPadding(padding, padding, padding, padding)
-        }
-        val output = ScrollView(this).apply {
-            isFillViewport = true
-            addView(status)
-        }
-        val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(padding, padding / 2, padding, padding)
-            addView(
-                runButton,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, controlHeight),
-            )
-            addView(
-                cancelButton,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, controlHeight),
-            )
-        }
-        val screen = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.WHITE)
-            addView(
-                title,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
-            )
-            addView(
-                output,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
-            )
-            addView(
-                actions,
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
-            )
-        }
-        // Android 15/16 edge-to-edge can put the entire Activity content behind the
-        // action/status bars. An owned toolbar plus real window insets keeps status
-        // and both buttons reachable on device and in the emulator.
-        screen.setOnApplyWindowInsetsListener { view, insets ->
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val safeArea = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                view.setPadding(0, safeArea.top, 0, safeArea.bottom)
-            } else {
-                @Suppress("DEPRECATION")
-                view.setPadding(0, insets.systemWindowInsetTop, 0, insets.systemWindowInsetBottom)
-            }
-            insets
-        }
-        setContentView(screen)
-        screen.requestApplyInsets()
-    }
-
-    private fun runSmoke() {
-        var sdk: EmbeddedRuntime? = null
-        var session: SessionId? = null
-        try {
-            show("Opening in-process SDK")
-            sdk = EmbeddedRuntime.open(applicationContext, EmbeddedConfiguration("qwen35-2b-q4-k-m"))
-            ensureModel(sdk)
-            check(!cancelled.get()) { "Smoke test cancelled" }
-            val ready = sdk.prepare()
-            check(ready.ready) { "Prepare failed: ${ready.detail}" }
-            session = sdk.openSession()
-
-            streamOnce(
-                sdk,
-                session,
-                listOf(
-                    ConversationMessage(ConversationRole.USER, "My name is Mario."),
-                    ConversationMessage(ConversationRole.ASSISTANT, "Hello Mario."),
-                    ConversationMessage(ConversationRole.USER, "What is my name?"),
-                ),
-            )
-            check(!cancelled.get()) { "Smoke test cancelled" }
-            streamOnce(
-                sdk,
-                session,
-                listOf(ConversationMessage(ConversationRole.USER, "What is my name?")),
-            )
-            show("Completed two explicit, stateless Messages requests")
-        } catch (error: IllegalStateException) {
-            show("Stopped: ${error.message ?: error.javaClass.simpleName}")
-        } catch (error: IllegalArgumentException) {
-            show("Invalid input: ${error.javaClass.simpleName}")
-        } finally {
-            session?.let { current -> runCatching { sdk?.closeSession(current) } }
-            runCatching { sdk?.close() }
-        }
-    }
-
-    private fun ensureModel(sdk: EmbeddedRuntime) {
-        when (sdk.modelReadiness()) {
-            EmbeddedModelReadiness.VERIFIED -> return
-            EmbeddedModelReadiness.INVALID -> error("Installed GGUF is invalid; repair is required")
-            EmbeddedModelReadiness.NOT_INSTALLED -> Unit
-        }
-        show("Downloading verified GGUF to app-private storage")
-        val downloaded = sdk.downloadModel(
-            observer = DownloadProgressObserver { progress ->
-                show("Download: ${progress.bytesDownloaded} / ${progress.expectedBytes} bytes")
-            },
-            cancellationToken = DownloadCancellationToken { cancelled.get() },
+        screen = EmbeddedChatScreen(
+            activity = this,
+            onPrepare = { controller.prepare() },
+            onSend = { send() },
+            onStop = { controller.stop() },
+            onNewChat = { reset() },
         )
-        val handle = when (downloaded) {
-            is ModelDownloadResult.Success -> downloaded.handle
-            is ModelDownloadResult.Cancelled -> error("Download cancelled")
-            is ModelDownloadResult.Failure -> error("Download failed: ${downloaded.failure.code}")
-            is ModelDownloadResult.AlreadyRunning -> error("Download already running")
-        }
-        show("Installing verified GGUF")
-        val installed = sdk.installModel(handle)
-        check(installed is ModelInstallationResult.Success) {
-            "Installation failed: ${(installed as ModelInstallationResult.Failure).code}"
-        }
-        check(sdk.modelReadiness() == EmbeddedModelReadiness.VERIFIED) {
-            "Installed model did not verify"
+        val content = screen.build()
+        setContentView(content)
+        content.requestApplyInsets()
+        controller = EmbeddedChatController(applicationContext, this)
+        screen.updateControls(ChatPhase.NEEDS_MODEL)
+    }
+
+    private fun send() {
+        val message = screen.prompt.text.toString()
+        if (controller.send(message)) screen.prompt.text.clear()
+    }
+
+    private fun reset() {
+        if (!controller.clearConversation()) return
+        activeRunId = -1L
+        answerBubble = null
+        screen.prompt.text.clear()
+        screen.resetConversation()
+    }
+
+    override fun onPhase(phase: ChatPhase) {
+        ui { screen.updateControls(phase) }
+    }
+
+    override fun onStatus(status: String) {
+        ui { screen.setStatus(status) }
+    }
+
+    override fun onDiagnostics(text: String) {
+        ui { screen.setDiagnostics(text) }
+    }
+
+    override fun onTurnStarted(id: Long, input: String) {
+        ui {
+            activeRunId = id
+            screen.addBubble("YOU", input, true)
+            answerBubble = screen.addBubble("HARNEX · QWEN3.5", "Thinking locally…", false)
         }
     }
 
-    private fun streamOnce(sdk: EmbeddedRuntime, session: SessionId, messages: List<ConversationMessage>) {
-        val done = CountDownLatch(1)
-        val failure = AtomicReference<String?>(null)
-        val handle = sdk.generate(
-            session,
-            messages,
-            GenerationListener { event ->
-                when (event) {
-                    is GenerationEvent.TextDelta -> show(event.text)
+    override fun onAnswerDelta(id: Long, answer: String) {
+        ui {
+            if (activeRunId == id && controller.isGenerating()) answerBubble?.let { screen.updateBubble(it, answer) }
+        }
+    }
 
-                    is GenerationEvent.Completed -> {
-                        show("Answer: ${event.answerOutput}")
-                        done.countDown()
-                    }
-
-                    is GenerationEvent.Failed -> {
-                        failure.set(event.error.code)
-                        done.countDown()
-                    }
-
-                    else -> Unit
-                }
-            },
-        )
-        var checks = 0
-        while (!done.await(250, TimeUnit.MILLISECONDS)) {
-            if (cancelled.get()) handle.cancel()
-            if (++checks >= 480) {
-                handle.cancel()
-                error("Generation exceeded 120 seconds")
+    override fun onTurnFinished(id: Long, answer: String, saved: Boolean, retryPrompt: String?) {
+        ui {
+            if (activeRunId != id) return@ui
+            answerBubble?.let { bubble ->
+                screen.updateBubble(bubble, if (saved) answer else "Not saved · $answer")
             }
-        }
-        check(failure.get() == null) { "Generation failed: ${failure.get()}" }
-    }
-
-    private fun show(message: String) {
-        runOnUiThread {
-            if (!isDestroyed) status.text = message
+            if (retryPrompt != null && screen.prompt.text.isBlank()) screen.prompt.setText(retryPrompt)
+            answerBubble = null
+            activeRunId = -1L
         }
     }
 
     override fun onDestroy() {
-        cancelled.set(true)
-        worker.shutdown()
+        controller.close()
         super.onDestroy()
     }
+}
+
+private fun Activity.ui(action: () -> Unit) {
+    runOnUiThread { if (!isDestroyed && !isFinishing) action() }
 }

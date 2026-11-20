@@ -62,7 +62,7 @@ if [[ -f samples/external-embedded-android/settings.gradle.kts ]]; then
   ./gradlew --no-configuration-cache -p samples/external-embedded-android \
     -PembeddedSdkVersion="$SDK_VERSION" \
     -PembeddedSdkRepositoryUrl="$REPOSITORY" \
-    :app:assembleDebug
+    :app:assembleDebug :app:testDebugUnitTest
 
   if grep -R --line-number -E 'project\\(|includeBuild\\(|android-local-llm-harness' \
     samples/external-embedded-android --include='*.gradle.kts'; then
