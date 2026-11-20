@@ -26,6 +26,8 @@ internal class EmbeddedChatGeneration {
         cancelled: AtomicBoolean,
         destroying: AtomicBoolean,
         activeGeneration: AtomicReference<GenerationHandle?>,
+        imageBytes: ByteArray?,
+        question: String,
         onAnswerDelta: (String) -> Unit,
     ): ChatGenerationOutcome {
         val finished = CountDownLatch(1)
@@ -33,10 +35,7 @@ internal class EmbeddedChatGeneration {
         val stream = StringBuilder()
         val lastRendered = AtomicLong(0L)
         val started = SystemClock.elapsedRealtime()
-        val handle = engine.generate(
-            session,
-            messages,
-            GenerationListener { event ->
+        val listener = GenerationListener { event ->
                 when (event) {
                     is GenerationEvent.TextDelta -> {
                         val stillActive = !cancelled.get() && !destroying.get()
@@ -59,9 +58,12 @@ internal class EmbeddedChatGeneration {
 
                     else -> Unit
                 }
-            },
-            overrides = GenerationOverrides(maxOutputTokens = 256),
-        )
+            }
+        val handle = if (imageBytes == null) {
+            engine.generate(session, messages, listener, overrides = GenerationOverrides(maxOutputTokens = 256))
+        } else {
+            engine.generateImage(session, question, imageBytes, listener, overrides = GenerationOverrides(maxOutputTokens = 256))
+        }
         activeGeneration.set(handle)
         try {
             awaitTerminal(finished, handle, cancelled, destroying)
