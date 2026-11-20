@@ -143,3 +143,35 @@ qualify real Italian STT, concurrency, RAM or temperature on physical phones.
 See [Voice Input feature/architecture](../../docs/features/embedded-voice-input.md)
 for model identity, architectural boundaries, cancellation behavior, acceptance
 gates and representative-device requirements.
+
+## Experimental single-photo questions (Android ARM64)
+
+This branch adds **Prepare vision**, **Choose photo**, a transient photo preview, and
+single-image questions to the independent Maven-only embedded chat sample. These controls
+are *experimental*: native multimodal Android compatibility, memory and cancellation
+are not qualified merely by a green Linux-host spike or APK packaging checks.
+
+1. Tap **Prepare local model** to verify/download the existing Qwen3.5 2B Q4_K_M GGUF.
+2. Tap **Prepare vision** to download the matched F16 projector (~668 MB). The fixed
+   SHA-256 (`7035e9cb8d7c6a9681d07eef9a364783e86ea4cd73faab2eabb4f43a101830c7`)
+   and exact size (668,227,264 bytes) are verified via Harnex SecureModelDownloader.
+3. Tap **Choose photo** and pick a single photo using the platform Photo Picker or
+   its API 26+ content fallback. The photo is decoded off the UI thread, downsampled
+   to at most 512 pixels per side, encoded as JPEG and kept only in memory.
+4. Enter a question and press **Send**. Harnex routes one image question through
+   the existing RuntimeOrchestrator, backend instance, model and native cancellation
+   registry using the pinned libmtmd projector. You can press **Stop**; it takes effect
+   cooperatively and can lag during a blocking native visual encode.
+5. **Remove** drops the selected photo without sending. Text-only questions and
+   Whisper voice input continue to use their original paths.
+
+Image questions deliberately do not join the app's text-only history: later text
+turns do not implicitly retain the image. Normal content logging, persistent
+image files, cloud inference, arbitrary projector URLs, multi-image inputs and
+Binder multimedia serialization remain disabled. The projector is stored only
+inside this app's private no-backup directory, not bundled with the APK.
+
+**Qualification status:** Linux host GGUF+projector smoke PASS on exact pinned
+llama.cpp; Android ARM64 build and runtime evidence must come from the exact
+Android CI run and representative device. A built APK alone does not establish
+correct native image inference, peak memory/thermal behavior or image cancellation.
