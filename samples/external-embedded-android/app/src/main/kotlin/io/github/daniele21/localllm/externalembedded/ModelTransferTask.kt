@@ -50,6 +50,7 @@ internal object ModelTransferTask {
         } catch (failure: IllegalStateException) {
             val reason = failure.message.orEmpty()
             val retryable = reason.contains("NETWORK_FAILURE") || reason.contains("DOWNLOAD_HTTP_ERROR") ||
+                reason.contains("DOWNLOAD_SIZE_MISMATCH") || reason.contains("already running", ignoreCase = true) ||
                 reason.contains("cancelled", ignoreCase = true)
             ModelTransferOutcome(false, retryable, "Download unavailable · ${reason.take(90)}")
         } finally {

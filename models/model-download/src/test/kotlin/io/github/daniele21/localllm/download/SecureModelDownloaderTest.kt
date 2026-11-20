@@ -312,6 +312,25 @@ class SecureModelDownloaderTest {
         assertArrayEquals(bytes, downloader(root, QueueTransport()).resolveVerifiedFile((recovered as ModelDownloadResult.Success).handle)!!.readBytes())
     }
 
+
+    @Test
+    fun resumesAfterCleanEarlyEofWithoutLosingPreviouslyTransferredBytes() {
+        val root = temporaryDirectory()
+        val bytes = ByteArray(125_000) { (it % 239).toByte() }
+        val received = 40_000
+        val transport = QueueTransport(
+            FakeResponse(200, bytes.copyOf(received), contentLengthBytes = null),
+            FakeResponse(
+                206,
+                bytes.copyOfRange(received, bytes.size),
+                contentRange = "bytes $received-${bytes.size - 1}/${bytes.size}",
+            ),
+        )
+        val result = downloader(root, transport).download(ModelDownloadRequest(artifact(bytes)))
+        assertTrue(result is ModelDownloadResult.Success)
+        assertEquals(listOf(0L, received.toLong()), transport.requests.map { it.rangeStartBytes })
+    }
+
     @Test
     fun existingCorruptPartialNeverPublishesAndIsPurgedOnDigestFailure() {
         val root = temporaryDirectory()
@@ -366,6 +385,7 @@ class SecureModelDownloaderTest {
         val result = downloader(
             temporaryDirectory(),
             QueueTransport(FakeResponse(200, received, contentLengthBytes = null)),
+            retryPolicy = DownloadRetryPolicy(maxAttempts = 1, initialDelayMs = 0, maxDelayMs = 0),
         ).download(ModelDownloadRequest(artifact(expected)))
         assertFailure(result, code)
     }
