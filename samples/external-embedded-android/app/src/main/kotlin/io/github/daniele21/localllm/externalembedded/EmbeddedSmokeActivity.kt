@@ -95,9 +95,12 @@ class EmbeddedSmokeActivity : Activity() {
         }
         setupPanel.addView(status)
         setupPanel.addView(diagnostics)
-        setupPanel.addView(setupButton, LinearLayout.LayoutParams(-1, dp(48)).apply {
-            topMargin = dp(8)
-        })
+        setupPanel.addView(
+            setupButton,
+            LinearLayout.LayoutParams(-1, dp(48)).apply {
+                topMargin = dp(8)
+            },
+        )
         outer.addView(setupPanel)
 
         scroll = ScrollView(this).apply {
@@ -175,10 +178,13 @@ class EmbeddedSmokeActivity : Activity() {
             }
         }
         for (button in listOf(sendButton, stopButton, resetButton)) {
-            actions.addView(button, LinearLayout.LayoutParams(0, dp(52), 1f).apply {
-                marginStart = dp(2)
-                marginEnd = dp(2)
-            })
+            actions.addView(
+                button,
+                LinearLayout.LayoutParams(0, dp(52), 1f).apply {
+                    marginStart = dp(2)
+                    marginEnd = dp(2)
+                },
+            )
         }
         composer.addView(actions)
         return composer
@@ -231,7 +237,9 @@ class EmbeddedSmokeActivity : Activity() {
                 showStatus("Previously installed model verified")
                 return
             }
+
             EmbeddedModelReadiness.INVALID -> error("Installed GGUF is invalid; repair required")
+
             EmbeddedModelReadiness.NOT_INSTALLED -> Unit
         }
         showStatus("Downloading the reviewed GGUF…")
@@ -325,9 +333,11 @@ class EmbeddedSmokeActivity : Activity() {
                                 updateBubble(bubble, text)
                             }
                         }
+
                         is GenerationEvent.Completed, is GenerationEvent.Failed -> {
                             if (outcome.compareAndSet(null, event)) finished.countDown()
                         }
+
                         else -> Unit
                     }
                 },
