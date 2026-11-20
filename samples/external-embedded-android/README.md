@@ -94,13 +94,16 @@ tokens, decoding tokens/sec) and a **process PSS snapshot** in MB. The PSS
 snapshot is not peak RSS, thermal qualification, or a benchmark result. Native
 execution and cancellation need verification on the actual phone.
 
-**Automation and evidence:** the Maven-only independent sample runs its own
-history-selection unit tests, compiles an external APK with the ARM64 JNI
-backend, and checks initial setup/composer state on an Android API 35 x86_64
-emulator (a no-native UI canary). Those checks do **not** prove local inference
-or exercise the enabled composer. A full interactive real-GGUF chat, Stop,
-relaunch and multi-turn journey still needs claim-matched **physical ARM64**
-evidence before an SDK handoff/release claim.
+**Automation and evidence:** Maven-only external consumer unit tests cover
+bounded history and Stop/Completed races. The compiled APK is checked for ARM64
+JNI and initial setup/composer state on an Android API 35 x86_64 emulator.
+A **debug-only UI journey fixture**, shell-restricted and absent from release
+variants, drives the actual chat screen through synthetic streaming, Stop,
+draft recovery, New chat and a completed answer; the emulator retains
+accessibility assertions, screenshot and video. This fixture does not call
+Harnex inference and is explicitly **UI-only**. Physical ARM64 must still
+qualify real GGUF streaming, cancellation, relaunch, multi-turn and resources
+before SDK handoff/release.
 
 The activity does not intentionally write prompts/responses to Logcat or disk.
 Android may still include text in standard system accessibility or memory
