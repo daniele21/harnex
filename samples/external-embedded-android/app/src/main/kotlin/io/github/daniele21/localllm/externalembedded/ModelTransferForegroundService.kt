@@ -50,7 +50,8 @@ class ModelTransferForegroundService : Service() {
                 }
                 if (!ModelTransferState.cancelRequested(this, kind)) {
                     ModelTransferState.update(
-                        this, kind,
+                        this,
+                        kind,
                         if (result.success) ModelTransferPhase.COMPLETED else ModelTransferPhase.FAILED,
                         result.status,
                     )

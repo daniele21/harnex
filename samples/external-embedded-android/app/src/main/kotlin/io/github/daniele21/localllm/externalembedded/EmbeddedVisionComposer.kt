@@ -10,11 +10,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 
-internal data class VisionActions(
-    val onPrepare: () -> Unit,
-    val onChoose: () -> Unit,
-    val onRemove: () -> Unit,
-)
+internal data class VisionActions(val onPrepare: () -> Unit, val onChoose: () -> Unit, val onRemove: () -> Unit)
 
 /** Single owner of optional photo picker controls and transient preview. */
 internal class EmbeddedVisionComposer(
@@ -38,8 +34,10 @@ internal class EmbeddedVisionComposer(
     fun build(): LinearLayout {
         val container = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         status = chatLabel(
-            activity, "Photo questions · prepare vision model (~668 MB) once",
-            12f, Color.rgb(91, 103, 121),
+            activity,
+            "Photo questions · prepare vision model (~668 MB) once",
+            12f,
+            Color.rgb(91, 103, 121),
         )
         container.addView(status)
         preview = ImageView(activity).apply {

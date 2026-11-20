@@ -242,7 +242,6 @@ class SecureModelDownloaderTest {
         assertTrue(operations.listFiles().orEmpty().isEmpty())
     }
 
-
     @Test
     fun resumesAcrossDownloaderInstancesWithValidatedContentRangeAndFullDigest() {
         val root = temporaryDirectory()
@@ -272,7 +271,10 @@ class SecureModelDownloaderTest {
         assertTrue(retried is ModelDownloadResult.Success)
         assertEquals(offset, transport.requests.single().rangeStartBytes)
         assertTrue(progress.any { it.bytesDownloaded == offset })
-        assertArrayEquals(bytes, downloader(root, QueueTransport()).resolveVerifiedFile((retried as ModelDownloadResult.Success).handle)!!.readBytes())
+        assertArrayEquals(
+            bytes,
+            downloader(root, QueueTransport()).resolveVerifiedFile((retried as ModelDownloadResult.Success).handle)!!.readBytes(),
+        )
         assertFalse(partial.exists())
     }
 
@@ -309,9 +311,11 @@ class SecureModelDownloaderTest {
         val recovered = downloader(root, transport).download(ModelDownloadRequest(artifact(bytes)))
         assertTrue(recovered is ModelDownloadResult.Success)
         assertTrue(transport.requests.single().rangeStartBytes > 0L)
-        assertArrayEquals(bytes, downloader(root, QueueTransport()).resolveVerifiedFile((recovered as ModelDownloadResult.Success).handle)!!.readBytes())
+        assertArrayEquals(
+            bytes,
+            downloader(root, QueueTransport()).resolveVerifiedFile((recovered as ModelDownloadResult.Success).handle)!!.readBytes(),
+        )
     }
-
 
     @Test
     fun resumesAfterCleanEarlyEofWithoutLosingPreviouslyTransferredBytes() {

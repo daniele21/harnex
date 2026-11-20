@@ -69,11 +69,13 @@ internal class ModelTransferUiController(
                 screen.updateControls(ChatPhase.PREPARING)
                 screen.setStatus(model.status)
             }
+
             model.phase == ModelTransferPhase.COMPLETED && chatPhase() == ChatPhase.NEEDS_MODEL &&
                 model.revision != handledModelRevision -> {
                 handledModelRevision = model.revision
                 chat.prepare()
             }
+
             chatPhase() == ChatPhase.NEEDS_MODEL &&
                 model.phase in setOf(ModelTransferPhase.FAILED, ModelTransferPhase.PAUSED, ModelTransferPhase.CANCELLED) -> {
                 screen.updateControls(ChatPhase.NEEDS_MODEL)
@@ -88,14 +90,17 @@ internal class ModelTransferUiController(
                 screen.vision.setReady(ready = false, preparing = true)
                 screen.vision.setStatus(vision.status)
             }
+
             ModelTransferPhase.COMPLETED -> if (vision.revision != handledVisionRevision) {
                 handledVisionRevision = vision.revision
                 chat.prepareVision()
             }
+
             ModelTransferPhase.FAILED, ModelTransferPhase.PAUSED, ModelTransferPhase.CANCELLED -> {
                 screen.vision.setReady(ready = false, preparing = false)
                 screen.vision.setStatus(vision.status)
             }
+
             ModelTransferPhase.IDLE -> Unit
         }
     }

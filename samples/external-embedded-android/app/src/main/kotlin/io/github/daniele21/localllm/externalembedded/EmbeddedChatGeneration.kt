@@ -17,11 +17,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 internal data class ChatGenerationOutcome(val terminal: GenerationEvent, val streamedAnswer: String, val startedAtMs: Long)
 
-internal data class ChatGenerationPayload(
-    val messages: List<ConversationMessage>,
-    val question: String,
-    val imageBytes: ByteArray?,
-)
+internal data class ChatGenerationPayload(val messages: List<ConversationMessage>, val question: String, val imageBytes: ByteArray?)
 
 /** One bounded, synchronous worker-thread request. No chat memory or runtime policy is owned here. */
 internal class EmbeddedChatGeneration {
@@ -67,7 +63,10 @@ internal class EmbeddedChatGeneration {
             engine.generate(session, payload.messages, listener, overrides = GenerationOverrides(maxOutputTokens = 256))
         } else {
             engine.vision.generate(
-                session, payload.question, payload.imageBytes, listener,
+                session,
+                payload.question,
+                payload.imageBytes,
+                listener,
                 overrides = GenerationOverrides(maxOutputTokens = 256),
             )
         }

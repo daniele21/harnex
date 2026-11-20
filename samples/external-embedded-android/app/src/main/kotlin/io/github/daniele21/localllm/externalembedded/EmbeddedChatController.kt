@@ -109,8 +109,11 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 val sdk = checkNotNull(engine) { "Prepare Qwen first" }
                 visionReady.set(sdk.vision.readiness())
                 observer.onVisionStatus(
-                    if (visionReady.get()) "Vision model verified · choose a photo"
-                    else "Vision projector not ready · tap Prepare vision",
+                    if (visionReady.get()) {
+                        "Vision model verified · choose a photo"
+                    } else {
+                        "Vision projector not ready · tap Prepare vision"
+                    },
                 )
             } finally {
                 visionPreparing.set(false)

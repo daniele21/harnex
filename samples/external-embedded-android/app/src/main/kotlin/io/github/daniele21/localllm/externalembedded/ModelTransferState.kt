@@ -10,7 +10,12 @@ internal enum class ModelTransferKind(val jobId: Int, val expectedBytes: Long, v
 }
 
 internal enum class ModelTransferPhase {
-    IDLE, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED,
+    IDLE,
+    RUNNING,
+    PAUSED,
+    COMPLETED,
+    FAILED,
+    CANCELLED,
 }
 
 internal data class ModelTransferSnapshot(
@@ -50,8 +55,7 @@ internal object ModelTransferState {
         update(context, kind, ModelTransferPhase.RUNNING, "Waiting for Android to start the download…")
     }
 
-    fun cancelRequested(context: Context, kind: ModelTransferKind): Boolean =
-        preferences(context).getBoolean("${kind.name}.cancel", false)
+    fun cancelRequested(context: Context, kind: ModelTransferKind): Boolean = preferences(context).getBoolean("${kind.name}.cancel", false)
 
     fun requestCancel(context: Context, kind: ModelTransferKind) {
         preferences(context).edit().putBoolean("${kind.name}.cancel", true).apply()

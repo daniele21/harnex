@@ -101,6 +101,7 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
             ),
         )
     private val client: LocalLlmClient = InProcessLocalLlmClient(runtime)
+
     /** Optional multimodal capability keeps projector lifetime out of the text facade. */
     val vision: EmbeddedVisionCapability by lazy {
         EmbeddedVisionCapability(
@@ -108,7 +109,10 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
             client = client,
             applicationId = applicationId,
             useCaseId = useCaseId,
-            verifyOwner = { requireWorkerThread(); checkOpen() },
+            verifyOwner = {
+                requireWorkerThread()
+                checkOpen()
+            },
             isClosed = { closed.get() },
         )
     }

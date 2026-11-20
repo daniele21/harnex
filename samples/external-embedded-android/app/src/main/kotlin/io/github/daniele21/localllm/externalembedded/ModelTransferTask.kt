@@ -47,8 +47,11 @@ internal object ModelTransferTask {
                     cancellationToken = DownloadCancellationToken(cancelled::get),
                 )
             }
-            if (cancelled.get()) ModelTransferOutcome(false, true, "Transfer paused")
-            else ModelTransferOutcome(true, false, "${kind.label} verified and installed")
+            if (cancelled.get()) {
+                ModelTransferOutcome(false, true, "Transfer paused")
+            } else {
+                ModelTransferOutcome(true, false, "${kind.label} verified and installed")
+            }
         } catch (failure: IOException) {
             ModelTransferOutcome(false, true, "Network interrupted · transfer will resume")
         } catch (failure: IllegalStateException) {

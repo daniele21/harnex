@@ -18,7 +18,10 @@ class ModelTransferJobService : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         val kind = ModelTransferKind.values().firstOrNull { it.jobId == params.jobId } ?: return false
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
-            ModelTransferState.cancelRequested(this, kind)) return false
+            ModelTransferState.cancelRequested(this, kind)
+        ) {
+            return false
+        }
         ModelTransferNotifications.create(this)
         val cancelled = AtomicBoolean(false)
         if (operations.putIfAbsent(params.jobId, cancelled) != null) return true
@@ -32,14 +35,15 @@ class ModelTransferJobService : JobService() {
         workers.execute {
             val outcome = try {
                 ModelTransferTask.execute(this, kind, cancelled) { status, percent ->
-                if (!cancelled.get()) {
-                    setNotification(
-                        params, kind.jobId,
-                        ModelTransferNotifications.notification(this, kind, status, percent),
-                        JOB_END_NOTIFICATION_POLICY_REMOVE,
-                    )
+                    if (!cancelled.get()) {
+                        setNotification(
+                            params,
+                            kind.jobId,
+                            ModelTransferNotifications.notification(this, kind, status, percent),
+                            JOB_END_NOTIFICATION_POLICY_REMOVE,
+                        )
+                    }
                 }
-            }
             } catch (_: RuntimeException) {
                 ModelTransferOutcome(false, false, "Unable to complete verified download")
             }

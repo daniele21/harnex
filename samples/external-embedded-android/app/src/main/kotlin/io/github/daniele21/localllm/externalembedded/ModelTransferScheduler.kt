@@ -53,7 +53,9 @@ internal object ModelTransferScheduler {
         }
         if (!active) {
             ModelTransferState.update(
-                context, kind, ModelTransferPhase.PAUSED,
+                context,
+                kind,
+                ModelTransferPhase.PAUSED,
                 "Transfer interrupted · tap Prepare to resume the saved bytes",
             )
         }
