@@ -1,7 +1,7 @@
 # Embedded Android voice input — Whisper Small Q5_1
 
-Status: active development · Product: PRODUCT_FEATURE in external sample only · Updated: 2026-11-20
-Owner: `samples/external-embedded-android`. This document specifies the intended behavior and engineering evidence, not proof that it has shipped.
+Status: integrated development feature (sample-only) · Product: PRODUCT_FEATURE · Updated: 2026-11-20
+Owner: `samples/external-embedded-android`. Android automation is qualified; representative-device performance, interruption and resource evidence remain pending for release, and the sample is not a public SDK.
 
 ## User job and smallest supported experience
 
@@ -29,8 +29,8 @@ First release defaults: Whisper **multilingual small Q5_1**, Italian (`language=
 ```text
 Android SpeechInputController (sample-only, exclusive owner of microphone + STT lifecycle)
   -> AudioRecord (permission-gated; 16 kHz mono PCM16, bounded memory, no files)
-  -> WhisperTranscriber (sample-only single-thread serialized native context; explicit cancel + close)
-  -> whisper_stt_jni (isolated whisper.cpp + statically linked ggml, hidden symbols)
+  -> WhisperNative (sample-only Kotlin JNI adapter, cancellable synchronous call)
+  -> libharnex_whisper_stt.so (isolated whisper.cpp + statically linked ggml, hidden symbols)
   -> text only -> EmbeddedChatScreen.prompt (editable)
   -> user's explicit Send -> EmbeddedChatController.send(text)
   -> existing Harnex embedded-android Maven dependency
@@ -72,15 +72,15 @@ The standalone sample must continue resolving Harnex **only** through its staged
 
 | Step | Implementation/proof | State |
 | --- | --- | --- |
-| STT-00 | Isolate exact whisper.cpp/ggml native library in the independent sample; verify ARM64 JNI and no duplicate exported symbols with Harnex | In progress |
-| STT-10 | Native bounded PCM transcription, Italian params, typed errors and cooperative cancellation; exact model provisioning | Planned |
-| STT-20 | Android AudioRecord foreground-only, permission flow, error recovery and 30-second cap | Planned |
-| STT-30 | Chat mic controls, transcribed editable draft, no automatic Send; no regressions to text chat | Planned |
-| STT-40 | Repository-selected FULL/STRONG CI, sample Maven-only APK, emulator UI journey and representative device tests with GGML + GGUF | Planned |
+| STT-00 | Pin and isolate whisper.cpp/ggml JNI, verify ARM64 APK packaging and exports | Implemented; automated PASS |
+| STT-10 | Bounded Italian PCM transcription, native abort callback, SHA-256 verified model provisioning | Implemented; real inference coverage remains limited |
+| STT-20 | Foreground AudioRecord, permission, cleanup, 30-second cap | Implemented; representative OEM/error-path proof pending |
+| STT-30 | Mic controls, editable draft, explicit Send to Qwen | Implemented; synthetic emulator UI PASS; user reports real-device basic flow working |
+| STT-40 | FULL CI, Maven-only APK and UI evidence; representative-device latency, resource, cancellation and correctness matrix | Automated PASS; representative-device qualification pending |
 
 **Automated acceptance:** JVM tests for state transitions and stale-result suppression, malformed/short audio, exact file identity and interrupted download; ARM64 JNI in APK, native ABI/linkage/SONAME/symbol verification, both engine libraries packaged, existing Maven-only sample and Harnex Android tests green. Any sample Gradle/JNI/CI changes require the repo-selected stronger gates, not test skips. For material UI journey use the repository's E2E media evidence rules.
 
-**Physical acceptance (still pending until explicitly recorded):** install exact APK on representative ARM64, provision Small Q5 and Qwen GGUF, transcribe 3/10/30-second Italian utterances in airplane mode, edit/send/receive answer, cancel during inference, close/reopen, denied/revoked mic, pressure/thermal and 10-turn stress without late callbacks or memory leaks. Record audio-duration, model load, STT infer time, RTF, PSS/peak memory, real text error (WER/CER); separate device facts from provisional thresholds. Never label UI emulation as native STT proof.
+**Physical acceptance (the user reports the basic flow works, but full device qualification is pending):** install exact APK on representative ARM64, provision Small Q5 and Qwen GGUF, transcribe 3/10/30-second Italian utterances in airplane mode, edit/send/receive answer, cancel during inference, close/reopen, denied/revoked mic, pressure/thermal and 10-turn stress without late callbacks or memory leaks. Record audio-duration, model load, STT infer time, RTF, PSS/peak memory, real text error (WER/CER); separate device facts from provisional thresholds. Never label UI emulation as native STT proof.
 
 **Outcome:** input voice can reliably become editable text and be sent to existing local Qwen without cloud or Harnex contract changes.
 **Product-impact question:** can real users dictate with acceptable accuracy and latency versus typing? Answer from representative, privacy-safe qualitative tests; no prompt telemetry.
