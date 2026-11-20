@@ -76,31 +76,40 @@ def find(text):
     assert len(matches) == 1, f"Expected exactly one visible {text!r}, got {len(matches)}"
     return matches[0]
 
-title = find("Harnex Embedded SDK Smoke")
-ready = find("Ready to run the embedded model smoke test")
-run = find("Download / Install / Generate")
-cancel = find("Cancel")
+title = find("Harnex · Local Chat")
+ready = find("Model not ready · start local setup")
+prepare = find("Prepare local model")
+send = find("Send")
+stop = find("Stop")
+reset = find("New chat")
+
+def rect(node):
+    coords = list(map(int, re.findall(r"\d+", node["bounds"])))
+    assert len(coords) == 4 and coords[2] > coords[0] and coords[3] > coords[1], node
+    return coords
+
 assert title["class"] == "android.widget.TextView", title
 assert ready["class"] == "android.widget.TextView", ready
-title_rect = list(map(int, re.findall(r"\d+", title["bounds"])))
-ready_rect = list(map(int, re.findall(r"\d+", ready["bounds"])))
-assert len(title_rect) == 4 and len(ready_rect) == 4
-assert title_rect[3] <= ready_rect[1], (
-    "The initial status is hidden behind the toolbar/system bars",
-    title["bounds"],
-    ready["bounds"],
-)
-print(f"toolbar visible: {title['bounds']}; status visible below it: {ready['bounds']}")
-for name, button in [("run", run), ("cancel", cancel)]:
-    assert button["class"] == "android.widget.Button", (name, button)
-    assert button["clickable"] == "true" and button["enabled"] == "true", (name, button)
-    coords = list(map(int, re.findall(r"\d+", button["bounds"])))
-    assert len(coords) == 4 and coords[2] > coords[0] and coords[3] > coords[1], (name, button)
-    print(f"{name} visible: {button['bounds']}")
-run_rect = list(map(int, re.findall(r"\d+", run["bounds"])))
-cancel_rect = list(map(int, re.findall(r"\d+", cancel["bounds"])))
-assert run_rect[3] <= cancel_rect[1], "Smoke actions overlap"
-print("Embedded smoke controls are visible, clickable, and non-overlapping on Android API 35 emulator")
+assert rect(title)[3] <= rect(ready)[1], "Status is obscured by the toolbar or Android system bars"
+
+for label, button, enabled in [
+    ("prepare", prepare, "true"),
+    ("send", send, "false"),
+    ("stop", stop, "false"),
+    ("new chat", reset, "false"),
+]:
+    assert button["class"] == "android.widget.Button", (label, button)
+    assert button["enabled"] == enabled, (label, button)
+    if enabled == "true":
+        assert button["clickable"] == "true", (label, button)
+    print(f"{label}: enabled={enabled}, bounds={button['bounds']}")
+    rect(button)
+assert rect(ready)[3] <= rect(prepare)[1], "Setup action overlaps status"
+assert rect(prepare)[3] <= rect(send)[1], "Composer overlaps setup action"
+assert rect(send)[2] <= rect(stop)[0] and rect(stop)[2] <= rect(reset)[0], "Composer actions overlap"
+editors = [n.attrib for n in nodes if n.get("class") == "android.widget.EditText"]
+assert len(editors) == 1 and editors[0]["enabled"] == "false", editors
+print("Embedded chat demo initial UI: visible model setup, disabled composer until ready, separate actions")
 PY
 
 cat > "$evidence/manifest.txt" <<EOF
@@ -108,6 +117,6 @@ source_revision=$(git rev-parse HEAD)
 workflow_run=${GITHUB_RUN_ID:-local}
 execution_environment=android-api35-x86_64-emulator
 artifact_surface=standalone-embedded-smoke-apk-no-native-canary
-claim=launch-and-controls-only
+claim=launch-model-setup-and-disabled-composer-only
 physical-arm64-gguf-generation=not-tested
 EOF
