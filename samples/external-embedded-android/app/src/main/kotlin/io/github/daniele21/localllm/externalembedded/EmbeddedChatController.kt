@@ -124,23 +124,13 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
 
     fun send(text: String, imageBytes: ByteArray? = null): Boolean {
         val input = text.trim()
-        val imageError = when {
-            imageBytes == null -> null
-            !visionReady.get() -> "Tap Prepare vision first"
-            imageBytes.isEmpty() || imageBytes.size > MAX_IMAGE_BYTES -> "Selected image is invalid or too large"
-            else -> null
-        }
-        val textError = when {
-            input.isBlank() -> "Write a message before sending"
-
-            input.length > EphemeralChatHistory.MAX_USER_CHARS ->
-                "Message limit: ${EphemeralChatHistory.MAX_USER_CHARS} characters"
-
-            else -> null
-        }
-        val validationError = imageError ?: textError
-        if (validationError != null) {
-            if (imageError != null) observer.onVisionStatus(validationError) else observer.onStatus(validationError)
+        val rejection = ChatInputAdmission.validate(input, imageBytes, visionReady.get())
+        if (rejection != null) {
+            if (rejection.vision) {
+                observer.onVisionStatus(rejection.message)
+            } else {
+                observer.onStatus(rejection.message)
+            }
             return false
         }
         if (destroyed.get() || visionPreparing.get() || state.current() != ChatPhase.READY) return false
@@ -278,7 +268,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
 
     private companion object {
         const val MODEL_ID = "qwen35-2b-q4-k-m"
-        const val MAX_IMAGE_BYTES = 2 * 1024 * 1024
+
 
         fun formatMetrics(metrics: GenerationMetrics, elapsedMs: Long, messageCount: Int): String {
             val rate = metrics.decodeTokensPerSecond?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
