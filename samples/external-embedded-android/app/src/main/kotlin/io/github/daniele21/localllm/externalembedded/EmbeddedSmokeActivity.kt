@@ -83,12 +83,12 @@ class EmbeddedSmokeActivity :
         }
     }
 
-    private fun ui(action: () -> Unit) {
-        runOnUiThread { if (!isDestroyed && !isFinishing) action() }
-    }
-
     override fun onDestroy() {
         controller.close()
         super.onDestroy()
     }
+}
+
+private fun Activity.ui(action: () -> Unit) {
+    runOnUiThread { if (!isDestroyed && !isFinishing) action() }
 }
