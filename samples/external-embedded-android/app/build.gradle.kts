@@ -12,6 +12,9 @@ android {
         applicationId = "io.github.daniele21.localllm.embedded.smoke"
         minSdk = 26
         targetSdk = 36
+        ndk {
+            abiFilters.add("arm64-v8a")
+        }
     }
 
     compileOptions {
@@ -19,8 +22,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // The llama.cpp backend resolves native libraries from applicationInfo.nativeLibraryDir.
-    // Like Harnex's Host and device runner, extract JNI libraries into that directory.
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    // Harnex's pinned llama.cpp requires extracted JNI libraries.
     packaging {
         jniLibs {
             useLegacyPackaging = true
