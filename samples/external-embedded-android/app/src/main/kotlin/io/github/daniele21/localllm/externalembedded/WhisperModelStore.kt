@@ -3,6 +3,7 @@ package io.github.daniele21.localllm.externalembedded
 import android.content.Context
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
@@ -32,22 +33,10 @@ internal class WhisperModelStore(context: Context) {
             check(connection.responseCode == HttpURLConnection.HTTP_OK) {
                 "Voice download failed: HTTP ${connection.responseCode}"
             }
-            var total = 0L
-            val buffer = ByteArray(64 * 1024)
             progress("Downloading Whisper Small Q5 · 0 MB")
             connection.inputStream.use { input ->
                 FileOutputStream(temp).use { output ->
-                    while (true) {
-                        check(!cancelled.get()) { "Voice download cancelled" }
-                        val length = input.read(buffer)
-                        if (length < 0) break
-                        total += length
-                        check(total <= MODEL_BYTES) { "Voice model exceeds expected size" }
-                        output.write(buffer, 0, length)
-                        if (total % (4L * 1024 * 1024) < buffer.size) {
-                            progress("Downloading Whisper Small Q5 · ${total / (1024 * 1024)} / 190 MB")
-                        }
-                    }
+                    copyModelBytes(input, output, cancelled, progress)
                     output.fd.sync()
                 }
             }
@@ -59,6 +48,27 @@ internal class WhisperModelStore(context: Context) {
         } finally {
             connection.disconnect()
             temp.delete()
+        }
+    }
+
+    private fun copyModelBytes(
+        input: InputStream,
+        output: FileOutputStream,
+        cancelled: AtomicBoolean,
+        progress: (String) -> Unit,
+    ) {
+        var total = 0L
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            check(!cancelled.get()) { "Voice download cancelled" }
+            val length = input.read(buffer)
+            if (length < 0) return
+            total += length
+            check(total <= MODEL_BYTES) { "Voice model exceeds expected size" }
+            output.write(buffer, 0, length)
+            if (total % (4L * 1024 * 1024) < buffer.size) {
+                progress("Downloading Whisper Small Q5 · ${total / (1024 * 1024)} / 190 MB")
+            }
         }
     }
 
