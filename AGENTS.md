@@ -49,6 +49,12 @@ Product depth, delivery stage and validation depth are independent.
 
 `SHIPPED` proves delivery, not product impact. Resolve risk dimensions into required gates; stacked publication is exception-only. Define post-release learning only when real use must answer something material; telemetry is not mandatory.
 
+## Coding-agent CI cadence
+
+- Open a **draft PR** for iterative work. Make coherent, small commits and run the cheapest owner-local checks; draft CI runs repository guards but defers Android/native and external Maven/APK builds. A green draft check is **not integration evidence** and a draft must never merge.
+- When code, tests and docs are coherent, mark the PR **Ready for review** once; GitHub runs risk-selected Android/native validation and affected expensive consumer workflows for that exact candidate. `/preflight auto` remains available for explicit exact-head remote validation.
+- For fixes after a failed heavy gate, convert the PR back to **draft before committing**, diagnose locally/focused first, then mark ready again. New commits to a ready PR intentionally rerun required integration gates. Never bypass branch protection, required tests or physical release evidence to save CI time.
+
 ## Context, diagnosis and completion
 
 `.engineering/documentation-policy.json` owns bounded context routes; use `--route product` for material shaping and `--route bug` for implementation. Routes never authorize omitting relevant owners/source.
