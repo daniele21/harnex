@@ -167,9 +167,11 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
             observer.onTurnFinished(id, failure.message ?: "Invalid request", false, input)
             observer.onStatus("Invalid request; no answer saved")
         } catch (failure: InterruptedException) {
+            closeRuntime()
+            state.requirePreparation()
             Thread.currentThread().interrupt()
-            observer.onTurnFinished(id, failure.message ?: "Generation interrupted", false, input)
-            observer.onStatus("Generation interrupted")
+            observer.onTurnFinished(id, failure.message ?: "Generation interrupted; prepare the model again", false, input)
+            observer.onStatus("Generation interrupted; model must be prepared again")
         } finally {
             activeGeneration.set(null)
             if (destroyed.get()) state.requirePreparation()
