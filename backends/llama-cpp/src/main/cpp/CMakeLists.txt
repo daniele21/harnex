@@ -112,6 +112,11 @@ endif()
 
 add_subdirectory("${LLAMA_CPP_DIR}" "${CMAKE_BINARY_DIR}/llama.cpp")
 
+# Use the exact same pinned llama/ggml runtime and context for image inference.
+# mtmd is a separate image-encoder library, not a second language model runtime.
+set(MTMD_VIDEO OFF CACHE BOOL "" FORCE)
+add_subdirectory("${LLAMA_CPP_DIR}/tools/mtmd" "${CMAKE_BINARY_DIR}/llama-mtmd")
+
 add_library(
     local_llm_jni
     SHARED
@@ -141,6 +146,7 @@ target_include_directories(
     "${LLAMA_CPP_DIR}/ggml/include"
     "${LLAMA_CPP_DIR}/common"
     "${LLAMA_CPP_DIR}/vendor"
+    "${LLAMA_CPP_DIR}/tools/mtmd"
 )
 
 find_library(android_lib android REQUIRED)
@@ -152,6 +158,7 @@ target_link_libraries(
     PRIVATE
     llama
     llama-common
+    mtmd
     ggml
     ${android_lib}
     ${log_lib}
