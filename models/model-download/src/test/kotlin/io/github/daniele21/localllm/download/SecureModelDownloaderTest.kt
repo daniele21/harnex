@@ -242,6 +242,126 @@ class SecureModelDownloaderTest {
         assertTrue(operations.listFiles().orEmpty().isEmpty())
     }
 
+
+    @Test
+    fun resumesAcrossDownloaderInstancesWithValidatedContentRangeAndFullDigest() {
+        val root = temporaryDirectory()
+        val bytes = ByteArray(210_000) { (it % 211).toByte() }
+        val interrupted = downloader(
+            root,
+            QueueTransport(InterruptedResponse(bytes)),
+            retryPolicy = DownloadRetryPolicy(maxAttempts = 1, initialDelayMs = 0, maxDelayMs = 0),
+        ).download(ModelDownloadRequest(artifact(bytes)))
+        assertFailure(interrupted, DownloadFailureCode.NETWORK_FAILURE)
+        val partial = File(root, "partials").listFiles().orEmpty().single { it.name.endsWith(".resume") }
+        val offset = partial.length()
+        assertTrue(offset in 1 until bytes.size.toLong())
+
+        val transport = QueueTransport(
+            FakeResponse(
+                206,
+                bytes.copyOfRange(offset.toInt(), bytes.size),
+                contentRange = "bytes $offset-${bytes.size - 1}/${bytes.size}",
+            ),
+        )
+        val progress = mutableListOf<DownloadProgress>()
+        val retried = downloader(root, transport).download(
+            ModelDownloadRequest(artifact(bytes)),
+            DownloadProgressObserver(progress::add),
+        )
+        assertTrue(retried is ModelDownloadResult.Success)
+        assertEquals(offset, transport.requests.single().rangeStartBytes)
+        assertTrue(progress.any { it.bytesDownloaded == offset })
+        assertArrayEquals(bytes, downloader(root, QueueTransport()).resolveVerifiedFile((retried as ModelDownloadResult.Success).handle)!!.readBytes())
+        assertFalse(partial.exists())
+    }
+
+    @Test
+    fun malformedRangeIsDiscardedAndReplacedByFullResponse() {
+        val root = temporaryDirectory()
+        val bytes = ByteArray(100_000) { (it % 113).toByte() }
+        downloader(
+            root,
+            QueueTransport(InterruptedResponse(bytes)),
+            retryPolicy = DownloadRetryPolicy(maxAttempts = 1, initialDelayMs = 0, maxDelayMs = 0),
+        ).download(ModelDownloadRequest(artifact(bytes)))
+        val partial = File(root, "partials").listFiles().orEmpty().single { it.name.endsWith(".resume") }
+        val size = partial.length()
+        val transport = QueueTransport(
+            FakeResponse(206, bytes.copyOfRange(size.toInt(), bytes.size), contentRange = "bytes 0-1/100000"),
+            FakeResponse(200, bytes),
+        )
+        val recovered = downloader(root, transport).download(ModelDownloadRequest(artifact(bytes)))
+        assertTrue(recovered is ModelDownloadResult.Success)
+        assertEquals(listOf(size, 0L), transport.requests.map { it.rangeStartBytes })
+    }
+
+    @Test
+    fun ignoredRangeNeverAppendsToTheOldFile() {
+        val root = temporaryDirectory()
+        val bytes = ByteArray(100_000) { (it % 211).toByte() }
+        downloader(
+            root,
+            QueueTransport(InterruptedResponse(bytes)),
+            retryPolicy = DownloadRetryPolicy(maxAttempts = 1, initialDelayMs = 0, maxDelayMs = 0),
+        ).download(ModelDownloadRequest(artifact(bytes)))
+        val transport = QueueTransport(FakeResponse(200, bytes))
+        val recovered = downloader(root, transport).download(ModelDownloadRequest(artifact(bytes)))
+        assertTrue(recovered is ModelDownloadResult.Success)
+        assertTrue(transport.requests.single().rangeStartBytes > 0L)
+        assertArrayEquals(bytes, downloader(root, QueueTransport()).resolveVerifiedFile((recovered as ModelDownloadResult.Success).handle)!!.readBytes())
+    }
+
+    @Test
+    fun existingCorruptPartialNeverPublishesAndIsPurgedOnDigestFailure() {
+        val root = temporaryDirectory()
+        val bytes = ByteArray(100_000) { (it % 107).toByte() }
+        val sha = sha256(bytes)
+        val dir = File(root, "partials").apply { mkdirs() }
+        File(dir, "resume-$sha.resume").writeBytes(ByteArray(20_000) { 99 })
+        val transport = QueueTransport(
+            FakeResponse(206, bytes.copyOfRange(20_000, bytes.size), contentRange = "bytes 20000-99999/100000"),
+        )
+        val result = downloader(root, transport).download(ModelDownloadRequest(artifact(bytes)))
+        assertFailure(result, DownloadFailureCode.SHA256_MISMATCH)
+        assertTrue(dir.listFiles().orEmpty().none { it.name.endsWith(".resume") })
+        assertTrue(File(root, "verified").listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun systemCancellationKeepsOnlyAnUnverifiedDigestBoundPartial() {
+        val root = temporaryDirectory()
+        val bytes = ByteArray(100_000) { (it % 211).toByte() }
+        val cancelled = AtomicBoolean(false)
+        val result = downloader(root, QueueTransport(CancellingResponse(bytes) { cancelled.set(true) })).download(
+            ModelDownloadRequest(artifact(bytes), preservePartialOnCancel = true),
+            cancellationToken = DownloadCancellationToken(cancelled::get),
+        )
+        assertTrue(result is ModelDownloadResult.Cancelled)
+        val partial = File(root, "partials").listFiles().orEmpty().single { it.name.endsWith(".resume") }
+        assertTrue(partial.length() > 0L)
+        assertTrue(File(root, "verified").listFiles().orEmpty().isEmpty())
+        downloader(root, QueueTransport()).recoverInterruptedDownloads()
+        assertTrue(partial.exists())
+    }
+
+    private class InterruptedResponse(private val body: ByteArray) : DownloadTransportResponse {
+        override val statusCode = 200
+        override val contentLengthBytes: Long = body.size.toLong()
+        override val contentEncoding: String? = null
+        override val redirectLocation: String? = null
+
+        override fun openBody(): InputStream = object : ByteArrayInputStream(body) {
+            private var reads = 0
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (++reads > 1) throw IOException("simulated disconnect")
+                return super.read(buffer, offset, length.coerceAtMost(32_768))
+            }
+        }
+
+        override fun close() = Unit
+    }
+
     private fun assertDownloadFailure(expected: ByteArray, received: ByteArray, code: DownloadFailureCode) {
         val result = downloader(
             temporaryDirectory(),
@@ -309,9 +429,11 @@ class SecureModelDownloaderTest {
     private class QueueTransport(vararg responses: Any) : DownloadTransport {
         private val queue = ArrayDeque(responses.toList())
         val requestedUris = mutableListOf<URI>()
+        val requests = mutableListOf<DownloadTransportRequest>()
 
         override fun execute(request: DownloadTransportRequest): DownloadTransportResponse {
             requestedUris += request.uri
+            requests += request
             return when (val next = queue.removeFirst()) {
                 is IOException -> throw next
                 is DownloadTransportResponse -> next
@@ -326,6 +448,7 @@ class SecureModelDownloaderTest {
         override val contentLengthBytes: Long? = body.size.toLong(),
         override val contentEncoding: String? = null,
         override val redirectLocation: String? = null,
+        override val contentRange: String? = null,
     ) : DownloadTransportResponse {
         override fun openBody(): InputStream = ByteArrayInputStream(body)
         override fun close() = Unit

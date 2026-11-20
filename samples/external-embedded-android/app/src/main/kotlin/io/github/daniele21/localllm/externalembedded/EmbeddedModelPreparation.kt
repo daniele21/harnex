@@ -12,7 +12,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Uses Harnex's reviewed download/installation policy; it never owns model files. */
 internal object EmbeddedModelPreparation {
-    fun ensureReady(engine: EmbeddedRuntime, cancelled: AtomicBoolean, destroyed: AtomicBoolean, onStatus: (String) -> Unit) {
+    fun ensureReady(
+        engine: EmbeddedRuntime,
+        cancelled: AtomicBoolean,
+        destroyed: AtomicBoolean,
+        onStatus: (String) -> Unit,
+        preservePartialOnCancel: Boolean = false,
+    ) {
         when (engine.modelReadiness()) {
             EmbeddedModelReadiness.VERIFIED -> {
                 onStatus("Previously installed model verified")
@@ -34,6 +40,7 @@ internal object EmbeddedModelPreparation {
                 }
             },
             cancellationToken = DownloadCancellationToken { cancelled.get() || destroyed.get() },
+            preservePartialOnCancel = preservePartialOnCancel,
         )
         val handle = when (result) {
             is ModelDownloadResult.Success -> result.handle

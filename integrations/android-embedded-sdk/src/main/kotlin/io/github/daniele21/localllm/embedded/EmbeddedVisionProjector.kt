@@ -45,7 +45,7 @@ internal class EmbeddedVisionProjector(context: Context) {
         if (verified()) return
         downloader.recoverInterruptedDownloads()
         check(!cancel.isCancelled()) { "Vision preparation cancelled" }
-        val result = downloader.download(ModelDownloadRequest(PROJECTOR), progress, cancel)
+        val result = downloader.download(ModelDownloadRequest(PROJECTOR, preservePartialOnCancel = true), progress, cancel)
         val handle = when (result) {
             is ModelDownloadResult.Success -> result.handle
             is ModelDownloadResult.Cancelled -> error("Vision download cancelled")

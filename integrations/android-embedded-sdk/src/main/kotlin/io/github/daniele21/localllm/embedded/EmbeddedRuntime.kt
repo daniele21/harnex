@@ -157,10 +157,15 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
     fun downloadModel(
         observer: DownloadProgressObserver = DownloadProgressObserver {},
         cancellationToken: DownloadCancellationToken = NeverCancelled,
+        preservePartialOnCancel: Boolean = false,
     ): ModelDownloadResult {
         requireWorkerThread()
         checkOpen()
-        return provisioning.download(observer, DownloadCancellationToken { closed.get() || cancellationToken.isCancelled() })
+        return provisioning.download(
+            observer,
+            DownloadCancellationToken { closed.get() || cancellationToken.isCancelled() },
+            preservePartialOnCancel,
+        )
     }
 
     /** Revalidate GGUF metadata, import atomically, and check SHA-256 before prepare(). */
