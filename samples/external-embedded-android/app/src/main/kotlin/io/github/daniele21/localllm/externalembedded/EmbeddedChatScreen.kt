@@ -2,6 +2,7 @@ package io.github.daniele21.localllm.externalembedded
 
 import android.app.Activity
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -10,6 +11,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -27,6 +29,9 @@ internal class EmbeddedChatScreen(
     private val onPrepareVoice: () -> Unit,
     private val onVoice: () -> Unit,
     private val onCancelVoice: () -> Unit,
+    private val onPrepareVision: () -> Unit,
+    private val onChoosePhoto: () -> Unit,
+    private val onRemovePhoto: () -> Unit,
 ) {
     lateinit var prompt: EditText
         private set
@@ -39,6 +44,14 @@ internal class EmbeddedChatScreen(
     private lateinit var sendButton: Button
     private lateinit var stopButton: Button
     private lateinit var resetButton: Button
+    private lateinit var visionStatus: TextView
+    private lateinit var imagePreview: ImageView
+    private lateinit var visionPrepareButton: Button
+    private lateinit var chooseImageButton: Button
+    private lateinit var clearImageButton: Button
+    private var visionReady = false
+    private var visionPreparing = false
+    private var imageSelected = false
     private lateinit var voiceStatus: TextView
     private lateinit var voicePrepareButton: Button
     private lateinit var voiceButton: Button
@@ -123,6 +136,32 @@ internal class EmbeddedChatScreen(
                 android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         }
         composer.addView(prompt, LinearLayout.LayoutParams(-1, -2))
+        visionStatus = chatLabel(activity, "Photo questions · prepare vision model (~668 MB) once", 12f, Color.rgb(91, 103, 121))
+        composer.addView(visionStatus)
+        imagePreview = ImageView(activity).apply {
+            contentDescription = "Selected private photo preview"
+            adjustViewBounds = true
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            visibility = View.GONE
+        }
+        composer.addView(imagePreview, LinearLayout.LayoutParams(-1, dp(activity, 120)))
+        val imageActions = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        visionPrepareButton = chatButton(activity, "Prepare vision", false).apply {
+            setOnClickListener { onPrepareVision() }
+        }
+        chooseImageButton = chatButton(activity, "Choose photo", false).apply {
+            setOnClickListener { onChoosePhoto() }
+            contentDescription = "Select one photo from Android Photo Picker"
+        }
+        clearImageButton = chatButton(activity, "Remove", false).apply {
+            setOnClickListener { onRemovePhoto() }
+            contentDescription = "Remove selected photo from this message"
+        }
+        imageActions.addEqualWidthButtons(activity, listOf(visionPrepareButton, chooseImageButton, clearImageButton), 44)
+        composer.addView(imageActions)
         voiceStatus = chatLabel(activity, "Voice model not installed · ~190 MB download", 12f, Color.rgb(91, 103, 121))
         composer.addView(voiceStatus)
         val voiceActions = LinearLayout(activity).apply {
@@ -223,6 +262,45 @@ internal class EmbeddedChatScreen(
         if (combined.length > 600) voiceStatusText = "Transcript exceeds 600 characters · shorten before Send"
     }
 
+    fun showPhoto(bitmap: Bitmap) {
+        imageSelected = true
+        imagePreview.setImageBitmap(bitmap)
+        imagePreview.visibility = View.VISIBLE
+        updateVisionControls()
+    }
+
+    fun removePhoto() {
+        imageSelected = false
+        imagePreview.setImageDrawable(null)
+        imagePreview.visibility = View.GONE
+        updateVisionControls()
+    }
+
+    fun visionStatusText(value: String) {
+        visionStatus.text = value
+    }
+
+    fun updateVisionState(ready: Boolean, preparing: Boolean) {
+        visionReady = ready
+        visionPreparing = preparing
+        updateVisionControls()
+    }
+
+    private fun updateVisionControls() {
+        if (!::chooseImageButton.isInitialized) return
+        val ready = chatPhase == ChatPhase.READY
+        val canAct = ready && !voicePhase.isBusy && !visionPreparing
+        visionPrepareButton.visibility = if (visionReady) View.GONE else View.VISIBLE
+        visionPrepareButton.isEnabled = canAct
+        visionPrepareButton.text = if (visionPreparing) "Preparing vision…" else "Prepare vision"
+        chooseImageButton.isEnabled = canAct
+        clearImageButton.visibility = if (imageSelected) View.VISIBLE else View.GONE
+        clearImageButton.isEnabled = canAct
+        stopButton.isEnabled = chatPhase == ChatPhase.PREPARING ||
+            chatPhase == ChatPhase.GENERATING || visionPreparing
+        sendButton.isEnabled = canAct && (!imageSelected || visionReady)
+    }
+
     fun updateControls(phase: ChatPhase) {
         chatPhase = phase
         val ready = phase == ChatPhase.READY
@@ -240,6 +318,7 @@ internal class EmbeddedChatScreen(
         stopButton.isEnabled = preparing || generating
         resetButton.isEnabled = ready && !voiceBusy
         updateVoiceControls()
+        updateVisionControls()
     }
 
     private fun updateVoiceControls() {
@@ -270,6 +349,7 @@ internal class EmbeddedChatScreen(
         prompt.isEnabled = canEdit
         sendButton.isEnabled = canEdit
         resetButton.isEnabled = canEdit
+        updateVisionControls()
     }
 }
 
