@@ -100,6 +100,5 @@ internal class EmbeddedChatGeneration {
     }
 }
 
-internal class GenerationTimeout(
-    message: String = "Generation timed out; reinitialize model before retrying",
-) : IllegalStateException(message)
+internal class GenerationTimeout(message: String = "Generation timed out; reinitialize model before retrying") :
+    IllegalStateException(message)
