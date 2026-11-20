@@ -92,12 +92,11 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
 
     fun send(text: String): Boolean {
         val input = text.trim()
-        if (input.isBlank()) {
-            observer.onStatus("Write a message before sending")
-            return false
-        }
-        if (input.length > EphemeralChatHistory.MAX_USER_CHARS) {
-            observer.onStatus("Message limit: ${EphemeralChatHistory.MAX_USER_CHARS} characters")
+        if (input.isBlank() || input.length > EphemeralChatHistory.MAX_USER_CHARS) {
+            observer.onStatus(
+                if (input.isBlank()) "Write a message before sending"
+                else "Message limit: ${EphemeralChatHistory.MAX_USER_CHARS} characters",
+            )
             return false
         }
         if (destroyed.get() || state.current() != ChatPhase.READY) return false
