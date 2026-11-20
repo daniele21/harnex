@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /** App-only state. Harnex never owns the conversation, composer or transcript. */
-internal enum class ChatPhase {
+enum class ChatPhase {
     NEEDS_MODEL,
     PREPARING,
     READY,
@@ -24,7 +24,7 @@ internal enum class ChatPhase {
     STOPPING,
 }
 
-internal interface ChatObserver {
+interface ChatObserver {
     fun onPhase(phase: ChatPhase)
 
     fun onStatus(status: String)
@@ -42,10 +42,7 @@ internal interface ChatObserver {
  * The single owner of an embedded model session, one active generation, and a volatile chat.
  * A serial worker owns all SDK calls; the Android view only renders observer events.
  */
-internal class EmbeddedChatController(
-    private val applicationContext: Context,
-    private val observer: ChatObserver,
-) {
+internal class EmbeddedChatController(private val applicationContext: Context, private val observer: ChatObserver) {
     private val worker = Executors.newSingleThreadExecutor()
     private val history = EphemeralChatHistory()
     private val engineCalls = EmbeddedChatGeneration()
