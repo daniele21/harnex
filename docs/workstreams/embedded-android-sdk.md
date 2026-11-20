@@ -5,7 +5,7 @@ Document type: workstream
 Owner: embedded Android integration / external application developers
 Canonical scope: workstream.embedded-android-sdk
 Read when: preparing Harnex as an in-process Android SDK for independently shipped applications
-Last reviewed: 2026-11-19
+Last reviewed: 2026-11-20
 
 ## Product intent and decision
 
@@ -83,5 +83,7 @@ Passing this gate authorizes **integration work on a new app**, not a claim that
 ## Resume checkpoint
 
 **Development integration:** [PR #606](https://github.com/daniele21/harnex/pull/606) integrates the reviewed model policy, stateless embedded runtime, verified download/install, Maven publishing and standalone external-APK fixture into `dev`. The build-only fixture consumes staged versioned Maven artifacts without Host/Binder or source-project dependency and checks `arm64-v8a/liblocal_llm_jni.so` in the native AAR and APK; JNI extraction is explicitly configured. Existing model/runtime owners are reused rather than duplicated. Its independent automated Maven/APK check passed on the candidate, with integration gates required for the final head/base.
+
+**Interactive fixture follow-up:** [PR #609](https://github.com/daniele21/harnex/pull/609) evolves the independent smoke APK into an app-owned, **in-memory-only chat** with a bounded explicit Messages window, streaming answers, Stop/New chat, typed preparation/install states, SDK generation timing metrics and process PSS snapshot. Its Maven-only external build runs focused history tests and an API 35 emulator initial-screen control check. A user reported successful physical GGUF generation with the preceding fixed-prompt debug APK, but that report does **not** by itself qualify this new interactive APK or provide complete cancellation, restart, memory, thermal and repeated-turn evidence. The new APK remains under exact-head CI and physical follow-up gates.
 
 **Open release/handoff gates:** an actual ARM64 device must prove the real pinned GGUF download/install, native streaming, follow-up Messages supplied explicitly, cancellation, restarts, cleanup and resource behavior; the external fixture currently offers a manual smoke action rather than a passing physical result. Stable/public Maven publication and compatibility/ABI release acceptance also remain open. `dev` integration is not an embedded SDK release or authorization to start the commercial chat app; keep EMB-40/50 active until the evidence is recorded.
