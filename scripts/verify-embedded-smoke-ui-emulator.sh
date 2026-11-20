@@ -117,7 +117,7 @@ PY
 # The installed production smoke Activity remains independently asserted above.
 adb -s emulator-5554 shell screenrecord --time-limit 30 /sdcard/embedded-chat-ui.mp4 > "$evidence/recording.log" 2>&1 &
 record_pid=$!
-adb -s emulator-5554 shell am start -W -n "$package/.DebugChatJourneyActivity" > "$evidence/fixture-start.txt"
+adb -s emulator-5554 shell am start -W -n "$package/io.github.daniele21.localllm.externalembedded.DebugChatJourneyActivity" > "$evidence/fixture-start.txt"
 
 capture_fixture() {
   adb -s emulator-5554 shell uiautomator dump /sdcard/embedded-chat-fixture.xml >/dev/null
