@@ -227,8 +227,6 @@ internal class SpeechInputController(private val context: Context, private val o
         const val SAMPLE_RATE = 16_000
         const val MAX_SAMPLES = SAMPLE_RATE * 30
         const val MIN_SAMPLES = SAMPLE_RATE / 4
-
-
     }
 }
 
