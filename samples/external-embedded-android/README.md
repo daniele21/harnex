@@ -37,6 +37,28 @@ The APK does **not** include a GGUF model, a Harnex Host, or a chat app.
 It is debug-signed; it must not be represented as a published SDK or a
 production/Play release.
 
+## Chat design references and intentionally narrow adoption
+
+The consumer-side architecture draws on **RikkaHub**'s single authoritative
+in-memory `ConversationSession` / `ChatService` contract and **PocketPal AI**'s
+`GenerationSlot`/abort lease, separate agent runner, and coalesced streaming
+UI updates. **ChatterUI** is a mobile reference for keeping chat interactions
+separate from local inference configuration:
+
+- RikkaHub: https://github.com/rikkahub/rikkahub/blob/master/app/src/main/java/me/rerere/rikkahub/service/ConversationSession.kt
+- PocketPal: https://github.com/a-ghorbani/pocketpal-ai/blob/main/src/store/generationLease.ts
+- PocketPal: https://github.com/a-ghorbani/pocketpal-ai/blob/main/src/services/agent/AgentRunner.ts
+- ChatterUI: https://github.com/Vali-98/ChatterUI
+
+These are architectural references, not copied implementations. This demo
+adapts the *ownership* and *cancellation/streaming* patterns in native Kotlin:
+one app-side `EmbeddedChatController` owns a serial worker and the temporary
+transcript, `EmbeddedChatGeneration` translates Harnex token/terminal events,
+and `EmbeddedChatScreen` renders the UI. **Harnex Embedded SDK is the only
+inference engine.** Unlike the mature references, this proof deliberately
+omits persistent multi-chat history, branching, agents/tools, remote
+providers, automatic replay and cross-device synchronization.
+
 ## Interactive local chat demo (physical ARM64 phone)
 
 Install the smoke APK from a successful Embedded SDK Maven staging run. The app
