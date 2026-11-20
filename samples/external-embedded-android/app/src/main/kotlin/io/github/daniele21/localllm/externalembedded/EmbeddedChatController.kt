@@ -7,8 +7,6 @@ import io.github.daniele21.localllm.contracts.GenerationEvent
 import io.github.daniele21.localllm.contracts.GenerationHandle
 import io.github.daniele21.localllm.contracts.GenerationMetrics
 import io.github.daniele21.localllm.contracts.SessionId
-import io.github.daniele21.localllm.download.DownloadCancellationToken
-import io.github.daniele21.localllm.download.DownloadProgressObserver
 import io.github.daniele21.localllm.embedded.EmbeddedConfiguration
 import io.github.daniele21.localllm.embedded.EmbeddedRuntime
 import java.util.Locale
@@ -73,7 +71,9 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 observer.onStatus("Opening local Harnex runtime…")
                 val runtime = EmbeddedRuntime.open(applicationContext, EmbeddedConfiguration(MODEL_ID))
                 engine = runtime
-                EmbeddedModelPreparation.ensureReady(runtime, cancelled, destroyed, observer::onStatus)
+                check(runtime.modelReadiness() == io.github.daniele21.localllm.embedded.EmbeddedModelReadiness.VERIFIED) {
+                    "Model is not installed · use Prepare local model to download"
+                }
                 check(!cancelled.get() && !destroyed.get()) { "Preparation cancelled" }
                 observer.onStatus("Preparing GGUF…")
                 val prepared = runtime.prepare()
@@ -100,35 +100,18 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         }
     }
 
+    /** Called only after the Android-managed transfer has completed. */
     fun prepareVision() {
         if (destroyed.get() || state.current() != ChatPhase.READY || !visionPreparing.compareAndSet(false, true)) return
-        cancelled.set(false)
         observer.onVisionState(visionReady.get(), true)
         worker.execute {
             try {
-                val sdk = checkNotNull(engine) { "Prepare Qwen before the image projector" }
-                observer.onVisionStatus("Downloading and verifying vision projector…")
-                var lastUpdate = 0L
-                sdk.prepareVisionProjector(
-                    observer = DownloadProgressObserver { value ->
-                        val now = SystemClock.elapsedRealtime()
-                        if (now - lastUpdate >= 500L) {
-                            lastUpdate = now
-                            observer.onVisionStatus(
-                                "Vision download · ${value.bytesDownloaded / MIB} / ${value.expectedBytes / MIB} MB",
-                            )
-                        }
-                    },
-                    cancellationToken = DownloadCancellationToken { cancelled.get() || destroyed.get() },
+                val sdk = checkNotNull(engine) { "Prepare Qwen first" }
+                visionReady.set(sdk.visionProjectorReadiness())
+                observer.onVisionStatus(
+                    if (visionReady.get()) "Vision model verified · choose a photo"
+                    else "Vision projector not ready · tap Prepare vision",
                 )
-                visionReady.set(true)
-                observer.onVisionStatus("Vision model verified · choose a photo to ask Qwen")
-            } catch (failure: IllegalStateException) {
-                visionReady.set(false)
-                observer.onVisionStatus("Vision unavailable · ${failure.message ?: "setup failed"}")
-            } catch (failure: IllegalArgumentException) {
-                visionReady.set(false)
-                observer.onVisionStatus("Vision unavailable · invalid projector")
             } finally {
                 visionPreparing.set(false)
                 observer.onVisionState(visionReady.get(), false)
@@ -301,7 +284,6 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
 
     private companion object {
         const val MODEL_ID = "qwen35-2b-q4-k-m"
-        const val MIB = 1024L * 1024L
         const val MAX_IMAGE_BYTES = 2 * 1024 * 1024
 
         fun formatMetrics(metrics: GenerationMetrics, elapsedMs: Long, messageCount: Int): String {

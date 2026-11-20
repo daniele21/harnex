@@ -3,6 +3,7 @@ package io.github.daniele21.localllm.externalembedded
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -22,6 +23,11 @@ class EmbeddedSmokeActivity :
     private lateinit var voice: SpeechInputController
     private val photoWorker = Executors.newSingleThreadExecutor()
     private var selectedPhoto: SelectedPhoto? = null
+    private var handledModelTransferRevision = 0L
+    private var handledVisionTransferRevision = 0L
+    private val transferListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        ui { renderTransfers() }
+    }
 
     @Volatile
     private var chatPhase: ChatPhase = ChatPhase.NEEDS_MODEL
@@ -31,7 +37,10 @@ class EmbeddedSmokeActivity :
     private val chatEvents = object : ChatObserver {
         override fun onPhase(phase: ChatPhase) {
             chatPhase = phase
-            this@EmbeddedSmokeActivity.ui { screen.updateControls(phase) }
+            this@EmbeddedSmokeActivity.ui {
+                screen.updateControls(phase)
+                if (phase == ChatPhase.READY) renderTransfers()
+            }
         }
 
         override fun onStatus(status: String) {
@@ -81,14 +90,14 @@ class EmbeddedSmokeActivity :
         super.onCreate(savedInstanceState)
         screen = EmbeddedChatScreen(
             activity = this,
-            onPrepare = { controller.prepare() },
+            onPrepare = { startTransfer(ModelTransferKind.MODEL) },
             onSend = { send() },
-            onStop = { controller.stop() },
+            onStop = { stopOrCancel() },
             onNewChat = { reset() },
             onPrepareVoice = { voice.prepare() },
             onVoice = { voiceAction() },
             onCancelVoice = { voice.cancel() },
-            onPrepareVision = { controller.prepareVision() },
+            onPrepareVision = { startTransfer(ModelTransferKind.VISION) },
             onChoosePhoto = { choosePhoto() },
             onRemovePhoto = { removePhoto() },
         )
@@ -98,6 +107,66 @@ class EmbeddedSmokeActivity :
         controller = EmbeddedChatController(applicationContext, chatEvents)
         voice = SpeechInputController(applicationContext, this)
         screen.updateControls(ChatPhase.NEEDS_MODEL)
+    }
+
+    private fun startTransfer(kind: ModelTransferKind) {
+        ModelTransferScheduler.start(this, kind)
+        renderTransfers()
+    }
+
+    private fun stopOrCancel() {
+        val model = ModelTransferState.snapshot(this, ModelTransferKind.MODEL)
+        val vision = ModelTransferState.snapshot(this, ModelTransferKind.VISION)
+        when {
+            model.phase == ModelTransferPhase.RUNNING -> ModelTransferScheduler.cancel(this, ModelTransferKind.MODEL)
+            vision.phase == ModelTransferPhase.RUNNING -> ModelTransferScheduler.cancel(this, ModelTransferKind.VISION)
+            else -> controller.stop()
+        }
+    }
+
+    private fun renderTransfers() {
+        if (!::controller.isInitialized || !::screen.isInitialized) return
+        val model = ModelTransferState.snapshot(this, ModelTransferKind.MODEL)
+        when {
+            model.phase == ModelTransferPhase.RUNNING && chatPhase == ChatPhase.NEEDS_MODEL -> {
+                screen.updateControls(ChatPhase.PREPARING)
+                screen.setStatus(model.status)
+            }
+            model.phase == ModelTransferPhase.COMPLETED && chatPhase == ChatPhase.NEEDS_MODEL &&
+                model.revision != handledModelTransferRevision -> {
+                handledModelTransferRevision = model.revision
+                controller.prepare()
+            }
+            chatPhase == ChatPhase.NEEDS_MODEL &&
+                model.phase in setOf(ModelTransferPhase.FAILED, ModelTransferPhase.PAUSED, ModelTransferPhase.CANCELLED) -> {
+                screen.updateControls(ChatPhase.NEEDS_MODEL)
+                screen.setStatus(model.status)
+            }
+        }
+
+        if (chatPhase != ChatPhase.READY) return
+        val vision = ModelTransferState.snapshot(this, ModelTransferKind.VISION)
+        when (vision.phase) {
+            ModelTransferPhase.RUNNING -> {
+                screen.updateVisionState(ready = false, preparing = true)
+                screen.visionStatusText(vision.status)
+            }
+            ModelTransferPhase.COMPLETED -> if (vision.revision != handledVisionTransferRevision) {
+                handledVisionTransferRevision = vision.revision
+                controller.prepareVision()
+            }
+            ModelTransferPhase.FAILED, ModelTransferPhase.PAUSED, ModelTransferPhase.CANCELLED -> {
+                screen.updateVisionState(ready = false, preparing = false)
+                screen.visionStatusText(vision.status)
+            }
+            ModelTransferPhase.IDLE -> Unit
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        ModelTransferState.preferences(this).registerOnSharedPreferenceChangeListener(transferListener)
+        renderTransfers()
     }
 
     private fun voiceAction() {
@@ -206,6 +275,7 @@ class EmbeddedSmokeActivity :
     }
 
     override fun onStop() {
+        ModelTransferState.preferences(this).unregisterOnSharedPreferenceChangeListener(transferListener)
         // Android can background the Activity without destroying it. Never leave
         // its microphone or native transcription running out of sight.
         voice.cancel()
