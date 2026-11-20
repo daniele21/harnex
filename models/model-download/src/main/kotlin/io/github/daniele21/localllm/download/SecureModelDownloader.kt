@@ -403,7 +403,9 @@ class SecureModelDownloader(
 
     private fun verifyTransfer(artifact: CatalogGgufArtifact, transfer: TransferResult) {
         if (transfer.bytes != artifact.sizeBytes) {
-            throw downloadError(DownloadFailureCode.DOWNLOAD_SIZE_MISMATCH, false, "stream")
+            // An otherwise valid connection can end early without throwing IOException.
+            // Keep the digest-bound bytes and retry with Range, never publish incomplete data.
+            throw downloadError(DownloadFailureCode.DOWNLOAD_SIZE_MISMATCH, true, "stream")
         }
         if (transfer.sha256 != artifact.digest.sha256) {
             throw downloadError(DownloadFailureCode.SHA256_MISMATCH, false, "digest")
