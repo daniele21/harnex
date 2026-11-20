@@ -51,12 +51,7 @@ internal class WhisperModelStore(context: Context) {
         }
     }
 
-    private fun copyModelBytes(
-        input: InputStream,
-        output: FileOutputStream,
-        cancelled: AtomicBoolean,
-        progress: (String) -> Unit,
-    ) {
+    private fun copyModelBytes(input: InputStream, output: FileOutputStream, cancelled: AtomicBoolean, progress: (String) -> Unit) {
         var total = 0L
         val buffer = ByteArray(64 * 1024)
         while (true) {

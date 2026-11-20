@@ -10,7 +10,9 @@ import android.widget.TextView
  * Standalone Android chat consumer. Runtime, model and cancellation use Harnex Embedded SDK;
  * conversation messages and UI state stay within this app.
  */
-class EmbeddedSmokeActivity : Activity(), VoiceObserver {
+class EmbeddedSmokeActivity :
+    Activity(),
+    VoiceObserver {
     private lateinit var screen: EmbeddedChatScreen
     private lateinit var controller: EmbeddedChatController
     private lateinit var voice: SpeechInputController
