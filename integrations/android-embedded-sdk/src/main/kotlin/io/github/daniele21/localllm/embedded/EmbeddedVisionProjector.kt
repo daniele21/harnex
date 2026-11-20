@@ -66,8 +66,10 @@ internal class EmbeddedVisionProjector(context: Context) {
             check(!cancel.isCancelled()) { "Vision preparation cancelled" }
             try {
                 Files.move(
-                    temporary.toPath(), file.toPath(),
-                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING,
+                    temporary.toPath(),
+                    file.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
                 )
             } catch (_: AtomicMoveNotSupportedException) {
                 Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
