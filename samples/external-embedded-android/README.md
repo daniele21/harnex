@@ -37,36 +37,49 @@ The APK does **not** include a GGUF model, a Harnex Host, or a chat app.
 It is debug-signed; it must not be represented as a published SDK or a
 production/Play release.
 
-## Device smoke (requires representative physical ARM64 hardware)
+## Interactive local chat demo (physical ARM64 phone)
 
-Install `app/build/outputs/apk/debug/app-debug.apk` from this sample after
-running the staging script. On an Android ARM64 device with enough RAM/storage,
-tap **Download / Install / Generate**. This action:
+Install the smoke APK from a successful Embedded SDK Maven staging run. The app
+is a self-contained, independent Android consumer of the staged
+`io.github.daniele21.localllm:embedded-android` AAR: **no Host/Binder**.
 
-1. opens the Harnex in-process facade with the reviewed Qwen3.5 2B Q4_K_M model;
-2. securely downloads its catalog-pinned GGUF into private storage (unless already installed);
-3. verifies the transfer and metadata, installs it and verifies the installed digest;
-4. prepares the native runtime; creates a technical **stateless** session;
-5. streams a request with `USER, ASSISTANT, USER` messages, then a second
-   request with **only one** `USER` message; both requests supply their own
-   entire selected input, with no hidden conversation manager;
-6. closes the session and runtime.
+The first **Prepare local model** tap opens the embedded runtime on a worker,
+downloads the exact reviewed Qwen3.5 2B Q4_K_M GGUF if absent, verifies the
+download, installs the artifact in the app's private storage, checks the
+installation, prepares the native engine, and opens one **stateless technical
+session**. Later app launches reuse the verified GGUF; the large model is not
+bundled in the APK.
 
-The app asks for `INTERNET` only because model provisioning needs HTTPS. The
-SDK has no Host/Binder or cloud-inference fallback. Inputs and outputs stay in
-the app's visible screen and are not sent to ordinary logs. The demo has a
-Cancel button that cancels transfer or inference. The actions remain in a
-high-contrast bottom bar while status/output can scroll. The standalone
-Activity owns its toolbar and applies Android system-bar/display-cutout insets
-so edge-to-edge windows cannot obscure the status or the controls. The staging workflow
-tests a no-native x86_64 Android API 35 emulator canary and asserts both buttons
-are visible and clickable, retaining screenshot and accessibility-tree evidence.
-This tests UI only; real ARM64/GGUF inference is a separate physical-device gate.
+After **Ready**, type a question and press **Send**. The demo streams answer
+deltas into a conversational message surface. **Stop** cancels the in-flight
+download/generation, and **New chat** erases only the app's temporary conversation,
+not the verified model. Failed/cancelled or incomplete answers are not committed
+to subsequent context; after a failure, the draft prompt is restored.
 
-Retain an exact APK/build SHA, artifact SHA-256, device model, Android version,
-ABI, model digest, native outputs, cancellation/teardown evidence and memory
-results before claiming physical runtime readiness. A CI emulator build does
-not qualify physical JNI/GGUF behavior, RAM, thermal or OEM support.
+The app, **not Harnex**, owns the chat transcript in memory. Each request
+constructs an explicit `GenerationInput.Messages` list containing at most
+six previous completed USER/ASSISTANT turns (plus the new USER message) with
+a 6,000-character app-selected context budget; each new prompt is limited to
+600 characters. No automatic persistence, chat titles, cloud services, model
+fallback, content telemetry, or built-in Harnex conversation manager.
 
-**Status:** integration candidate only. The sample is not a release nor
-commercial-app readiness evidence until the automatic and physical gates pass.
+The status area shows preparation/download/installation stages; completed
+generations show SDK metrics (time to first token, total latency, output
+tokens, decoding tokens/sec) and a **process PSS snapshot** in MB. The PSS
+snapshot is not peak RSS, thermal qualification, or a benchmark result. Native
+execution and cancellation need verification on the actual phone.
+
+**Automation and evidence:** the Maven-only independent sample runs its own
+history-selection unit tests, compiles an external APK with the ARM64 JNI
+backend, and checks initial setup/composer state on an Android API 35 x86_64
+emulator (a no-native UI canary). Those checks do **not** prove local inference
+or exercise the enabled composer. A full interactive real-GGUF chat, Stop,
+relaunch and multi-turn journey still needs claim-matched **physical ARM64**
+evidence before an SDK handoff/release claim.
+
+The activity does not intentionally write prompts/responses to Logcat or disk.
+Android may still include text in standard system accessibility or memory
+surfaces while the app is in use. UI state is reset upon Activity recreation;
+the installed model remains in its app-private directory. Debug APK signing
+may differ between CI runs: uninstall the previous smoke demo if Android
+rejects an update signature. The real Harnex Host app is independent.
