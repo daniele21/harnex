@@ -1093,7 +1093,8 @@ std::vector<std::string> stream_text(
         if (!vision_chunks) {
             return error_response("INTERNAL", "Unable to allocate multimodal prompt chunks");
         }
-        mtmd_input_text text = {prompt.c_str(), false, true};
+        // Match the text decoder's add_special=true and upstream mtmd first-turn behavior.
+        mtmd_input_text text = {prompt.c_str(), true, true};
         const mtmd_bitmap* images[] = {bitmap.get()};
         if (mtmd_tokenize(vision_context.get(), vision_chunks.get(), &text, images, 1) != 0) {
             return error_response("TOKENIZATION_FAILED", "Multimodal input tokenization failed");
