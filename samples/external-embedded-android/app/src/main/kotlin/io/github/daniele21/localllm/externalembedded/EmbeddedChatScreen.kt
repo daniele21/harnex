@@ -24,6 +24,9 @@ internal class EmbeddedChatScreen(
     private val onSend: () -> Unit,
     private val onStop: () -> Unit,
     private val onNewChat: () -> Unit,
+    private val onPrepareVoice: () -> Unit,
+    private val onVoice: () -> Unit,
+    private val onCancelVoice: () -> Unit,
 ) {
     lateinit var prompt: EditText
         private set
@@ -36,6 +39,12 @@ internal class EmbeddedChatScreen(
     private lateinit var sendButton: Button
     private lateinit var stopButton: Button
     private lateinit var resetButton: Button
+    private lateinit var voiceStatus: TextView
+    private lateinit var voicePrepareButton: Button
+    private lateinit var voiceButton: Button
+    private lateinit var voiceCancelButton: Button
+    private var chatPhase: ChatPhase = ChatPhase.NEEDS_MODEL
+    private var voicePhase: VoicePhase = VoicePhase.NEEDS_MODEL
 
     fun build(): View {
         val root = LinearLayout(activity).apply {
@@ -114,6 +123,31 @@ internal class EmbeddedChatScreen(
                 android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         }
         composer.addView(prompt, LinearLayout.LayoutParams(-1, -2))
+        voiceStatus = chatLabel(activity, "Voice model not installed · ~190 MB download", 12f, Color.rgb(91, 103, 121))
+        composer.addView(voiceStatus)
+        val voiceActions = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        voicePrepareButton = chatButton(activity, "Prepare Whisper Small Q5", false).apply {
+            setOnClickListener { onPrepareVoice() }
+        }
+        voiceButton = chatButton(activity, "Record voice", false).apply {
+            setOnClickListener { onVoice() }
+        }
+        voiceCancelButton = chatButton(activity, "Cancel audio", false).apply {
+            setOnClickListener { onCancelVoice() }
+        }
+        for (button in listOf(voicePrepareButton, voiceButton, voiceCancelButton)) {
+            voiceActions.addView(
+                button,
+                LinearLayout.LayoutParams(0, dp(activity, 48), 1f).apply {
+                    marginStart = dp(activity, 2)
+                    marginEnd = dp(activity, 2)
+                },
+            )
+        }
+        composer.addView(voiceActions)
         val actions = LinearLayout(activity).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -184,20 +218,70 @@ internal class EmbeddedChatScreen(
         diagnostics.text = message
     }
 
+    fun setVoiceStatus(status: String) {
+        voiceStatus.text = status
+    }
+
+    fun updateVoicePhase(phase: VoicePhase) {
+        voicePhase = phase
+        updateVoiceControls()
+    }
+
+    fun insertTranscript(text: String) {
+        val current = prompt.text.toString().trim()
+        val combined = if (current.isEmpty()) text else "$current $text"
+        prompt.setText(combined)
+        prompt.setSelection(combined.length)
+        if (combined.length > 600) setVoiceStatus("Transcript exceeds 600 characters · shorten before Send")
+    }
+
     fun updateControls(phase: ChatPhase) {
+        chatPhase = phase
         val ready = phase == ChatPhase.READY
         val preparing = phase == ChatPhase.PREPARING
         val generating = phase == ChatPhase.GENERATING
         setupButton.visibility = if (ready || generating || phase == ChatPhase.STOPPING) View.GONE else View.VISIBLE
         setupButton.isEnabled = phase == ChatPhase.NEEDS_MODEL
-        sendButton.isEnabled = ready
+        val voiceBusy = voicePhase == VoicePhase.RECORDING ||
+            voicePhase == VoicePhase.TRANSCRIBING || voicePhase == VoicePhase.CANCELLING
+        sendButton.isEnabled = ready && !voiceBusy
         sendButton.backgroundTintList = ColorStateList.valueOf(
             if (ready) Color.rgb(37, 91, 191) else Color.rgb(231, 236, 245),
         )
         sendButton.setTextColor(if (ready) Color.WHITE else Color.rgb(91, 103, 121))
-        prompt.isEnabled = ready
+        prompt.isEnabled = ready && !voiceBusy
         stopButton.isEnabled = preparing || generating
-        resetButton.isEnabled = ready
+        resetButton.isEnabled = ready && !voiceBusy
+        updateVoiceControls()
+    }
+
+    private fun updateVoiceControls() {
+        val ready = chatPhase == ChatPhase.READY
+        val voiceBusy = voicePhase == VoicePhase.RECORDING ||
+            voicePhase == VoicePhase.TRANSCRIBING || voicePhase == VoicePhase.CANCELLING
+        voicePrepareButton.visibility = if (voicePhase == VoicePhase.NEEDS_MODEL ||
+            voicePhase == VoicePhase.PREPARING
+        ) View.VISIBLE else View.GONE
+        voicePrepareButton.isEnabled = ready && voicePhase == VoicePhase.NEEDS_MODEL
+        voicePrepareButton.text = if (voicePhase == VoicePhase.PREPARING) {
+            "Preparing voice…"
+        } else {
+            "Prepare Whisper Small Q5"
+        }
+        voiceButton.visibility = if (voicePhase == VoicePhase.READY ||
+            voicePhase == VoicePhase.RECORDING
+        ) View.VISIBLE else View.GONE
+        voiceButton.text = if (voicePhase == VoicePhase.RECORDING) "Finish recording" else "Record voice"
+        voiceButton.isEnabled = ready
+        voiceCancelButton.visibility = if (voicePhase == VoicePhase.PREPARING ||
+            voicePhase == VoicePhase.RECORDING || voicePhase == VoicePhase.TRANSCRIBING ||
+            voicePhase == VoicePhase.CANCELLING
+        ) View.VISIBLE else View.GONE
+        voiceCancelButton.isEnabled = voicePhase != VoicePhase.CANCELLING
+        val canEdit = ready && !voiceBusy
+        prompt.isEnabled = canEdit
+        sendButton.isEnabled = canEdit
+        resetButton.isEnabled = canEdit
     }
 }
 

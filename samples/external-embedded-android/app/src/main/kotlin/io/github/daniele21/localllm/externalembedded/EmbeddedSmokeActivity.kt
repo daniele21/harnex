@@ -1,6 +1,8 @@
 package io.github.daniele21.localllm.externalembedded
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.TextView
 
@@ -10,9 +12,12 @@ import android.widget.TextView
  */
 class EmbeddedSmokeActivity :
     Activity(),
-    ChatObserver {
+    ChatObserver,
+    VoiceObserver {
     private lateinit var screen: EmbeddedChatScreen
     private lateinit var controller: EmbeddedChatController
+    private lateinit var voice: SpeechInputController
+    @Volatile private var chatPhase: ChatPhase = ChatPhase.NEEDS_MODEL
     private var activeRunId = -1L
     private var answerBubble: TextView? = null
 
@@ -24,15 +29,45 @@ class EmbeddedSmokeActivity :
             onSend = { send() },
             onStop = { controller.stop() },
             onNewChat = { reset() },
+            onPrepareVoice = { voice.prepare() },
+            onVoice = { voiceAction() },
+            onCancelVoice = { voice.cancel() },
         )
         val content = screen.build()
         setContentView(content)
         content.requestApplyInsets()
         controller = EmbeddedChatController(applicationContext, this)
+        voice = SpeechInputController(applicationContext, this)
         screen.updateControls(ChatPhase.NEEDS_MODEL)
     }
 
+    private fun voiceAction() {
+        if (voice.current() == VoicePhase.RECORDING) {
+            voice.finish()
+            return
+        }
+        if (chatPhase != ChatPhase.READY || voice.current() != VoicePhase.READY) return
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), MIC_PERMISSION_REQUEST)
+        } else {
+            voice.record()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != MIC_PERMISSION_REQUEST) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED && chatPhase == ChatPhase.READY) {
+            voice.record()
+        } else {
+            onVoiceStatus("Microphone permission denied · enable it in Android Settings")
+        }
+    }
+
     private fun send() {
+        if (voice.current() == VoicePhase.RECORDING || voice.current() == VoicePhase.TRANSCRIBING ||
+            voice.current() == VoicePhase.CANCELLING
+        ) return
         val message = screen.prompt.text.toString()
         if (controller.send(message)) screen.prompt.text.clear()
     }
@@ -46,6 +81,7 @@ class EmbeddedSmokeActivity :
     }
 
     override fun onPhase(phase: ChatPhase) {
+        chatPhase = phase
         ui { screen.updateControls(phase) }
     }
 
@@ -83,9 +119,25 @@ class EmbeddedSmokeActivity :
         }
     }
 
+    override fun onVoicePhase(phase: VoicePhase) {
+        ui { screen.updateVoicePhase(phase) }
+    }
+
+    override fun onVoiceStatus(status: String) {
+        ui { screen.setVoiceStatus(status) }
+    }
+
+    override fun onVoiceTranscript(text: String) {
+        ui { screen.insertTranscript(text) }
+    }
+
     override fun onDestroy() {
+        voice.close()
         controller.close()
         super.onDestroy()
+    }
+    private companion object {
+        const val MIC_PERMISSION_REQUEST = 410
     }
 }
 
