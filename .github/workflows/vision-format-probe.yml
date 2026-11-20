@@ -33,7 +33,6 @@ jobs:
 
       - name: Apply repository-owned Kotlin formatter only in ephemeral checkout
         run: |
-          bash bootstrap-wrapper.sh
           ./gradlew --no-configuration-cache spotlessApply
 
       - name: Publish formatted source in log (read-only GitHub token)
