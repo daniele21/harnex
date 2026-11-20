@@ -9,7 +9,11 @@ value class DownloadOperationId(val value: String)
 @JvmInline
 value class VerifiedDownloadHandle(val value: String)
 
-data class ModelDownloadRequest(val artifact: CatalogGgufArtifact)
+/** A system-preempted Android transfer keeps bounded partial bytes for a later verified resume. */
+data class ModelDownloadRequest(
+    val artifact: CatalogGgufArtifact,
+    val preservePartialOnCancel: Boolean = false,
+)
 
 data class DownloadConfiguration(
     val maxArtifactBytes: Long = 8_000_000_000L,
@@ -21,6 +25,7 @@ data class DownloadConfiguration(
     val progressMinBytesDelta: Long = 1_048_576L,
     val progressMinIntervalMs: Long = 500L,
     val orphanRetentionMs: Long = 86_400_000L,
+    val resumeRetentionMs: Long = 7L * 86_400_000L,
     val retryPolicy: DownloadRetryPolicy = DownloadRetryPolicy(),
 ) {
     init {
@@ -33,6 +38,7 @@ data class DownloadConfiguration(
         require(progressMinBytesDelta > 0)
         require(progressMinIntervalMs >= 0)
         require(orphanRetentionMs >= 0)
+        require(resumeRetentionMs >= 0)
     }
 }
 
