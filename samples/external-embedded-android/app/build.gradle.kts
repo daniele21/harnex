@@ -30,4 +30,5 @@ android {
 
 dependencies {
     implementation("io.github.daniele21.localllm:embedded-android:${embeddedSdkVersion.get()}")
+    testImplementation("junit:junit:4.13.2")
 }
