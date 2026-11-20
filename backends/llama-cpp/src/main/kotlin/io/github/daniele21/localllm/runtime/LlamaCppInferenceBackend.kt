@@ -40,6 +40,7 @@ class LlamaCppInferenceBackend(
     private val evaluationBatchBridge: LlamaCppEvaluationBatchBridge = LlamaCppEvaluationBatchBridge(),
     private val promptPlanningBridge: LlamaCppPromptPlanningBridge = LlamaCppPromptPlanningBridge(),
     private val streamingBridge: LlamaCppStreamingBridge = LlamaCppStreamingBridge(),
+    private val visionProjectorFile: File? = null,
 ) : InferenceBackend,
     EvaluationBatchInferenceBackend {
     override val id: String = "llama.cpp"
@@ -125,6 +126,7 @@ class LlamaCppInferenceBackend(
                 chatTemplateSource = result.plan.chatTemplateSource,
                 stopTokenIds = result.plan.stopTokenIds,
                 stopSequences = request.chatTemplatePolicy.stopSequences,
+                imageBytes = (request.input as? io.github.daniele21.localllm.contracts.GenerationInput.ImageQuestion)?.copyImageBytes(),
             )
 
             is NativePromptPlanningResult.Failure -> throw result.error.asBackendException()
@@ -269,6 +271,8 @@ class LlamaCppInferenceBackend(
                 listener = NativeStreamingListener { chunk ->
                     onChunk(chunk.text, chunk.generatedTokens)
                 },
+                imageBytes = request.imageBytes,
+                projectorPath = visionProjectorFile?.absolutePath,
             )
         ) {
             is NativeStreamingResult.Completed -> BackendGenerationOutcome.Completed(result.metrics.toBackendMetrics())
