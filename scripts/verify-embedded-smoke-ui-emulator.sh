@@ -76,10 +76,21 @@ def find(text):
     assert len(matches) == 1, f"Expected exactly one visible {text!r}, got {len(matches)}"
     return matches[0]
 
+title = find("Harnex Embedded SDK Smoke")
 ready = find("Ready to run the embedded model smoke test")
 run = find("Download / Install / Generate")
 cancel = find("Cancel")
+assert title["class"] == "android.widget.TextView", title
 assert ready["class"] == "android.widget.TextView", ready
+title_rect = list(map(int, re.findall(r"\d+", title["bounds"])))
+ready_rect = list(map(int, re.findall(r"\d+", ready["bounds"])))
+assert len(title_rect) == 4 and len(ready_rect) == 4
+assert title_rect[3] <= ready_rect[1], (
+    "The initial status is hidden behind the toolbar/system bars",
+    title["bounds"],
+    ready["bounds"],
+)
+print(f"toolbar visible: {title['bounds']}; status visible below it: {ready['bounds']}")
 for name, button in [("run", run), ("cancel", cancel)]:
     assert button["class"] == "android.widget.Button", (name, button)
     assert button["clickable"] == "true" and button["enabled"] == "true", (name, button)
