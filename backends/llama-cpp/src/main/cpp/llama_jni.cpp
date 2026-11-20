@@ -1398,6 +1398,127 @@ Java_io_github_daniele21_localllm_llamacpp_JniLlamaStreamingApi_generateStreamin
 }
 
 extern "C" JNIEXPORT jobjectArray JNICALL
+Java_io_github_daniele21_localllm_llamacpp_JniLlamaStreamingApi_generateImageStreaming(
+    JNIEnv* env,
+    jobject /* this */,
+    jlong context_handle,
+    jstring request_id_value,
+    jstring prompt_value,
+    jint max_output_tokens,
+    jfloat temperature,
+    jfloat top_p,
+    jint top_k,
+    jfloat min_p,
+    jfloat presence_penalty,
+    jfloat repeat_penalty,
+    jint repeat_last_n,
+    jlong seed,
+    jstring output_constraint_type_value,
+    jstring output_schema_value,
+    jintArray stop_token_ids_value,
+    jobjectArray stop_sequences_value,
+    jint reasoning_max_tokens,
+    jstring reasoning_close_marker_value,
+    jstring reasoning_forced_close_text_value,
+    jobject callback_value,
+    jbyteArray image_value,
+    jstring projector_path_value
+) {
+    const auto context = contexts.get(static_cast<std::int64_t>(context_handle));
+    if (!context) {
+        return to_java_string_array(env, error_response("UNKNOWN_HANDLE", "Unknown native context handle"));
+    }
+    if (request_id_value == nullptr || prompt_value == nullptr || output_constraint_type_value == nullptr || callback_value == nullptr) {
+        return to_java_string_array(env, error_response("INVALID_ARGUMENT", "Request ID, prompt and callback are required"));
+    }
+
+    const UtfChars request_id(env, request_id_value);
+    const UtfChars prompt(env, prompt_value);
+    const UtfChars output_constraint_type(env, output_constraint_type_value);
+    if (request_id.get() == nullptr || prompt.get() == nullptr || output_constraint_type.get() == nullptr) {
+        return nullptr;
+    }
+
+    std::string output_schema;
+    if (output_schema_value != nullptr) {
+        const UtfChars schema(env, output_schema_value);
+        if (schema.get() == nullptr) {
+            return nullptr;
+        }
+        output_schema.assign(schema.get());
+    }
+    std::string reasoning_close_marker;
+    if (reasoning_close_marker_value != nullptr) {
+        const UtfChars marker(env, reasoning_close_marker_value);
+        if (marker.get() == nullptr) {
+            return nullptr;
+        }
+        reasoning_close_marker.assign(marker.get());
+    }
+    std::string reasoning_forced_close_text;
+    if (reasoning_forced_close_text_value != nullptr) {
+        const UtfChars close_text(env, reasoning_forced_close_text_value);
+        if (close_text.get() == nullptr) {
+            return nullptr;
+        }
+        reasoning_forced_close_text.assign(close_text.get());
+    }
+
+    const std::vector<llama_token> stop_token_ids = read_java_stop_tokens(env, stop_token_ids_value);
+    const std::vector<std::string> stop_sequences = read_java_stop_sequences(env, stop_sequences_value);
+    if (request_id.get()[0] == '\0') {
+        return to_java_string_array(env, error_response("INVALID_ARGUMENT", "Request ID must not be empty"));
+    }
+
+    if (image_value == nullptr || projector_path_value == nullptr) {
+        return to_java_string_array(env, error_response("INVALID_ARGUMENT", "Vision image and projector path are required"));
+    }
+    const jsize image_size = env->GetArrayLength(image_value);
+    if (image_size <= 0 || image_size > 2 * 1024 * 1024) {
+        return to_java_string_array(env, error_response("INVALID_ARGUMENT", "Vision image is outside the input byte limit"));
+    }
+    const UtfChars projector_path(env, projector_path_value);
+    if (projector_path.get() == nullptr || projector_path.get()[0] == '\0') {
+        return to_java_string_array(env, error_response("INVALID_ARGUMENT", "Vision projector path is unavailable"));
+    }
+    std::vector<unsigned char> image_bytes(static_cast<std::size_t>(image_size));
+    env->GetByteArrayRegion(image_value, 0, image_size, reinterpret_cast<jbyte*>(image_bytes.data()));
+    if (env->ExceptionCheck()) {
+        return nullptr;
+    }
+
+    JavaStreamingCallback callback(env, callback_value);
+    return to_java_string_array(
+        env,
+        stream_text(
+            *context,
+            request_id.get(),
+            prompt.get(),
+            max_output_tokens,
+            temperature,
+            top_p,
+            top_k,
+            min_p,
+            presence_penalty,
+            repeat_penalty,
+            repeat_last_n,
+            static_cast<std::uint32_t>(seed),
+            output_constraint_type.get(),
+            output_schema,
+            stop_token_ids,
+            stop_sequences,
+            reasoning_max_tokens,
+            reasoning_close_marker,
+            reasoning_forced_close_text,
+            callback,
+            image_bytes.data(),
+            image_bytes.size(),
+            projector_path.get()
+        )
+    );
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL
 Java_io_github_daniele21_localllm_llamacpp_JniLlamaStreamingApi_cancel(
     JNIEnv* env,
     jobject /* this */,
