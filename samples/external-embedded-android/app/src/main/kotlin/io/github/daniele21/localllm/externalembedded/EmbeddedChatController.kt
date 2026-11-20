@@ -84,7 +84,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 observer.onStatus("Ready · all inference stays on this device")
                 observer.onDiagnostics("Verified model · process PSS ${Debug.getPss() / 1024} MB")
                 observer.onPhase(ChatPhase.READY)
-                visionReady.set(runtime.visionProjectorReadiness())
+                visionReady.set(runtime.vision.readiness())
                 observer.onVisionState(visionReady.get(), false)
             } catch (failure: IllegalStateException) {
                 closeRuntime()
@@ -107,7 +107,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         worker.execute {
             try {
                 val sdk = checkNotNull(engine) { "Prepare Qwen first" }
-                visionReady.set(sdk.visionProjectorReadiness())
+                visionReady.set(sdk.vision.readiness())
                 observer.onVisionStatus(
                     if (visionReady.get()) "Vision model verified · choose a photo"
                     else "Vision projector not ready · tap Prepare vision",

@@ -66,7 +66,7 @@ internal class EmbeddedChatGeneration {
         val handle = if (payload.imageBytes == null) {
             engine.generate(session, payload.messages, listener, overrides = GenerationOverrides(maxOutputTokens = 256))
         } else {
-            engine.generateImage(
+            engine.vision.generate(
                 session, payload.question, payload.imageBytes, listener,
                 overrides = GenerationOverrides(maxOutputTokens = 256),
             )

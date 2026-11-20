@@ -35,7 +35,7 @@ internal object ModelTransferTask {
                     preservePartialOnCancel = true,
                 )
 
-                ModelTransferKind.VISION -> runtime.prepareVisionProjector(
+                ModelTransferKind.VISION -> runtime.vision.prepare(
                     observer = DownloadProgressObserver { progress ->
                         val fraction = ((100L * progress.bytesDownloaded) / progress.expectedBytes).toInt()
                         val status = "Vision download · ${progress.bytesDownloaded / MIB} / ${progress.expectedBytes / MIB} MB"
