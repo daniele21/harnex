@@ -39,9 +39,8 @@ internal class EmbeddedChatGeneration {
             GenerationListener { event ->
                 when (event) {
                     is GenerationEvent.TextDelta -> {
-                        if (event.contentType == GenerationContentType.ANSWER &&
-                            !cancelled.get() && !destroying.get() && terminal.get() == null
-                        ) {
+                        val stillActive = !cancelled.get() && !destroying.get()
+                        if (event.contentType == GenerationContentType.ANSWER && stillActive && terminal.get() == null) {
                             val answer = synchronized(stream) {
                                 stream.append(event.text)
                                 stream.toString()
