@@ -118,6 +118,8 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         observer.onStatus("Stopping · waiting for the engine to finish…")
     }
 
+    fun isGenerating(): Boolean = state.current() == ChatPhase.GENERATING && !destroyed.get()
+
     fun clearConversation(): Boolean {
         if (state.current() != ChatPhase.READY) return false
         worker.execute { history.reset() }
@@ -149,11 +151,13 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 cancelled,
                 destroyed,
                 activeGeneration,
-            ) { text -> observer.onAnswerDelta(id, text) }
+            ) { text ->
+                if (state.current() == ChatPhase.GENERATING) observer.onAnswerDelta(id, text)
+            }
             completeTurn(id, input, messages.size, result)
         } catch (failure: GenerationTimeout) {
             closeRuntime()
-            phase.set(ChatPhase.NEEDS_MODEL)
+            state.requirePreparation()
             observer.onTurnFinished(id, failure.message ?: "Generation timed out; reinitialize the model", false, input)
             observer.onStatus("Generation timed out; model must be prepared again")
         } catch (failure: IllegalStateException) {
