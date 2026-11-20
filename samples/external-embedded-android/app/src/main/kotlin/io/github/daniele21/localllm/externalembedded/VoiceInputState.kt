@@ -39,10 +39,25 @@ internal class VoiceInputState {
         }
     }
 
-    /** Only the serial voice worker can settle terminal work, never a late JNI callback. */
-    fun settle(modelReady: Boolean): VoicePhase {
+    /**
+     * The serial worker settles an unfinished operation. Once an operation has
+     * already published READY, its final cleanup must not affect a newer one.
+     */
+    fun settleIfUnfinished(completed: Boolean, modelReady: Boolean): VoicePhase? {
+        if (completed) return null
         val next = if (modelReady) VoicePhase.READY else VoicePhase.NEEDS_MODEL
-        phase.set(next)
-        return next
+        while (true) {
+            val previous = phase.get()
+            val pending =
+                if (modelReady) {
+                    previous == VoicePhase.RECORDING ||
+                        previous == VoicePhase.TRANSCRIBING ||
+                        previous == VoicePhase.CANCELLING
+                } else {
+                    previous == VoicePhase.PREPARING || previous == VoicePhase.CANCELLING
+                }
+            if (!pending) return null
+            if (phase.compareAndSet(previous, next)) return next
+        }
     }
 }

@@ -67,7 +67,7 @@ The standalone sample must continue resolving Harnex **only** through its staged
 - [WhisperNote](https://github.com/nazmos-sakib/WhisperNote): exact-size+SHA-256 download promotion, native optimized builds and physical Pixel 6a performance evidence. Reported Small Q5_1 ~33 seconds on an 11-second English clip there: **do not promise real-time speech** without device evidence.
 - [whisper.cpp Android reference](https://github.com/ggml-org/whisper.cpp/tree/master/examples/whisper.android): upstream API, `AudioRecord` and JNI reference; don't copy demo-specific default English or unbounded boxed PCM buffering.
 - [VoiceSkip](https://github.com/tguillem/VoiceSkip): later reference for VAD, streaming and Vulkan. GPL implementation is not to be copied into this MIT-compatible sample.
-  
+
 ## Work sequence and acceptance
 
 | Step | Implementation/proof | State |

@@ -51,10 +51,12 @@ internal class SpeechInputController(private val context: Context, private val o
         cancelled.set(false)
         observer.onVoicePhase(VoicePhase.PREPARING)
         worker.execute {
+            var completed = false
             try {
                 model.ensureReady(cancelled, observer::onVoiceStatus)
                 if (cancelled.get() || destroyed.get()) return@execute
                 if (state.completePreparation()) {
+                    completed = true
                     observer.onVoiceStatus("Whisper Small Q5 ready · offline")
                     observer.onVoicePhase(VoicePhase.READY)
                 }
@@ -63,8 +65,8 @@ internal class SpeechInputController(private val context: Context, private val o
                     observer.onVoiceStatus("Voice setup failed · ${failure.message ?: "retry"}")
                 }
             } finally {
-                if (!destroyed.get() && state.current() != VoicePhase.READY) {
-                    observer.onVoicePhase(state.settle(false))
+                if (!destroyed.get()) {
+                    state.settleIfUnfinished(completed, modelReady = false)?.let(observer::onVoicePhase)
                 }
             }
         }
@@ -110,6 +112,7 @@ internal class SpeechInputController(private val context: Context, private val o
     }
 
     private fun captureThenTranscribe() {
+        var completed = false
         try {
             val audio = capturePcm()
             if (cancelled.get() || destroyed.get() || state.current() != VoicePhase.TRANSCRIBING) return
@@ -121,6 +124,7 @@ internal class SpeechInputController(private val context: Context, private val o
             val transcript = WhisperNative.transcribe(verified.absolutePath, samples, cancelled).trim()
             if (cancelled.get() || destroyed.get()) return
             if (state.completeTranscription()) {
+                completed = true
                 val status =
                     if (transcript.isBlank()) {
                         "No speech recognized · try again"
@@ -136,10 +140,11 @@ internal class SpeechInputController(private val context: Context, private val o
                 observer.onVoiceStatus("Voice input failed · ${failure.message ?: "retry"}")
             }
         } finally {
-            if (!destroyed.get() && state.current() != VoicePhase.READY) {
-                val phase = state.settle(true)
-                observer.onVoicePhase(phase)
-                if (cancelled.get()) observer.onVoiceStatus("Voice input cancelled")
+            if (!destroyed.get()) {
+                state.settleIfUnfinished(completed, modelReady = true)?.let { phase ->
+                    observer.onVoicePhase(phase)
+                    if (cancelled.get()) observer.onVoiceStatus("Voice input cancelled")
+                }
             }
         }
     }
@@ -152,6 +157,9 @@ internal class SpeechInputController(private val context: Context, private val o
         )
         check(minimum > 0) { "Microphone configuration unavailable" }
         val bufferBytes = maxOf(minimum, 4096)
+        val collected = ShortArray(MAX_SAMPLES)
+        val chunk = ShortArray(bufferBytes / 2)
+        var written = 0
 
         @Suppress("MissingPermission")
         val source = AudioRecord(
@@ -161,12 +169,10 @@ internal class SpeechInputController(private val context: Context, private val o
             AudioFormat.ENCODING_PCM_16BIT,
             bufferBytes,
         )
-        check(source.state == AudioRecord.STATE_INITIALIZED) { "Microphone unavailable" }
-        recorder.set(source)
-        val collected = ShortArray(MAX_SAMPLES)
-        val chunk = ShortArray(bufferBytes / 2)
-        var written = 0
         try {
+            // Even an uninitialized AudioRecord must be released.
+            check(source.state == AudioRecord.STATE_INITIALIZED) { "Microphone unavailable" }
+            recorder.set(source)
             if (cancelled.get() || !recording.get()) return ShortArray(0)
             source.startRecording()
             check(source.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Microphone could not start" }
