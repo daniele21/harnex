@@ -85,16 +85,16 @@ internal class ModelTransferUiController(
         val vision = ModelTransferState.snapshot(activity, ModelTransferKind.VISION)
         when (vision.phase) {
             ModelTransferPhase.RUNNING -> {
-                screen.updateVisionState(ready = false, preparing = true)
-                screen.visionStatusText(vision.status)
+                screen.vision.setReady(ready = false, preparing = true)
+                screen.vision.setStatus(vision.status)
             }
             ModelTransferPhase.COMPLETED -> if (vision.revision != handledVisionRevision) {
                 handledVisionRevision = vision.revision
                 chat.prepareVision()
             }
             ModelTransferPhase.FAILED, ModelTransferPhase.PAUSED, ModelTransferPhase.CANCELLED -> {
-                screen.updateVisionState(ready = false, preparing = false)
-                screen.visionStatusText(vision.status)
+                screen.vision.setReady(ready = false, preparing = false)
+                screen.vision.setStatus(vision.status)
             }
             ModelTransferPhase.IDLE -> Unit
         }

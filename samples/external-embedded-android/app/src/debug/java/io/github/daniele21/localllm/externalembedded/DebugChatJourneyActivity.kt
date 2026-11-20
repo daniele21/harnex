@@ -67,17 +67,19 @@ class DebugChatJourneyActivity : Activity() {
                 screen.updateVoicePhase(fakeVoicePhase)
                 screen.voiceStatusText = "Voice cancelled · UI-only test"
             },
-            onPrepareVision = {
-                screen.updateVisionState(ready = true, preparing = false)
-                screen.visionStatusText("Vision ready · UI-only test")
-            },
-            onChoosePhoto = {
-                val syntheticImage = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
-                syntheticImage.eraseColor(Color.RED)
-                screen.showPhoto(syntheticImage)
-                screen.visionStatusText("Synthetic photo · UI-only test")
-            },
-            onRemovePhoto = { screen.removePhoto() },
+            visionActions = VisionActions(
+                onPrepare = {
+                    screen.vision.setReady(ready = true, preparing = false)
+                    screen.vision.setStatus("Vision ready · UI-only test")
+                },
+                onChoose = {
+                    val syntheticImage = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
+                    syntheticImage.eraseColor(Color.RED)
+                    screen.vision.setPhoto(syntheticImage)
+                    screen.vision.setStatus("Synthetic photo · UI-only test")
+                },
+                onRemove = { screen.vision.clearPhoto() },
+            ),
             onNewChat = {
                 if (phase == ChatPhase.READY) {
                     screen.resetConversation()

@@ -72,11 +72,11 @@ class EmbeddedSmokeActivity : Activity() {
         }
 
         override fun onVisionState(ready: Boolean, preparing: Boolean) {
-            this@EmbeddedSmokeActivity.ui { screen.updateVisionState(ready, preparing) }
+            this@EmbeddedSmokeActivity.ui { screen.vision.setReady(ready, preparing) }
         }
 
         override fun onVisionStatus(status: String) {
-            this@EmbeddedSmokeActivity.ui { screen.visionStatusText(status) }
+            this@EmbeddedSmokeActivity.ui { screen.vision.setStatus(status) }
         }
 
         override fun onTurnFinished(id: Long, answer: String, saved: Boolean, retryPrompt: String?) {
@@ -103,9 +103,11 @@ class EmbeddedSmokeActivity : Activity() {
             onPrepareVoice = { voice.prepare() },
             onVoice = { voiceAction() },
             onCancelVoice = { voice.cancel() },
-            onPrepareVision = { transferUi.start(ModelTransferKind.VISION) },
-            onChoosePhoto = { choosePhoto() },
-            onRemovePhoto = { removePhoto() },
+            visionActions = VisionActions(
+                onPrepare = { transferUi.start(ModelTransferKind.VISION) },
+                onChoose = { choosePhoto() },
+                onRemove = { removePhoto() },
+            ),
         )
         val content = screen.build()
         setContentView(content)
@@ -192,7 +194,7 @@ class EmbeddedSmokeActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != PHOTO_REQUEST || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
-        screen.visionStatusText("Reading selected photo locally…")
+        screen.vision.setStatus("Reading selected photo locally…")
         photoWorker.execute {
             val decoded = runCatching { PhotoDecoder.decode(contentResolver, uri) }
             ui {
@@ -200,11 +202,11 @@ class EmbeddedSmokeActivity : Activity() {
                     onSuccess = { photo ->
                         removePhoto()
                         selectedPhoto = photo
-                        screen.showPhoto(photo.preview)
-                        screen.visionStatusText("Photo selected · type a question and tap Send")
+                        screen.vision.setPhoto(photo.preview)
+                        screen.vision.setStatus("Photo selected · type a question and tap Send")
                     },
                     onFailure = { failure ->
-                        screen.visionStatusText("Unable to read photo · ${failure.message ?: "try another image"}")
+                        screen.vision.setStatus("Unable to read photo · ${failure.message ?: "try another image"}")
                     },
                 )
             }
@@ -214,7 +216,7 @@ class EmbeddedSmokeActivity : Activity() {
     private fun removePhoto() {
         val previous = selectedPhoto
         selectedPhoto = null
-        if (::screen.isInitialized) screen.removePhoto()
+        if (::screen.isInitialized) screen.vision.clearPhoto()
         previous?.preview?.recycle()
     }
 
