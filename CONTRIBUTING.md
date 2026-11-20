@@ -67,6 +67,29 @@ cmake --version
 
 Keep commits scoped and imperative when practical. Avoid mixing unrelated cleanup into a behavioral change.
 
+### Fast coding-agent workflow
+
+Open the implementation PR as a **draft** and keep it draft while modifying code.
+GitHub automatically runs cheap repository/metadata checks, but defers the
+expensive Android/native validation and Embedded SDK Maven/APK staging.
+A green draft `Repository validation` is **iteration-only**, never integration
+or release evidence; draft PRs cannot be merged.
+
+During iteration, prefer focused checks for the owning module and direct
+consumers. When implementation, relevant tests and docs are coherent, mark
+the PR **Ready for review** once: the existing risk selector then runs all
+required exact-head integration gates, including native, Maven/APK, and
+emulator checks where relevant. An explicit `/preflight auto` can still
+request remote exact-head validation when needed. If corrections are
+necessary, convert the PR back to draft *before pushing repair commits*;
+promote it again after the fixes. Ready PR updates intentionally rerun
+required integration checks; `main` releases retain mandatory FULL
+validation and applicable physical-device evidence.
+
+This is **stage gating, not test reduction**. Neither local tooling shortages
+nor a draft check can substitute for the exact candidate/base evidence
+required to merge into `dev` or promote `main`.
+
 ## Start with the owning boundary
 
 Harnex intentionally keeps one canonical owner for model/runtime/Binder state. Extend that owner instead of creating parallel policy or state.

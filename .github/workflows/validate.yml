@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, dev]
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   workflow_dispatch:
     inputs:
       validation_profile:
@@ -219,7 +219,11 @@ jobs:
   native:
     name: Native host tests
     needs: [scope, reuse]
-    if: always() && needs.scope.result == 'success' && contains(needs.scope.outputs.required_gates, 'native-host') && needs.reuse.outputs.reused != 'true'
+    if: >-
+      always() && needs.scope.result == 'success' &&
+      !(github.event_name == 'pull_request' && github.event.pull_request.draft) &&
+      contains(needs.scope.outputs.required_gates, 'native-host') &&
+      needs.reuse.outputs.reused != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -259,7 +263,11 @@ jobs:
   android:
     name: Android validation (${{ needs.scope.outputs.stage }} / ${{ needs.scope.outputs.profile }})
     needs: [scope, reuse]
-    if: always() && needs.scope.result == 'success' && needs.scope.outputs.android == 'true' && needs.reuse.outputs.reused != 'true'
+    if: >-
+      always() && needs.scope.result == 'success' &&
+      !(github.event_name == 'pull_request' && github.event.pull_request.draft) &&
+      needs.scope.outputs.android == 'true' &&
+      needs.reuse.outputs.reused != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -360,6 +368,8 @@ jobs:
       - name: Evaluate validation jobs
         env:
           SCOPE_RESULT: ${{ needs.scope.result }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
           REUSED: ${{ needs.reuse.outputs.reused }}
           REUSE_KIND: ${{ needs.reuse.outputs.reuse_kind }}
           NATIVE_RESULT: ${{ needs.native.result }}
@@ -371,6 +381,10 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$SCOPE_RESULT" == "success" ]] || { echo "Validation scope failed: $SCOPE_RESULT" >&2; exit 1; }
+          if [[ "$EVENT_NAME" == "pull_request" && "$PR_DRAFT" == "true" ]]; then
+            echo "Draft iteration checks passed; Android/native integration gates intentionally deferred until ready_for_review."
+            exit 0
+          fi
           if [[ "$REUSED" == "true" ]]; then
             echo "Equivalent validation evidence reused: $REUSE_KIND"
             exit 0
