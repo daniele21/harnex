@@ -2,6 +2,7 @@ name: Embedded SDK Maven staging
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
     paths:
       - '.github/workflows/embedded-sdk.yml'
       - 'build.gradle.kts'
@@ -42,6 +43,9 @@ concurrency:
 jobs:
   stage-maven:
     name: Stage all embedded SDK AARs
+    # Drafts are iterative work, never mergeable; publishing a Maven-only APK
+    # is mandatory again on ready_for_review, explicit dispatch, or dev push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
