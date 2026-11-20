@@ -15,11 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
-internal data class ChatGenerationOutcome(
-    val terminal: GenerationEvent,
-    val streamedAnswer: String,
-    val startedAtMs: Long,
-)
+internal data class ChatGenerationOutcome(val terminal: GenerationEvent, val streamedAnswer: String, val startedAtMs: Long)
 
 /** One bounded, synchronous worker-thread request. No chat memory or runtime policy is owned here. */
 internal class EmbeddedChatGeneration {
@@ -80,12 +76,7 @@ internal class EmbeddedChatGeneration {
         }
     }
 
-    private fun awaitTerminal(
-        finished: CountDownLatch,
-        handle: GenerationHandle,
-        cancelled: AtomicBoolean,
-        destroying: AtomicBoolean,
-    ) {
+    private fun awaitTerminal(finished: CountDownLatch, handle: GenerationHandle, cancelled: AtomicBoolean, destroying: AtomicBoolean) {
         var checks = 0
         while (!finished.await(250, TimeUnit.MILLISECONDS)) {
             if (cancelled.get() || destroying.get()) handle.cancel()
