@@ -13,7 +13,7 @@ internal object PhotoDecoder {
     fun decode(resolver: ContentResolver, uri: Uri): SelectedPhoto {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            ?: error("Selected photo could not be read")
+            ?: run { /* inJustDecodeBounds intentionally returns null after reading dimensions */ }
         val width = bounds.outWidth
         val height = bounds.outHeight
         require(width in 1..12_000 && height in 1..12_000) { "Photo resolution is unsupported" }
