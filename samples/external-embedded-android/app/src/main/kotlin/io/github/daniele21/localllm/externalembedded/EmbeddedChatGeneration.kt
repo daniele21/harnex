@@ -17,17 +17,21 @@ import java.util.concurrent.atomic.AtomicReference
 
 internal data class ChatGenerationOutcome(val terminal: GenerationEvent, val streamedAnswer: String, val startedAtMs: Long)
 
+internal data class ChatGenerationPayload(
+    val messages: List<ConversationMessage>,
+    val question: String,
+    val imageBytes: ByteArray?,
+)
+
 /** One bounded, synchronous worker-thread request. No chat memory or runtime policy is owned here. */
 internal class EmbeddedChatGeneration {
     fun execute(
         engine: EmbeddedRuntime,
         session: SessionId,
-        messages: List<ConversationMessage>,
+        payload: ChatGenerationPayload,
         cancelled: AtomicBoolean,
         destroying: AtomicBoolean,
         activeGeneration: AtomicReference<GenerationHandle?>,
-        imageBytes: ByteArray?,
-        question: String,
         onAnswerDelta: (String) -> Unit,
     ): ChatGenerationOutcome {
         val finished = CountDownLatch(1)
@@ -59,10 +63,13 @@ internal class EmbeddedChatGeneration {
                 else -> Unit
             }
         }
-        val handle = if (imageBytes == null) {
-            engine.generate(session, messages, listener, overrides = GenerationOverrides(maxOutputTokens = 256))
+        val handle = if (payload.imageBytes == null) {
+            engine.generate(session, payload.messages, listener, overrides = GenerationOverrides(maxOutputTokens = 256))
         } else {
-            engine.generateImage(session, question, imageBytes, listener, overrides = GenerationOverrides(maxOutputTokens = 256))
+            engine.generateImage(
+                session, payload.question, payload.imageBytes, listener,
+                overrides = GenerationOverrides(maxOutputTokens = 256),
+            )
         }
         activeGeneration.set(handle)
         try {

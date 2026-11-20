@@ -119,21 +119,17 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         }
     }
 
-    fun sendImage(text: String, imageBytes: ByteArray): Boolean {
-        if (!visionReady.get()) {
-            observer.onVisionStatus("Tap Prepare vision first")
-            return false
+    fun send(text: String, imageBytes: ByteArray? = null): Boolean {
+        if (imageBytes != null) {
+            if (!visionReady.get()) {
+                observer.onVisionStatus("Tap Prepare vision first")
+                return false
+            }
+            if (imageBytes.isEmpty() || imageBytes.size > MAX_IMAGE_BYTES) {
+                observer.onVisionStatus("Selected image is invalid or too large")
+                return false
+            }
         }
-        if (imageBytes.isEmpty() || imageBytes.size > MAX_IMAGE_BYTES) {
-            observer.onVisionStatus("Selected image is invalid or too large")
-            return false
-        }
-        return sendInternal(text, imageBytes.copyOf())
-    }
-
-    fun send(text: String): Boolean = sendInternal(text, null)
-
-    private fun sendInternal(text: String, imageBytes: ByteArray?): Boolean {
         val input = text.trim()
         val validationError = when {
             input.isBlank() -> "Write a message before sending"
@@ -153,7 +149,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         val id = ids.incrementAndGet()
         observer.onTurnStarted(id, if (imageBytes != null) "PHOTO · $input" else input)
         observer.onPhase(ChatPhase.GENERATING)
-        worker.execute { runTurn(id, input, imageBytes) }
+        worker.execute { runTurn(id, input, imageBytes?.copyOf()) }
         return true
     }
 
@@ -199,12 +195,10 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
             val result = engineCalls.execute(
                 sdk,
                 technicalSession,
-                messages,
+                ChatGenerationPayload(messages, input, imageBytes),
                 cancelled,
                 destroyed,
                 activeGeneration,
-                imageBytes,
-                input,
             ) { text ->
                 if (state.current() == ChatPhase.GENERATING) observer.onAnswerDelta(id, text)
             }

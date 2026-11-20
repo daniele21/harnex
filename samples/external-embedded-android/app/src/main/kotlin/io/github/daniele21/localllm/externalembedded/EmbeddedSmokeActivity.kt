@@ -158,7 +158,7 @@ class EmbeddedSmokeActivity : Activity() {
         }
         val message = screen.prompt.text.toString()
         val photo = selectedPhoto
-        val accepted = if (photo == null) controller.send(message) else controller.sendImage(message, photo.jpegBytes)
+        val accepted = if (photo == null) controller.send(message) else controller.send(message, photo.jpegBytes)
         if (accepted) {
             screen.prompt.text.clear()
             removePhoto()

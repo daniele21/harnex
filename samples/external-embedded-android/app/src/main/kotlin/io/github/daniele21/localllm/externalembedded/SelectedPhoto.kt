@@ -38,14 +38,15 @@ internal object PhotoDecoder {
         }
 
         val buffer = ByteArrayOutputStream()
+        var selected = false
         try {
             check(image.compress(Bitmap.CompressFormat.JPEG, 82, buffer)) { "Failed to encode selected photo" }
             val bytes = buffer.toByteArray()
             check(bytes.isNotEmpty() && bytes.size <= MAX_JPEG_BYTES) { "Selected photo is too large" }
+            selected = true
             return SelectedPhoto(bytes, image)
-        } catch (error: Exception) {
-            image.recycle()
-            throw error
+        } finally {
+            if (!selected) image.recycle()
         }
     }
 
