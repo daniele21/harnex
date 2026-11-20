@@ -73,8 +73,11 @@ session**. Later app launches reuse the verified GGUF; the large model is not
 bundled in the APK.
 
 After **Ready**, type a question and press **Send**. The demo streams answer
-deltas into a conversational message surface. **Stop** cancels the in-flight
-download/generation, and **New chat** erases only the app's temporary conversation,
+deltas into a conversational message surface. **Stop** requests cancellation of the in-flight
+download/generation; the chat is reusable only after the engine acknowledges completion.
+If generation ignores Stop for eight seconds, the demo marks the runtime for reinitialization
+rather than silently treating the old session as ready. A normal unanswered generation has
+a separate 120-second limit. **New chat** erases only the app's temporary conversation,
 not the verified model. Failed/cancelled or incomplete answers are not committed
 to subsequent context; after a failure, the draft prompt is restored.
 
