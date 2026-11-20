@@ -106,7 +106,7 @@ class EmbeddedSmokeActivity : Activity() {
             visionActions = VisionActions(
                 onPrepare = { transferUi.start(ModelTransferKind.VISION) },
                 onChoose = { choosePhoto() },
-                onRemove = { removePhoto() },
+                onRemove = { photos.clear() },
             ),
         )
         val content = screen.build()
@@ -201,7 +201,7 @@ class EmbeddedSmokeActivity : Activity() {
             ui {
                 decoded.fold(
                     onSuccess = { photo ->
-                        removePhoto()
+                        photos.clear()
                         photos.set(photo)
                         screen.vision.setStatus("Photo selected · type a question and tap Send")
                     },
@@ -223,7 +223,7 @@ class EmbeddedSmokeActivity : Activity() {
 
     override fun onDestroy() {
         photoWorker.shutdownNow()
-        removePhoto()
+        photos.clear()
         voice.close()
         controller.close()
         super.onDestroy()
