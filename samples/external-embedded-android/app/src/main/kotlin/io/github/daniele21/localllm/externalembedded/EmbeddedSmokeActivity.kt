@@ -3,7 +3,9 @@ package io.github.daniele21.localllm.externalembedded
 import android.app.Activity
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowInsets
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -71,6 +73,13 @@ class EmbeddedSmokeActivity : Activity() {
             setOnClickListener { cancelled.set(true) }
         }
 
+        val title = TextView(this).apply {
+            text = "Harnex Embedded SDK Smoke"
+            textSize = 23f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.rgb(27, 29, 36))
+            setPadding(padding, padding, padding, padding)
+        }
         val output = ScrollView(this).apply {
             isFillViewport = true
             addView(status)
@@ -91,6 +100,10 @@ class EmbeddedSmokeActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.WHITE)
             addView(
+                title,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+            addView(
                 output,
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
             )
@@ -99,7 +112,21 @@ class EmbeddedSmokeActivity : Activity() {
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
             )
         }
+        // Android 15/16 edge-to-edge can put the entire Activity content behind the
+        // action/status bars. An owned toolbar plus real window insets keeps status
+        // and both buttons reachable on device and in the emulator.
+        screen.setOnApplyWindowInsetsListener { view, insets ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val safeArea = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                view.setPadding(0, safeArea.top, 0, safeArea.bottom)
+            } else {
+                @Suppress("DEPRECATION")
+                view.setPadding(0, insets.systemWindowInsetTop, 0, insets.systemWindowInsetBottom)
+            }
+            insets
+        }
         setContentView(screen)
+        screen.requestApplyInsets()
     }
 
     private fun runSmoke() {
