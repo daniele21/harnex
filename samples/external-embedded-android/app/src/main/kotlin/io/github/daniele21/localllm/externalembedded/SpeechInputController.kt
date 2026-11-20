@@ -152,6 +152,7 @@ internal class SpeechInputController(private val context: Context, private val o
         )
         check(minimum > 0) { "Microphone configuration unavailable" }
         val bufferBytes = maxOf(minimum, 4096)
+
         @Suppress("MissingPermission")
         val source = AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
