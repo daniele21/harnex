@@ -45,7 +45,8 @@ internal class SpeechInputController(private val context: Context, private val o
         }
     }
 
-    fun current(): VoicePhase = state.current()
+    val phase: VoicePhase
+        get() = state.current()
 
     fun prepare() {
         if (!state.beginPreparation() || destroyed.get()) return

@@ -33,7 +33,7 @@ class EmbeddedSmokeActivity :
         }
 
         override fun onDiagnostics(text: String) {
-            this@EmbeddedSmokeActivity.ui { screen.setDiagnostics(text) }
+            this@EmbeddedSmokeActivity.ui { screen.diagnosticsText = text }
         }
 
         override fun onTurnStarted(id: Long, input: String) {
@@ -84,11 +84,11 @@ class EmbeddedSmokeActivity :
     }
 
     private fun voiceAction() {
-        if (voice.current() == VoicePhase.RECORDING) {
+        if (voice.phase == VoicePhase.RECORDING) {
             voice.finish()
             return
         }
-        if (chatPhase != ChatPhase.READY || voice.current() != VoicePhase.READY) return
+        if (chatPhase != ChatPhase.READY || voice.phase != VoicePhase.READY) return
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), MIC_PERMISSION_REQUEST)
         } else {
@@ -108,9 +108,9 @@ class EmbeddedSmokeActivity :
 
     private fun send() {
         if (
-            voice.current() == VoicePhase.RECORDING ||
-            voice.current() == VoicePhase.TRANSCRIBING ||
-            voice.current() == VoicePhase.CANCELLING
+            voice.phase == VoicePhase.RECORDING ||
+            voice.phase == VoicePhase.TRANSCRIBING ||
+            voice.phase == VoicePhase.CANCELLING
         ) {
             return
         }

@@ -198,9 +198,11 @@ internal class EmbeddedChatScreen(
         status.text = message
     }
 
-    fun setDiagnostics(message: String) {
-        diagnostics.text = message
-    }
+    var diagnosticsText: CharSequence
+        get() = diagnostics.text
+        set(value) {
+            diagnostics.text = value
+        }
 
     var voiceStatusText: CharSequence
         get() = voiceStatus.text
