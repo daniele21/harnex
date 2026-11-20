@@ -35,9 +35,27 @@ internal object ModelTransferScheduler {
         } catch (_: IllegalStateException) {
             ModelTransferState.update(app, kind, ModelTransferPhase.FAILED, "Unable to schedule download · retry")
             false
+        } catch (_: IllegalArgumentException) {
+            ModelTransferState.update(app, kind, ModelTransferPhase.FAILED, "Unsupported download request · retry")
+            false
         } catch (_: SecurityException) {
             ModelTransferState.update(app, kind, ModelTransferPhase.FAILED, "Android blocked the download · check app settings")
             false
+        }
+    }
+
+    fun reconcile(context: Context, kind: ModelTransferKind) {
+        if (ModelTransferState.snapshot(context, kind).phase != ModelTransferPhase.RUNNING) return
+        val active = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            context.getSystemService(JobScheduler::class.java).getPendingJob(kind.jobId) != null
+        } else {
+            ModelTransferForegroundService.isActive()
+        }
+        if (!active) {
+            ModelTransferState.update(
+                context, kind, ModelTransferPhase.PAUSED,
+                "Transfer interrupted · tap Prepare to resume the saved bytes",
+            )
         }
     }
 

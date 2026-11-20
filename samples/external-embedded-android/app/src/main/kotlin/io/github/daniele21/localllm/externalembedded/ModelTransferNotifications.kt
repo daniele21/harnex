@@ -6,7 +6,6 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 
 /** A user-visible, content-free progress notification for both scheduling paths. */
 internal object ModelTransferNotifications {

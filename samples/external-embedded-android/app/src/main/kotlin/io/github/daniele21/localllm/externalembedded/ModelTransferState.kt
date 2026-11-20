@@ -59,6 +59,7 @@ internal object ModelTransferState {
     }
 
     fun update(context: Context, kind: ModelTransferKind, phase: ModelTransferPhase, status: String) {
+        if (phase == ModelTransferPhase.RUNNING && cancelRequested(context, kind)) return
         val preferences = preferences(context)
         val revision = preferences.getLong("${kind.name}.revision", 0L) + 1L
         preferences.edit()

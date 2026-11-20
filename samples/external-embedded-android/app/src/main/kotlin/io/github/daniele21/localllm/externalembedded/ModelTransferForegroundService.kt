@@ -27,6 +27,7 @@ class ModelTransferForegroundService : Service() {
         }
         if (intent.action != ACTION_START || !running.compareAndSet(false, true)) return START_REDELIVER_INTENT
         cancelled.set(false)
+        active = true
         ModelTransferNotifications.create(this)
         startForeground(
             kind.jobId,
@@ -56,6 +57,8 @@ class ModelTransferForegroundService : Service() {
                 }
             } finally {
                 wakeLock?.takeIf { it.isHeld }?.release()
+                running.set(false)
+                active = false
                 stopSelf(startId)
             }
         }
@@ -66,10 +69,16 @@ class ModelTransferForegroundService : Service() {
         cancelled.set(true)
         wakeLock?.takeIf { it.isHeld }?.release()
         worker.shutdownNow()
+        active = false
         super.onDestroy()
     }
 
     companion object {
+        @Volatile
+        private var active = false
+
+        fun isActive(): Boolean = active
+
         const val ACTION_START = "io.github.daniele21.localllm.externalembedded.START_MODEL_DOWNLOAD"
         const val ACTION_CANCEL = "io.github.daniele21.localllm.externalembedded.CANCEL_MODEL_DOWNLOAD"
         const val EXTRA_KIND = "kind"

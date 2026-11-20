@@ -27,8 +27,10 @@ internal object ModelTransferTask {
                     cancelled = cancelled,
                     destroyed = cancelled,
                     onStatus = { status ->
-                        ModelTransferState.update(app, kind, ModelTransferPhase.RUNNING, status)
-                        notifyProgress(status, -1)
+                        if (!cancelled.get()) {
+                            ModelTransferState.update(app, kind, ModelTransferPhase.RUNNING, status)
+                            notifyProgress(status, -1)
+                        }
                     },
                     preservePartialOnCancel = true,
                 )
@@ -37,8 +39,10 @@ internal object ModelTransferTask {
                     observer = DownloadProgressObserver { progress ->
                         val fraction = ((100L * progress.bytesDownloaded) / progress.expectedBytes).toInt()
                         val status = "Vision download · ${progress.bytesDownloaded / MIB} / ${progress.expectedBytes / MIB} MB"
-                        ModelTransferState.update(app, kind, ModelTransferPhase.RUNNING, status)
-                        notifyProgress(status, fraction)
+                        if (!cancelled.get()) {
+                            ModelTransferState.update(app, kind, ModelTransferPhase.RUNNING, status)
+                            notifyProgress(status, fraction)
+                        }
                     },
                     cancellationToken = DownloadCancellationToken(cancelled::get),
                 )
