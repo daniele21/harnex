@@ -33,26 +33,26 @@ class DebugChatJourneyActivity : Activity() {
             onPrepareVoice = {
                 fakeVoicePhase = VoicePhase.READY
                 screen.updateVoicePhase(fakeVoicePhase)
-                screen.setVoiceStatus("Whisper Small Q5 ready · UI-only test")
+                screen.voiceStatusText = "Whisper Small Q5 ready · UI-only test"
             },
             onVoice = {
                 when (fakeVoicePhase) {
                     VoicePhase.READY -> {
                         fakeVoicePhase = VoicePhase.RECORDING
                         screen.updateVoicePhase(fakeVoicePhase)
-                        screen.setVoiceStatus("Recording · UI-only test")
+                        screen.voiceStatusText = "Recording · UI-only test"
                     }
 
                     VoicePhase.RECORDING -> {
                         fakeVoicePhase = VoicePhase.TRANSCRIBING
                         screen.updateVoicePhase(fakeVoicePhase)
-                        screen.setVoiceStatus("Transcribing · UI-only test")
+                        screen.voiceStatusText = "Transcribing · UI-only test"
                         handler.postDelayed({
                             if (fakeVoicePhase == VoicePhase.TRANSCRIBING && !isDestroyed) {
                                 fakeVoicePhase = VoicePhase.READY
                                 screen.updateVoicePhase(fakeVoicePhase)
                                 screen.insertTranscript("Dettatura locale di prova")
-                                screen.setVoiceStatus("Voice transcript ready · UI-only test")
+                                screen.voiceStatusText = "Voice transcript ready · UI-only test"
                             }
                         }, 500L)
                     }
@@ -63,7 +63,7 @@ class DebugChatJourneyActivity : Activity() {
             onCancelVoice = {
                 fakeVoicePhase = VoicePhase.READY
                 screen.updateVoicePhase(fakeVoicePhase)
-                screen.setVoiceStatus("Voice cancelled · UI-only test")
+                screen.voiceStatusText = "Voice cancelled · UI-only test"
             },
             onNewChat = {
                 if (phase == ChatPhase.READY) {

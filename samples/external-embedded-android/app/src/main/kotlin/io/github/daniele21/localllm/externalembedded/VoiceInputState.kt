@@ -10,6 +10,9 @@ enum class VoicePhase {
     RECORDING,
     TRANSCRIBING,
     CANCELLING,
+
+    val isBusy: Boolean
+        get() = this == RECORDING || this == TRANSCRIBING || this == CANCELLING
 }
 
 internal class VoiceInputState {
