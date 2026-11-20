@@ -185,13 +185,16 @@ internal class EmbeddedChatScreen(
         diagnostics.text = message
     }
 
-    fun updateControls(ready: Boolean, busy: Boolean) {
-        setupButton.visibility = if (ready) View.GONE else View.VISIBLE
-        setupButton.isEnabled = !busy
-        sendButton.isEnabled = ready && !busy
-        prompt.isEnabled = ready && !busy
-        stopButton.isEnabled = busy
-        resetButton.isEnabled = ready && !busy
+    fun updateControls(phase: ChatPhase) {
+        val ready = phase == ChatPhase.READY
+        val preparing = phase == ChatPhase.PREPARING
+        val generating = phase == ChatPhase.GENERATING
+        setupButton.visibility = if (ready || generating || phase == ChatPhase.STOPPING) View.GONE else View.VISIBLE
+        setupButton.isEnabled = phase == ChatPhase.NEEDS_MODEL
+        sendButton.isEnabled = ready
+        prompt.isEnabled = ready
+        stopButton.isEnabled = preparing || generating
+        resetButton.isEnabled = ready
     }
 }
 
