@@ -294,6 +294,11 @@ class EmbeddedSmokeActivity : Activity() {
         val technicalSession = session
         if (engine == null || technicalSession == null) {
             completeTurnFailure(input, bubble, "Runtime is not ready")
+            postUi {
+                busy = false
+                ready = false
+                updateControls()
+            }
             return
         }
         try {
@@ -334,7 +339,7 @@ class EmbeddedSmokeActivity : Activity() {
                 if (cancelled.get() || destroying.get()) handle.cancel()
                 if (++elapsedChecks >= 480) {
                     handle.cancel()
-                    error("Generation timed out after 120 seconds")
+                    throw GenerationTimeout()
                 }
             }
             activeGeneration.compareAndSet(handle, null)
@@ -355,6 +360,10 @@ class EmbeddedSmokeActivity : Activity() {
                 else -> completeTurnFailure(input, bubble, "Generation ended without a terminal event")
             }
         } catch (failure: IllegalStateException) {
+            if (failure is GenerationTimeout) {
+                closeRuntime()
+                postUi { ready = false }
+            }
             completeTurnFailure(input, bubble, failure.message ?: "Generation stopped")
         } catch (failure: IllegalArgumentException) {
             completeTurnFailure(input, bubble, failure.message ?: "Invalid request")
@@ -486,6 +495,8 @@ class EmbeddedSmokeActivity : Activity() {
         worker.shutdown()
         super.onDestroy()
     }
+
+    private class GenerationTimeout : IllegalStateException("Generation timed out; reinitialize model before retrying")
 
     private companion object {
         const val MODEL_ID = "qwen35-2b-q4-k-m"
