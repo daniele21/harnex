@@ -269,7 +269,6 @@ internal class EmbeddedChatScreen(
         sendButton.isEnabled = canEdit
         resetButton.isEnabled = canEdit
     }
-
 }
 
 private fun LinearLayout.addEqualWidthButtons(activity: Activity, buttons: List<Button>, height: Int) {
