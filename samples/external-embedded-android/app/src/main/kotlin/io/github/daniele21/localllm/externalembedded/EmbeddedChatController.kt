@@ -264,8 +264,11 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                     val metrics = terminal.metrics
                     val duration = SystemClock.elapsedRealtime() - result.startedAtMs
                     observer.onStatus(
-                        if (imageQuestion) "Image answer complete · photo not saved" else
-                            "Answer complete · ${history.completedTurns()} temporary turns",
+                        if (imageQuestion) {
+                            "Image answer complete · photo not saved"
+                        } else {
+                            "Answer complete · ${history.completedTurns()} temporary turns"
+                        },
                     )
                     observer.onDiagnostics(formatMetrics(metrics, duration, messageCount))
                 }
