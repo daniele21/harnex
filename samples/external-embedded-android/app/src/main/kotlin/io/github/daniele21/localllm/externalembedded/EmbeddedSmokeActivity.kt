@@ -112,6 +112,25 @@ class EmbeddedSmokeActivity : Activity() {
         outer.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         showWelcome()
 
+        outer.addView(buildComposer())
+
+        outer.setOnApplyWindowInsetsListener { view, insets ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                val keyboard = insets.getInsets(WindowInsets.Type.ime())
+                view.setPadding(0, bars.top, 0, maxOf(bars.bottom, keyboard.bottom))
+            } else {
+                @Suppress("DEPRECATION")
+                view.setPadding(0, insets.systemWindowInsetTop, 0, insets.systemWindowInsetBottom)
+            }
+            insets
+        }
+        setContentView(outer)
+        outer.requestApplyInsets()
+        updateControls()
+    }
+
+    private fun buildComposer(): LinearLayout {
         val composer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -162,22 +181,7 @@ class EmbeddedSmokeActivity : Activity() {
             })
         }
         composer.addView(actions)
-        outer.addView(composer)
-
-        outer.setOnApplyWindowInsetsListener { view, insets ->
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
-                val keyboard = insets.getInsets(WindowInsets.Type.ime())
-                view.setPadding(0, bars.top, 0, maxOf(bars.bottom, keyboard.bottom))
-            } else {
-                @Suppress("DEPRECATION")
-                view.setPadding(0, insets.systemWindowInsetTop, 0, insets.systemWindowInsetBottom)
-            }
-            insets
-        }
-        setContentView(outer)
-        outer.requestApplyInsets()
-        updateControls()
+        return composer
     }
 
     private fun beginSetup() {
