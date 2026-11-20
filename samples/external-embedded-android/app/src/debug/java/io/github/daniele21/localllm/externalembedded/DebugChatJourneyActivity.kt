@@ -16,6 +16,7 @@ class DebugChatJourneyActivity : Activity() {
     private var phase = ChatPhase.NEEDS_MODEL
     private var runId = 0
     private var lastPrompt = ""
+    private var fakeVoicePhase = VoicePhase.NEEDS_MODEL
     private var reply: TextView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,6 +30,41 @@ class DebugChatJourneyActivity : Activity() {
             },
             onSend = ::send,
             onStop = ::stop,
+            onPrepareVoice = {
+                fakeVoicePhase = VoicePhase.READY
+                screen.updateVoicePhase(fakeVoicePhase)
+                screen.voiceStatusText = "Whisper Small Q5 ready · UI-only test"
+            },
+            onVoice = {
+                when (fakeVoicePhase) {
+                    VoicePhase.READY -> {
+                        fakeVoicePhase = VoicePhase.RECORDING
+                        screen.updateVoicePhase(fakeVoicePhase)
+                        screen.voiceStatusText = "Recording · UI-only test"
+                    }
+
+                    VoicePhase.RECORDING -> {
+                        fakeVoicePhase = VoicePhase.TRANSCRIBING
+                        screen.updateVoicePhase(fakeVoicePhase)
+                        screen.voiceStatusText = "Transcribing · UI-only test"
+                        handler.postDelayed({
+                            if (fakeVoicePhase == VoicePhase.TRANSCRIBING && !isDestroyed) {
+                                fakeVoicePhase = VoicePhase.READY
+                                screen.updateVoicePhase(fakeVoicePhase)
+                                screen.insertTranscript("Dettatura locale di prova")
+                                screen.voiceStatusText = "Voice transcript ready · UI-only test"
+                            }
+                        }, 500L)
+                    }
+
+                    else -> Unit
+                }
+            },
+            onCancelVoice = {
+                fakeVoicePhase = VoicePhase.READY
+                screen.updateVoicePhase(fakeVoicePhase)
+                screen.voiceStatusText = "Voice cancelled · UI-only test"
+            },
             onNewChat = {
                 if (phase == ChatPhase.READY) {
                     screen.resetConversation()
