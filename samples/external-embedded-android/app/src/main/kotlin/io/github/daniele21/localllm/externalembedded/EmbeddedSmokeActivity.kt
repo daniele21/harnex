@@ -1,9 +1,12 @@
 package io.github.daniele21.localllm.externalembedded
 
 import android.app.Activity
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.os.Bundle
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import io.github.daniele21.localllm.contracts.ConversationMessage
 import io.github.daniele21.localllm.contracts.ConversationRole
@@ -35,9 +38,22 @@ class EmbeddedSmokeActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        status = TextView(this).apply { text = "Ready to run the embedded model smoke test" }
+
+        // Keep the primary action visible independently of status/output size and text scaling.
+        // A real-device smoke report showed only the status text, with no usable controls.
+        val padding = (16 * resources.displayMetrics.density).toInt()
+        val controlHeight = (56 * resources.displayMetrics.density).toInt()
+        status = TextView(this).apply {
+            text = "Ready to run the embedded model smoke test"
+            textSize = 16f
+            setTextColor(Color.rgb(45, 55, 72))
+            setPadding(padding, padding, padding, padding)
+        }
         runButton = Button(this).apply {
             text = "Download / Install / Generate"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            backgroundTintList = ColorStateList.valueOf(Color.rgb(37, 91, 191))
             setOnClickListener {
                 isEnabled = false
                 cancelled.set(false)
@@ -49,15 +65,41 @@ class EmbeddedSmokeActivity : Activity() {
         }
         val cancelButton = Button(this).apply {
             text = "Cancel"
+            isAllCaps = false
+            setTextColor(Color.rgb(45, 55, 72))
+            backgroundTintList = ColorStateList.valueOf(Color.rgb(230, 234, 242))
             setOnClickListener { cancelled.set(true) }
         }
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(runButton)
-            addView(cancelButton)
+
+        val output = ScrollView(this).apply {
+            isFillViewport = true
             addView(status)
         }
-        setContentView(layout)
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(padding, padding / 2, padding, padding)
+            addView(
+                runButton,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, controlHeight),
+            )
+            addView(
+                cancelButton,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, controlHeight),
+            )
+        }
+        val screen = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.WHITE)
+            addView(
+                output,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
+            )
+            addView(
+                actions,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT),
+            )
+        }
+        setContentView(screen)
     }
 
     private fun runSmoke() {
