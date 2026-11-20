@@ -7,6 +7,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.SystemClock
+import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -60,10 +61,10 @@ internal class SpeechInputController(private val context: Context, private val o
                     observer.onVoiceStatus("Whisper Small Q5 ready · offline")
                     observer.onVoicePhase(VoicePhase.READY)
                 }
-            } catch (failure: Exception) {
-                if (!destroyed.get() && !cancelled.get()) {
-                    observer.onVoiceStatus("Voice setup failed · ${failure.message ?: "retry"}")
-                }
+            } catch (failure: IllegalStateException) {
+                reportFailure("Voice setup failed", failure)
+            } catch (failure: IOException) {
+                reportFailure("Voice setup failed", failure)
             } finally {
                 if (!destroyed.get()) {
                     state.settleIfUnfinished(completed, modelReady = false)?.let(observer::onVoicePhase)
@@ -116,12 +117,8 @@ internal class SpeechInputController(private val context: Context, private val o
         try {
             val audio = capturePcm()
             if (cancelled.get() || destroyed.get() || state.current() != VoicePhase.TRANSCRIBING) return
-            check(audio.size >= MIN_SAMPLES) { "Recording too short · speak for at least 0.25 seconds" }
-            val samples = FloatArray(audio.size) { index -> audio[index] / 32768f }
-            check(hasSpeech(samples)) { "No audible speech detected · try again" }
-            val verified = checkNotNull(model.verifiedModel()) { "Voice model is not verified" }
             val started = SystemClock.elapsedRealtime()
-            val transcript = WhisperNative.transcribe(verified.absolutePath, samples, cancelled).trim()
+            val transcript = transcribeAudio(audio)
             if (cancelled.get() || destroyed.get()) return
             if (state.completeTranscription()) {
                 completed = true
@@ -135,17 +132,38 @@ internal class SpeechInputController(private val context: Context, private val o
                 observer.onVoicePhase(VoicePhase.READY)
                 if (transcript.isNotBlank()) observer.onVoiceTranscript(transcript)
             }
-        } catch (failure: Exception) {
-            if (!cancelled.get() && !destroyed.get()) {
-                observer.onVoiceStatus("Voice input failed · ${failure.message ?: "retry"}")
-            }
+        } catch (failure: IllegalStateException) {
+            reportFailure("Voice input failed", failure)
+        } catch (failure: IllegalArgumentException) {
+            reportFailure("Voice input failed", failure)
+        } catch (failure: SecurityException) {
+            reportFailure("Voice input failed", failure)
+        } catch (failure: IOException) {
+            reportFailure("Voice input failed", failure)
         } finally {
-            if (!destroyed.get()) {
-                state.settleIfUnfinished(completed, modelReady = true)?.let { phase ->
-                    observer.onVoicePhase(phase)
-                    if (cancelled.get()) observer.onVoiceStatus("Voice input cancelled")
-                }
-            }
+            settleCapture(completed)
+        }
+    }
+
+    private fun transcribeAudio(audio: ShortArray): String {
+        check(audio.size >= MIN_SAMPLES) { "Recording too short · speak for at least 0.25 seconds" }
+        val samples = FloatArray(audio.size) { index -> audio[index] / 32768f }
+        check(hasSpeech(samples)) { "No audible speech detected · try again" }
+        val verified = checkNotNull(model.verifiedModel()) { "Voice model is not verified" }
+        return WhisperNative.transcribe(verified.absolutePath, samples, cancelled).trim()
+    }
+
+    private fun reportFailure(prefix: String, failure: Throwable) {
+        if (!cancelled.get() && !destroyed.get()) {
+            observer.onVoiceStatus("$prefix · ${failure.message ?: "retry"}")
+        }
+    }
+
+    private fun settleCapture(completed: Boolean) {
+        if (destroyed.get()) return
+        state.settleIfUnfinished(completed, modelReady = true)?.let { phase ->
+            observer.onVoicePhase(phase)
+            if (cancelled.get()) observer.onVoiceStatus("Voice input cancelled")
         }
     }
 
@@ -183,13 +201,12 @@ internal class SpeechInputController(private val context: Context, private val o
                     minOf(chunk.size, MAX_SAMPLES - written),
                     AudioRecord.READ_BLOCKING,
                 )
-                if (count < 0) {
-                    if (!recording.get() || cancelled.get()) break
+                if (count > 0) {
+                    System.arraycopy(chunk, 0, collected, written, count)
+                    written += count
+                } else if (count < 0 && recording.get() && !cancelled.get()) {
                     error("Microphone read failed ($count)")
                 }
-                if (count == 0) continue
-                System.arraycopy(chunk, 0, collected, written, count)
-                written += count
             }
             if (written == MAX_SAMPLES && state.finishRecording()) {
                 observer.onVoicePhase(VoicePhase.TRANSCRIBING)
@@ -211,11 +228,13 @@ internal class SpeechInputController(private val context: Context, private val o
         const val MAX_SAMPLES = SAMPLE_RATE * 30
         const val MIN_SAMPLES = SAMPLE_RATE / 4
 
-        fun hasSpeech(samples: FloatArray): Boolean {
-            val power = samples.fold(0.0) { accumulated, sample ->
-                accumulated + sample.toDouble() * sample.toDouble()
-            }
-            return sqrt(power / samples.size) >= 0.003
-        }
+
     }
+}
+
+private fun hasSpeech(samples: FloatArray): Boolean {
+    val power = samples.fold(0.0) { accumulated, sample ->
+        accumulated + sample.toDouble() * sample.toDouble()
+    }
+    return sqrt(power / samples.size) >= 0.003
 }

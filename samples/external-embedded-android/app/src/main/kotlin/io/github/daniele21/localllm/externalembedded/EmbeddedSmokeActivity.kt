@@ -59,9 +59,7 @@ class EmbeddedSmokeActivity : Activity(), VoiceObserver {
                 activeRunId = -1L
             }
         }
-
     }
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -131,7 +129,7 @@ class EmbeddedSmokeActivity : Activity(), VoiceObserver {
     }
 
     override fun onVoiceStatus(status: String) {
-        ui { screen.setVoiceStatus(status) }
+        ui { screen.voiceStatusText = status }
     }
 
     override fun onVoiceTranscript(text: String) {
@@ -150,6 +148,7 @@ class EmbeddedSmokeActivity : Activity(), VoiceObserver {
         controller.close()
         super.onDestroy()
     }
+
     private companion object {
         const val MIC_PERMISSION_REQUEST = 410
     }
