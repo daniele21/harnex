@@ -157,7 +157,18 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
     fun downloadModel(
         observer: DownloadProgressObserver = DownloadProgressObserver {},
         cancellationToken: DownloadCancellationToken = NeverCancelled,
-        preservePartialOnCancel: Boolean = false,
+    ): ModelDownloadResult = downloadModelInternal(observer, cancellationToken, false)
+
+    /** Long-running Android-managed transfers retain untrusted partial bytes after system stops. */
+    fun downloadModelResumable(
+        observer: DownloadProgressObserver = DownloadProgressObserver {},
+        cancellationToken: DownloadCancellationToken = NeverCancelled,
+    ): ModelDownloadResult = downloadModelInternal(observer, cancellationToken, true)
+
+    private fun downloadModelInternal(
+        observer: DownloadProgressObserver,
+        cancellationToken: DownloadCancellationToken,
+        preservePartialOnCancel: Boolean,
     ): ModelDownloadResult {
         requireWorkerThread()
         checkOpen()

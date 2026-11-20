@@ -31,17 +31,19 @@ internal object EmbeddedModelPreparation {
         }
         onStatus("Downloading the reviewed GGUF…")
         var lastUpdate = 0L
-        val result = engine.downloadModel(
-            observer = DownloadProgressObserver { progress ->
-                val now = SystemClock.elapsedRealtime()
-                if (now - lastUpdate >= 350L) {
-                    lastUpdate = now
-                    onStatus("Downloading · ${progress.bytesDownloaded / MIB} / ${progress.expectedBytes / MIB} MB")
-                }
-            },
-            cancellationToken = DownloadCancellationToken { cancelled.get() || destroyed.get() },
-            preservePartialOnCancel = preservePartialOnCancel,
-        )
+        val observer = DownloadProgressObserver { progress ->
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastUpdate >= 350L) {
+                lastUpdate = now
+                onStatus("Downloading · ${progress.bytesDownloaded / MIB} / ${progress.expectedBytes / MIB} MB")
+            }
+        }
+        val token = DownloadCancellationToken { cancelled.get() || destroyed.get() }
+        val result = if (preservePartialOnCancel) {
+            engine.downloadModelResumable(observer, token)
+        } else {
+            engine.downloadModel(observer, token)
+        }
         val handle = when (result) {
             is ModelDownloadResult.Success -> result.handle
             is ModelDownloadResult.Cancelled -> error("Download cancelled")

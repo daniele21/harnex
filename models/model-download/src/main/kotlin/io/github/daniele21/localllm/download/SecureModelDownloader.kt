@@ -76,7 +76,7 @@ class SecureModelDownloader(
         val interrupted = journal.recoverAndPurge()
         val cutoff = safeSubtract(clock.nowEpochMs(), configuration.orphanRetentionMs)
         val (deleted, failures) = fileStore.cleanupOrphanPartials(cutoff)
-        val resumeCutoff = safeSubtract(clock.nowEpochMs(), configuration.resumeRetentionMs)
+        val resumeCutoff = safeSubtract(clock.nowEpochMs(), RESUME_RETENTION_MS)
         val (resumesDeleted, resumeFailures) = fileStore.cleanupAbandonedResumes(resumeCutoff)
         return DownloadCleanupReport(interrupted, deleted + resumesDeleted, failures + resumeFailures)
     }
@@ -565,6 +565,7 @@ class SecureModelDownloader(
     private companion object {
         const val HTTP_OK = 200
         const val HTTP_PARTIAL = 206
+        const val RESUME_RETENTION_MS = 7L * 86_400_000L
         val CONTENT_RANGE = Regex("^bytes ([0-9]+)-([0-9]+)/([0-9]+)$")
         val concurrentOperations = ConcurrentHashMap<String, DownloadOperationId>()
         const val IDENTITY_ENCODING = "identity"

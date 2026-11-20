@@ -6,7 +6,7 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 
-data class DownloadTransportRequest(
+data class DownloadTransportRequest @JvmOverloads constructor(
     val uri: URI,
     val connectTimeoutMs: Int,
     val readTimeoutMs: Int,
