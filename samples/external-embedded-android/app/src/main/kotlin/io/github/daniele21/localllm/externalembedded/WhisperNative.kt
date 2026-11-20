@@ -11,9 +11,5 @@ internal object WhisperNative {
         System.loadLibrary("harnex_whisper_stt")
     }
 
-    external fun transcribe(
-        modelPath: String,
-        audio: FloatArray,
-        cancelled: AtomicBoolean,
-    ): String
+    external fun transcribe(modelPath: String, audio: FloatArray, cancelled: AtomicBoolean): String
 }

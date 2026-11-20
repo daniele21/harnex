@@ -16,6 +16,7 @@ class DebugChatJourneyActivity : Activity() {
     private var phase = ChatPhase.NEEDS_MODEL
     private var runId = 0
     private var lastPrompt = ""
+    private var fakeVoicePhase = VoicePhase.NEEDS_MODEL
     private var reply: TextView? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,25 +31,38 @@ class DebugChatJourneyActivity : Activity() {
             onSend = ::send,
             onStop = ::stop,
             onPrepareVoice = {
+                fakeVoicePhase = VoicePhase.READY
+                screen.updateVoicePhase(fakeVoicePhase)
                 screen.setVoiceStatus("Whisper Small Q5 ready · UI-only test")
-                screen.updateVoicePhase(VoicePhase.READY)
             },
             onVoice = {
-                // This is a UI-only synthetic transcript; no microphone or native STT.
-                screen.updateVoicePhase(VoicePhase.RECORDING)
-                screen.setVoiceStatus("Recording · UI-only test")
-                handler.postDelayed({
-                    screen.updateVoicePhase(VoicePhase.TRANSCRIBING)
-                    screen.setVoiceStatus("Transcribing · UI-only test")
-                    handler.postDelayed({
-                        screen.updateVoicePhase(VoicePhase.READY)
-                        screen.insertTranscript("Dettatura locale di prova")
-                        screen.setVoiceStatus("Voice transcript ready · UI-only test")
-                    }, 400L)
-                }, 400L)
+                when (fakeVoicePhase) {
+                    VoicePhase.READY -> {
+                        fakeVoicePhase = VoicePhase.RECORDING
+                        screen.updateVoicePhase(fakeVoicePhase)
+                        screen.setVoiceStatus("Recording · UI-only test")
+                    }
+
+                    VoicePhase.RECORDING -> {
+                        fakeVoicePhase = VoicePhase.TRANSCRIBING
+                        screen.updateVoicePhase(fakeVoicePhase)
+                        screen.setVoiceStatus("Transcribing · UI-only test")
+                        handler.postDelayed({
+                            if (fakeVoicePhase == VoicePhase.TRANSCRIBING && !isDestroyed) {
+                                fakeVoicePhase = VoicePhase.READY
+                                screen.updateVoicePhase(fakeVoicePhase)
+                                screen.insertTranscript("Dettatura locale di prova")
+                                screen.setVoiceStatus("Voice transcript ready · UI-only test")
+                            }
+                        }, 500L)
+                    }
+
+                    else -> Unit
+                }
             },
             onCancelVoice = {
-                screen.updateVoicePhase(VoicePhase.READY)
+                fakeVoicePhase = VoicePhase.READY
+                screen.updateVoicePhase(fakeVoicePhase)
                 screen.setVoiceStatus("Voice cancelled · UI-only test")
             },
             onNewChat = {

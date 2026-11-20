@@ -82,6 +82,7 @@ prepare = find("Prepare local model")
 send = find("Send")
 stop = find("Stop")
 reset = find("New chat")
+voice_prepare = find("Prepare Whisper Small Q5")
 
 def rect(node):
     coords = list(map(int, re.findall(r"\d+", node["bounds"])))
@@ -97,6 +98,7 @@ for label, button, enabled in [
     ("send", send, "false"),
     ("stop", stop, "false"),
     ("new chat", reset, "false"),
+    ("voice preparation", voice_prepare, "false"),
 ]:
     assert button["class"] == "android.widget.Button", (label, button)
     assert button["enabled"] == enabled, (label, button)
@@ -178,11 +180,26 @@ sleep 7
 capture_fixture
 assert_fixture_text "Completed · UI-only test"
 assert_fixture_text "Synthetic text for UI verification"
+# Verify the real composer + voice controls with synthetic UI-only events;
+# no microphone, Whisper model, or native ASR is invoked on x86_64.
+adb -s emulator-5554 shell input tap $(ui_center "New chat")
+capture_fixture
+adb -s emulator-5554 shell input tap $(ui_center "Prepare Whisper Small Q5")
+capture_fixture
+assert_fixture_text "Whisper Small Q5 ready · UI-only test"
+adb -s emulator-5554 shell input tap $(ui_center "Record voice")
+capture_fixture
+assert_fixture_text "Recording · UI-only test"
+adb -s emulator-5554 shell input tap $(ui_center "Finish recording")
+sleep 2
+capture_fixture
+assert_fixture_text "Voice transcript ready · UI-only test"
+assert_fixture_text "Dettatura locale di prova"
 adb -s emulator-5554 exec-out screencap -p > "$evidence/fixture-screenshot.png"
 wait "$record_pid"
 adb -s emulator-5554 pull /sdcard/embedded-chat-ui.mp4 "$evidence/fixture-journey.mp4" >/dev/null
 [[ -s "$evidence/fixture-journey.mp4" ]] || { echo "Missing full-media UI journey" >&2; exit 1; }
-echo "Embedded chat UI: real initial APK + synthetic full-media Send/Stop/New chat journey PASSED"
+echo "Embedded chat UI: real initial APK + synthetic full-media chat and voice-composer journey PASSED"
 
 cat > "$evidence/manifest.txt" <<EOF
 source_revision=$(git rev-parse HEAD)
