@@ -3,7 +3,7 @@
     <application>
         <!-- Shell-controlled UI verification only. Absent from release variants. -->
         <activity
-            android:name=".DebugChatJourneyActivity"
+            android:name="io.github.daniele21.localllm.externalembedded.DebugChatJourneyActivity"
             android:exported="true"
             android:permission="android.permission.DUMP" />
     </application>
