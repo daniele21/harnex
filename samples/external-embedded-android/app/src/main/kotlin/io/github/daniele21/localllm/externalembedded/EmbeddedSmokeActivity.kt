@@ -147,6 +147,7 @@ class EmbeddedSmokeActivity : Activity() {
             setOnClickListener {
                 if (!busy) {
                     history.reset()
+                    prompt.text.clear()
                     messages.removeAllViews()
                     showWelcome()
                     diagnostics.text = "History cleared · model remains ready"
@@ -236,7 +237,7 @@ class EmbeddedSmokeActivity : Activity() {
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastUpdate > 350L) {
                     lastUpdate = now
-                    val total = progress.expectedBytes?.let { "/ ${it / MIB} MB" } ?: ""
+                    val total = "/ ${progress.expectedBytes / MIB} MB"
                     showStatus("Downloading · ${progress.bytesDownloaded / MIB} MB$total")
                 }
             },
