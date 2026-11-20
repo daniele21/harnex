@@ -54,7 +54,8 @@ internal object ModelTransferTask {
             }
         } catch (failure: IOException) {
             ModelTransferOutcome(
-                false, true,
+                false,
+                true,
                 "Network interrupted (${failure.javaClass.simpleName}) · transfer will resume",
             )
         } catch (failure: IllegalStateException) {

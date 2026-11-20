@@ -129,7 +129,12 @@ class SecureModelDownloader(
                     ),
                 )
                 val transfer = downloadVerifiedBody(
-                    partial, artifact, initialSource, reporter, cancellationToken, attempt,
+                    partial,
+                    artifact,
+                    initialSource,
+                    reporter,
+                    cancellationToken,
+                    attempt,
                 )
                 reporter.emit(DownloadStage.VERIFYING, transfer.bytes, attempt, force = true)
                 verifyTransfer(artifact, transfer)
@@ -433,7 +438,9 @@ class SecureModelDownloader(
                 destination.write(buffer, 0, count)
             } catch (error: IOException) {
                 throw downloadError(
-                    classifyWriteFailure(artifact.sizeBytes - total), false, error.javaClass.simpleName,
+                    classifyWriteFailure(artifact.sizeBytes - total),
+                    false,
+                    error.javaClass.simpleName,
                 )
             }
             digest.update(buffer, 0, count)
