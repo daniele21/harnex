@@ -12,8 +12,8 @@ internal data class SelectedPhoto(val jpegBytes: ByteArray, val preview: Bitmap)
 internal object PhotoDecoder {
     fun decode(resolver: ContentResolver, uri: Uri): SelectedPhoto {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        // A bounds-only decode returns null for the bitmap by design.
         resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-            ?: run { /* inJustDecodeBounds intentionally returns null after reading dimensions */ }
         val width = bounds.outWidth
         val height = bounds.outHeight
         require(width in 1..12_000 && height in 1..12_000) { "Photo resolution is unsupported" }
