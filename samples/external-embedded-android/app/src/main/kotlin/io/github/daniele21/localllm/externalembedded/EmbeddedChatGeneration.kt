@@ -71,6 +71,7 @@ internal class EmbeddedChatGeneration {
                 startedAtMs = started,
             )
         } finally {
+            if (terminal.get() == null) handle.cancel()
             activeGeneration.compareAndSet(handle, null)
         }
     }
