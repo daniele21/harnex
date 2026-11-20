@@ -174,6 +174,7 @@ class SecureModelDownloader(
                 if (!error.failure.retryable || attempt == configuration.retryPolicy.maxAttempts) break
                 reporter.emit(DownloadStage.RETRY_WAIT, reporter.lastBytes, attempt, force = true)
                 retryDelay(attempt, cancellationToken)?.let { cancellation ->
+                    if (!preservePartialOnCancel) partial?.delete()
                     reporter.emit(DownloadStage.CANCELLED, reporter.lastBytes, attempt, force = true)
                     return ModelDownloadResult.Cancelled(operationId, cancellation)
                 }
@@ -187,6 +188,7 @@ class SecureModelDownloader(
                 if (attempt == configuration.retryPolicy.maxAttempts) break
                 reporter.emit(DownloadStage.RETRY_WAIT, reporter.lastBytes, attempt, force = true)
                 retryDelay(attempt, cancellationToken)?.let { cancellation ->
+                    if (!preservePartialOnCancel) partial?.delete()
                     reporter.emit(DownloadStage.CANCELLED, reporter.lastBytes, attempt, force = true)
                     return ModelDownloadResult.Cancelled(operationId, cancellation)
                 }
@@ -560,6 +562,9 @@ class SecureModelDownloader(
 
     private companion object {
         const val HTTP_OK = 200
+        const val HTTP_PARTIAL = 206
+        val CONTENT_RANGE = Regex("^bytes ([0-9]+)-([0-9]+)/([0-9]+)$")
+        val concurrentOperations = ConcurrentHashMap<String, DownloadOperationId>()
         const val IDENTITY_ENCODING = "identity"
         const val SHA_256_ALGORITHM = "SHA-256"
         const val DIGEST_PREFIX_LENGTH = 12
