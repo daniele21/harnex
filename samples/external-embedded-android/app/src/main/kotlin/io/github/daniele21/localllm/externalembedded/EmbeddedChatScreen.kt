@@ -57,9 +57,7 @@ internal class EmbeddedChatScreen(
             orientation = LinearLayout.VERTICAL
             setPadding(dp(activity, 16), dp(activity, 14), dp(activity, 16), dp(activity, 8))
         }
-        status = chatLabel(activity, "Model not ready · start local setup", 15f, Color.rgb(38, 54, 79)).apply {
-            contentDescription = "Model status"
-        }
+        status = chatLabel(activity, "Model not ready · start local setup", 15f, Color.rgb(38, 54, 79))
         diagnostics = chatLabel(activity, "No generation yet · temporary history only", 12f, Color.rgb(91, 103, 121))
         setupButton = chatButton(activity, "Prepare local model", true).apply { setOnClickListener { onPrepare() } }
         setup.addView(status)
@@ -143,7 +141,7 @@ internal class EmbeddedChatScreen(
                 activity,
                 "Private by design\n\nThis chat runs with Qwen3.5 2B inside this app. " +
                     "Messages stay in memory only, and only the last six completed turns " +
-                    "are considered for each request. Start by preparing the model.",
+                    "are considered for each request. Ask a question when the model is ready.",
                 15f,
                 Color.rgb(78, 91, 114),
             ).apply { setPadding(dp(activity, 8), dp(activity, 16), dp(activity, 8), dp(activity, 16)) },
@@ -173,8 +171,9 @@ internal class EmbeddedChatScreen(
     }
 
     fun updateBubble(bubble: TextView, text: String) {
+        val nearBottom = scroll.scrollY + scroll.height >= messages.height - dp(activity, 96)
         bubble.text = "HARNEX · QWEN3.5\n$text"
-        scroll.post { if (!activity.isDestroyed) scroll.fullScroll(View.FOCUS_DOWN) }
+        if (nearBottom) scroll.post { if (!activity.isDestroyed) scroll.fullScroll(View.FOCUS_DOWN) }
     }
 
     fun setStatus(message: String) {
@@ -192,6 +191,10 @@ internal class EmbeddedChatScreen(
         setupButton.visibility = if (ready || generating || phase == ChatPhase.STOPPING) View.GONE else View.VISIBLE
         setupButton.isEnabled = phase == ChatPhase.NEEDS_MODEL
         sendButton.isEnabled = ready
+        sendButton.backgroundTintList = ColorStateList.valueOf(
+            if (ready) Color.rgb(37, 91, 191) else Color.rgb(231, 236, 245),
+        )
+        sendButton.setTextColor(if (ready) Color.WHITE else Color.rgb(91, 103, 121))
         prompt.isEnabled = ready
         stopButton.isEnabled = preparing || generating
         resetButton.isEnabled = ready
