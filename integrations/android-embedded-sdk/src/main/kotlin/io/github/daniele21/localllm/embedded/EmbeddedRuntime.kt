@@ -80,6 +80,8 @@ enum class EmbeddedModelReadiness {
  */
 class EmbeddedRuntime private constructor(context: Context, private val resolved: ResolvedUseCase) : AutoCloseable {
     private val closed = AtomicBoolean(false)
+    private val visionProjector = EmbeddedVisionProjector(context)
+    private var visionProjectorVerified = false
     private val modelStore = FileSystemModelStore(File(context.noBackupFilesDir, MODEL_DIRECTORY))
     private val registry =
         object : ModelProfileRegistry {
@@ -94,7 +96,10 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
         RuntimeOrchestrator(
             registry = registry,
             modelStore = modelStore,
-            backend = LlamaCppInferenceBackend(File(context.applicationInfo.nativeLibraryDir)),
+            backend = LlamaCppInferenceBackend(
+                nativeLibraryDir = File(context.applicationInfo.nativeLibraryDir),
+                visionProjectorFile = visionProjector.file,
+            ),
         )
     private val client: LocalLlmClient = InProcessLocalLlmClient(runtime)
 
@@ -197,6 +202,56 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
                 applicationId = applicationId,
                 useCaseId = useCaseId,
                 input = GenerationInput.Messages(messages),
+                overrides = overrides,
+            ),
+            listener,
+        )
+    }
+
+    /** The projector is separate from the text GGUF; status is verified on the worker. */
+    fun visionProjectorReadiness(): Boolean {
+        requireWorkerThread()
+        checkOpen()
+        visionProjectorVerified = visionProjector.verified()
+        return visionProjectorVerified
+    }
+
+    /** Explicit, cancellable projector provisioning using the same verified download policy. */
+    fun prepareVisionProjector(
+        observer: DownloadProgressObserver = DownloadProgressObserver {},
+        cancellationToken: DownloadCancellationToken = NeverCancelled,
+    ) {
+        requireWorkerThread()
+        checkOpen()
+        visionProjector.ensureReady(
+            cancel = DownloadCancellationToken { closed.get() || cancellationToken.isCancelled() },
+            progress = observer,
+        )
+        visionProjectorVerified = visionProjector.verified()
+        check(visionProjectorVerified) { "Vision projector is not verified" }
+    }
+
+    /**
+     * Embedded-only, one-photo/one-question request. The image never enters Binder,
+     * logs, the model catalog, the chat transcript, or a persistent database.
+     */
+    fun generateImage(
+        sessionId: SessionId,
+        question: String,
+        imageBytes: ByteArray,
+        listener: GenerationListener,
+        overrides: GenerationOverrides = GenerationOverrides(),
+    ): GenerationHandle {
+        requireWorkerThread()
+        checkOpen()
+        check(visionProjectorVerified) { "Prepare the verified vision projector before sending an image" }
+        return client.generate(
+            GenerationRequest(
+                requestId = RequestId(UUID.randomUUID().toString()),
+                sessionId = sessionId,
+                applicationId = applicationId,
+                useCaseId = useCaseId,
+                input = GenerationInput.ImageQuestion(question, imageBytes),
                 overrides = overrides,
             ),
             listener,
