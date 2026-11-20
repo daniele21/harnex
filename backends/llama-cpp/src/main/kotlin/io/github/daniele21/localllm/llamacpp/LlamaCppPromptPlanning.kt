@@ -130,6 +130,8 @@ class LlamaCppPromptPlanningBridge(private val nativeApi: NativeLlamaPromptApi =
             } to message.content
         }
 
+        is GenerationInput.ImageQuestion -> listOf("user" to "<__media__>" + question)
+
         is GenerationInput.RawCompletion -> emptyList()
     }
 
