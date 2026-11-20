@@ -53,3 +53,22 @@ internal object PhotoDecoder {
     private const val MAX_SIDE = 512
     private const val MAX_JPEG_BYTES = 2 * 1024 * 1024
 }
+
+/** Private, transient photo lifetime owner; the Activity never persists a content URI. */
+internal class SelectedPhotoState(private val screen: EmbeddedChatScreen) {
+    var selected: SelectedPhoto? = null
+        private set
+
+    fun set(photo: SelectedPhoto) {
+        clear()
+        selected = photo
+        screen.vision.setPhoto(photo.preview)
+    }
+
+    fun clear() {
+        val previous = selected
+        selected = null
+        screen.vision.clearPhoto()
+        previous?.preview?.recycle()
+    }
+}

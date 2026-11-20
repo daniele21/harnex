@@ -53,7 +53,10 @@ internal object ModelTransferTask {
                 ModelTransferOutcome(true, false, "${kind.label} verified and installed")
             }
         } catch (failure: IOException) {
-            ModelTransferOutcome(false, true, "Network interrupted · transfer will resume")
+            ModelTransferOutcome(
+                false, true,
+                "Network interrupted (${failure.javaClass.simpleName}) · transfer will resume",
+            )
         } catch (failure: IllegalStateException) {
             val reason = failure.message.orEmpty()
             val retryable = reason.contains("NETWORK_FAILURE") || reason.contains("DOWNLOAD_HTTP_ERROR") ||

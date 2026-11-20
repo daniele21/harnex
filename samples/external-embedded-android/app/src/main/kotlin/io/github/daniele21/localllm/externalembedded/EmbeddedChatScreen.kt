@@ -40,7 +40,15 @@ internal class EmbeddedChatScreen(
     private lateinit var sendButton: Button
     private lateinit var stopButton: Button
     private lateinit var resetButton: Button
-    val vision = EmbeddedVisionComposer(activity, visionActions) { updateVisionControls() }
+    private val refreshVisionControls: () -> Unit = {
+        if (::sendButton.isInitialized) {
+            val canAct = vision.updateControls(chatPhase, voicePhase)
+            stopButton.isEnabled = chatPhase == ChatPhase.PREPARING ||
+                chatPhase == ChatPhase.GENERATING || vision.preparing
+            sendButton.isEnabled = canAct && (!vision.hasImage || vision.ready)
+        }
+    }
+    val vision = EmbeddedVisionComposer(activity, visionActions) { refreshVisionControls() }
     private lateinit var voiceStatus: TextView
     private lateinit var voicePrepareButton: Button
     private lateinit var voiceButton: Button
@@ -226,14 +234,6 @@ internal class EmbeddedChatScreen(
         if (combined.length > 600) voiceStatusText = "Transcript exceeds 600 characters · shorten before Send"
     }
 
-    private fun updateVisionControls() {
-        if (!::sendButton.isInitialized) return
-        val canAct = vision.updateControls(chatPhase, voicePhase)
-        stopButton.isEnabled = chatPhase == ChatPhase.PREPARING ||
-            chatPhase == ChatPhase.GENERATING || vision.preparing
-        sendButton.isEnabled = canAct && (!vision.hasImage || vision.ready)
-    }
-
     fun updateControls(phase: ChatPhase) {
         chatPhase = phase
         val ready = phase == ChatPhase.READY
@@ -251,7 +251,7 @@ internal class EmbeddedChatScreen(
         stopButton.isEnabled = preparing || generating
         resetButton.isEnabled = ready && !voiceBusy
         updateVoiceControls()
-        updateVisionControls()
+        refreshVisionControls()
     }
 
     private fun updateVoiceControls() {
@@ -282,7 +282,7 @@ internal class EmbeddedChatScreen(
         prompt.isEnabled = canEdit
         sendButton.isEnabled = canEdit
         resetButton.isEnabled = canEdit
-        updateVisionControls()
+        refreshVisionControls()
     }
 }
 

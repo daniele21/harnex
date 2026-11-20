@@ -19,7 +19,7 @@ class EmbeddedSmokeActivity : Activity() {
     private lateinit var controller: EmbeddedChatController
     private lateinit var voice: SpeechInputController
     private val photoWorker = Executors.newSingleThreadExecutor()
-    private var selectedPhoto: SelectedPhoto? = null
+    private lateinit var photos: SelectedPhotoState
     private lateinit var transferUi: ModelTransferUiController
     private val voiceEvents = object : VoiceObserver {
         override fun onVoicePhase(phase: VoicePhase) {
@@ -110,6 +110,7 @@ class EmbeddedSmokeActivity : Activity() {
             ),
         )
         val content = screen.build()
+        photos = SelectedPhotoState(screen)
         setContentView(content)
         content.requestApplyInsets()
         controller = EmbeddedChatController(applicationContext, chatEvents)
@@ -159,11 +160,11 @@ class EmbeddedSmokeActivity : Activity() {
             return
         }
         val message = screen.prompt.text.toString()
-        val photo = selectedPhoto
+        val photo = photos.selected
         val accepted = if (photo == null) controller.send(message) else controller.send(message, photo.jpegBytes)
         if (accepted) {
             screen.prompt.text.clear()
-            removePhoto()
+            photos.clear()
         }
     }
 
@@ -172,7 +173,7 @@ class EmbeddedSmokeActivity : Activity() {
         activeRunId = -1L
         answerBubble = null
         screen.prompt.text.clear()
-        removePhoto()
+        photos.clear()
         screen.resetConversation()
     }
 
@@ -201,8 +202,7 @@ class EmbeddedSmokeActivity : Activity() {
                 decoded.fold(
                     onSuccess = { photo ->
                         removePhoto()
-                        selectedPhoto = photo
-                        screen.vision.setPhoto(photo.preview)
+                        photos.set(photo)
                         screen.vision.setStatus("Photo selected · type a question and tap Send")
                     },
                     onFailure = { failure ->
@@ -211,13 +211,6 @@ class EmbeddedSmokeActivity : Activity() {
                 )
             }
         }
-    }
-
-    private fun removePhoto() {
-        val previous = selectedPhoto
-        selectedPhoto = null
-        if (::screen.isInitialized) screen.vision.clearPhoto()
-        previous?.preview?.recycle()
     }
 
     override fun onStop() {
