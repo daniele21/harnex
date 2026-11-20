@@ -115,6 +115,12 @@ add_subdirectory("${LLAMA_CPP_DIR}" "${CMAKE_BINARY_DIR}/llama.cpp")
 # Use the exact same pinned llama/ggml runtime and context for image inference.
 # mtmd is a separate image-encoder library, not a second language model runtime.
 set(MTMD_VIDEO OFF CACHE BOOL "" FORCE)
+# Upstream defines LLAMA_INSTALL_VERSION inside llama.cpp's own CMake directory,
+# which is not visible to this sibling mtmd add_subdirectory. Supply only this
+# build metadata here; model/native code still comes from the exact pinned tree.
+if(NOT DEFINED LLAMA_INSTALL_VERSION)
+    set(LLAMA_INSTALL_VERSION "0.0.0")
+endif()
 add_subdirectory("${LLAMA_CPP_DIR}/tools/mtmd" "${CMAKE_BINARY_DIR}/llama-mtmd")
 
 add_library(
