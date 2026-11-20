@@ -80,3 +80,23 @@ ARM64 proof.
 packaging and native load, genuine image questions on-device with red/blue and
 real photographs, stream/Stop/background/retry, PSS/RSS/thermal, representative
 a11y and UI full-media journey. Existing chat and Whisper must not regress.
+
+## Screen-lock-safe model distribution in the experimental sample
+
+The sample now delegates long downloads to a JobScheduler user-initiated job
+(Android 14+) or a foreground data-sync service (Android 8–13), with a
+notification, explicit Pause, and content-free persisted status independent of
+the Activity. The canonical SecureModelDownloader retains digest-bound resumable
+partial files; it checks `206 Content-Range` against the known artifact size,
+rehashes the accumulated complete file, and only publishes verified SHA-256
+content. Bad range responses fall back to a full download, never an unsafe
+append. The original embedded `downloadModel` API remains available; the
+Android-managed path explicitly opts into `downloadModelResumable`.
+
+CI requirements: downloader fake-HTTP cases (early EOF, rejected/missing range,
+process-restart resume, checksum mismatch and explicit cancellation), precise
+SDK/consumer API compatibility, Maven-only ARM64 APK packaging, existing chat
+and Whisper UI evidence, and Android lint/static gates. Screen locking on an
+actual OEM phone, process kill, battery policies, network transitions and
+notification behavior remain REAL_ENVIRONMENT evidence. Neither emulator UI
+nor build success demonstrates download survival on a locked physical phone.

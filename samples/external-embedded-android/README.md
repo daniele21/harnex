@@ -65,16 +65,37 @@ Install the smoke APK from a successful Embedded SDK Maven staging run. The app
 is a self-contained, independent Android consumer of the staged
 `io.github.daniele21.localllm:embedded-android` AAR: **no Host/Binder**.
 
-The first **Prepare local model** tap opens the embedded runtime on a worker,
-downloads the exact reviewed Qwen3.5 2B Q4_K_M GGUF if absent, verifies the
-download, installs the artifact in the app's private storage, checks the
-installation, prepares the native engine, and opens one **stateless technical
-session**. Later app launches reuse the verified GGUF; the large model is not
-bundled in the APK.
+The first **Prepare local model** tap schedules an explicit user-initiated,
+Android-owned model transfer. On Android 14+ this uses a network-constrained
+user-initiated data-transfer `JobScheduler` job; on Android 8–13 it uses a
+user-visible `dataSync` foreground service with bounded CPU wake lock. Neither
+transfer depends on this Activity staying open or its controller surviving.
+Both variants use the existing Harnex verified downloader and installer, and
+keep user-visible progress and a Pause action in a notification. Android 13+
+may ask for notification permission.
+
+Large transfers store untrusted, SHA-256-digest-bound partial bytes in the app's
+private no-backup directory. After network loss, process death or system stop,
+the downloader requests only the missing bytes via `Range`. It accepts a
+partial response only with matching `206 Content-Range` and expected total; if
+the server ignores Range or sends an inconsistent response it starts a full
+download without appending to stale content. **The entire file is rehashed
+before verified installation**. Explicit Pause preserves resumable bytes for
+later Prepare; old incomplete files expire after seven days. Android
+force-stop, reboot, OEM restrictions or repeated network failures may still
+require tapping Prepare to resume; normal screen locking must not intentionally
+cancel a transfer.
+
+After the Qwen3.5 2B Q4_K_M GGUF has been verified and installed, the Activity
+prepares the local runtime and opens a stateless technical session. Later
+launches reuse the installed file. Neither GGUF nor the F16 projector is
+bundled into the APK.
 
 After **Ready**, type a question and press **Send**. The demo streams answer
-deltas into a conversational message surface. **Stop** requests cancellation of the in-flight
-download/generation; the chat is reusable only after the engine acknowledges completion.
+deltas into a conversational message surface. **Stop** requests cancellation
+of an active generation; the transfer notification's **Pause** action stops
+downloads without throwing away partial bytes. The chat is reusable only
+after the engine acknowledges generation completion.
 If generation ignores Stop for eight seconds, the demo marks the runtime for reinitialization
 rather than silently treating the old session as ready. A normal unanswered generation has
 a separate 120-second limit. **New chat** erases only the app's temporary conversation,
@@ -101,8 +122,8 @@ A **debug-only UI journey fixture**, shell-restricted and absent from release
 variants, drives the actual chat screen through synthetic streaming, Stop,
 draft recovery, New chat and a completed answer; the emulator retains
 accessibility assertions, screenshot and video. This fixture does not call
-Harnex inference and is explicitly **UI-only**. Physical ARM64 must still
-qualify real GGUF streaming, cancellation, relaunch, multi-turn and resources
+Harnex inference and is explicitly **UI-only**. Physical ARM64 must still qualify real GGUF streaming, screen-lock and
+process-recreation download continuation, cancellation, relaunch, multi-turn and resources
 before SDK handoff/release.
 
 The activity does not intentionally write prompts/responses to Logcat or disk.
@@ -151,8 +172,8 @@ single-image questions to the independent Maven-only embedded chat sample. These
 are *experimental*: native multimodal Android compatibility, memory and cancellation
 are not qualified merely by a green Linux-host spike or APK packaging checks.
 
-1. Tap **Prepare local model** to verify/download the existing Qwen3.5 2B Q4_K_M GGUF.
-2. Tap **Prepare vision** to download the matched F16 projector (~668 MB). The fixed
+1. Tap **Prepare local model** to schedule a screen-lock-safe transfer of the existing Qwen3.5 2B Q4_K_M GGUF; watch the Android notification and reopen the Activity when it reports completion.
+2. Tap **Prepare vision** to schedule the matched F16 projector (~668 MB) through the same user-initiated transfer lifecycle. The fixed
    SHA-256 (`7035e9cb8d7c6a9681d07eef9a364783e86ea4cd73faab2eabb4f43a101830c7`)
    and exact size (668,227,264 bytes) are verified via Harnex SecureModelDownloader.
 3. Tap **Choose photo** and pick a single photo using the platform Photo Picker or
