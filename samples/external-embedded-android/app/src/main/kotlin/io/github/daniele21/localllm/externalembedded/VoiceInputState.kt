@@ -9,7 +9,7 @@ enum class VoicePhase {
     READY,
     RECORDING,
     TRANSCRIBING,
-    CANCELLING,
+    CANCELLING;
 
     val isBusy: Boolean
         get() = this == RECORDING || this == TRANSCRIBING || this == CANCELLING
