@@ -76,6 +76,8 @@ class EmbeddedSmokeActivity : Activity(), ChatObserver {
                 screen.updateBubble(bubble, if (saved) answer else "Not saved · $answer")
             }
             if (retryPrompt != null && screen.prompt.text.isBlank()) screen.prompt.setText(retryPrompt)
+            answerBubble = null
+            activeRunId = -1L
         }
     }
 
