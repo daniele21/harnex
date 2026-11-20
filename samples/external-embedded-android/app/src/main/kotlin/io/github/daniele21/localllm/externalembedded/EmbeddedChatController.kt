@@ -7,6 +7,8 @@ import io.github.daniele21.localllm.contracts.GenerationEvent
 import io.github.daniele21.localllm.contracts.GenerationHandle
 import io.github.daniele21.localllm.contracts.GenerationMetrics
 import io.github.daniele21.localllm.contracts.SessionId
+import io.github.daniele21.localllm.download.DownloadCancellationToken
+import io.github.daniele21.localllm.download.DownloadProgressObserver
 import io.github.daniele21.localllm.embedded.EmbeddedConfiguration
 import io.github.daniele21.localllm.embedded.EmbeddedRuntime
 import java.util.Locale
@@ -36,6 +38,10 @@ interface ChatObserver {
     fun onAnswerDelta(id: Long, answer: String)
 
     fun onTurnFinished(id: Long, answer: String, saved: Boolean, retryPrompt: String?)
+
+    fun onVisionState(ready: Boolean, preparing: Boolean) {}
+
+    fun onVisionStatus(status: String) {}
 }
 
 /**
@@ -48,6 +54,8 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     private val engineCalls = EmbeddedChatGeneration()
     private val cancelled = AtomicBoolean(false)
     private val destroyed = AtomicBoolean(false)
+    private val visionPreparing = AtomicBoolean(false)
+    private val visionReady = AtomicBoolean(false)
     private val activeGeneration = AtomicReference<GenerationHandle?>(null)
     private val state = ChatSessionState()
     private val ids = AtomicLong(0L)
@@ -76,6 +84,8 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 observer.onStatus("Ready · all inference stays on this device")
                 observer.onDiagnostics("Verified model · process PSS ${Debug.getPss() / 1024} MB")
                 observer.onPhase(ChatPhase.READY)
+                visionReady.set(runtime.visionProjectorReadiness())
+                observer.onVisionState(visionReady.get(), false)
             } catch (failure: IllegalStateException) {
                 closeRuntime()
                 state.requirePreparation()
@@ -90,7 +100,57 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         }
     }
 
-    fun send(text: String): Boolean {
+    fun prepareVision() {
+        if (destroyed.get() || state.current() != ChatPhase.READY || !visionPreparing.compareAndSet(false, true)) return
+        cancelled.set(false)
+        observer.onVisionState(visionReady.get(), true)
+        worker.execute {
+            try {
+                val sdk = checkNotNull(engine) { "Prepare Qwen before the image projector" }
+                observer.onVisionStatus("Downloading and verifying vision projector…")
+                var lastUpdate = 0L
+                sdk.prepareVisionProjector(
+                    observer = DownloadProgressObserver { value ->
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - lastUpdate >= 500L) {
+                            lastUpdate = now
+                            observer.onVisionStatus(
+                                "Vision download · ${value.bytesDownloaded / MIB} / ${value.expectedBytes / MIB} MB",
+                            )
+                        }
+                    },
+                    cancellationToken = DownloadCancellationToken { cancelled.get() || destroyed.get() },
+                )
+                visionReady.set(true)
+                observer.onVisionStatus("Vision model verified · choose a photo to ask Qwen")
+            } catch (failure: IllegalStateException) {
+                visionReady.set(false)
+                observer.onVisionStatus("Vision unavailable · ${failure.message ?: "setup failed"}")
+            } catch (failure: IllegalArgumentException) {
+                visionReady.set(false)
+                observer.onVisionStatus("Vision unavailable · invalid projector")
+            } finally {
+                visionPreparing.set(false)
+                observer.onVisionState(visionReady.get(), false)
+            }
+        }
+    }
+
+    fun sendImage(text: String, imageBytes: ByteArray): Boolean {
+        if (!visionReady.get()) {
+            observer.onVisionStatus("Tap Prepare vision first")
+            return false
+        }
+        if (imageBytes.isEmpty() || imageBytes.size > MAX_IMAGE_BYTES) {
+            observer.onVisionStatus("Selected image is invalid or too large")
+            return false
+        }
+        return sendInternal(text, imageBytes.copyOf())
+    }
+
+    fun send(text: String): Boolean = sendInternal(text, null)
+
+    private fun sendInternal(text: String, imageBytes: ByteArray?): Boolean {
         val input = text.trim()
         val validationError = when {
             input.isBlank() -> "Write a message before sending"
@@ -104,17 +164,22 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
             observer.onStatus(validationError)
             return false
         }
-        if (destroyed.get() || state.current() != ChatPhase.READY) return false
+        if (destroyed.get() || visionPreparing.get() || state.current() != ChatPhase.READY) return false
         cancelled.set(false)
         if (!state.beginGeneration()) return false
         val id = ids.incrementAndGet()
-        observer.onTurnStarted(id, input)
+        observer.onTurnStarted(id, if (imageBytes != null) "PHOTO · $input" else input)
         observer.onPhase(ChatPhase.GENERATING)
-        worker.execute { runTurn(id, input) }
+        worker.execute { runTurn(id, input, imageBytes) }
         return true
     }
 
     fun stop() {
+        if (visionPreparing.get()) {
+            cancelled.set(true)
+            observer.onVisionStatus("Cancelling vision model setup…")
+            return
+        }
         if (!state.requestStop()) return
         cancelled.set(true)
         activeGeneration.get()?.cancel()
@@ -125,7 +190,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     fun isGenerating(): Boolean = state.current() == ChatPhase.GENERATING && !destroyed.get()
 
     fun clearConversation(): Boolean {
-        if (state.current() != ChatPhase.READY) return false
+        if (state.current() != ChatPhase.READY || visionPreparing.get()) return false
         worker.execute { history.reset() }
         observer.onStatus("New chat · context cleared")
         observer.onDiagnostics("Temporary conversation reset; verified GGUF retained")
@@ -141,13 +206,13 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         worker.shutdown()
     }
 
-    private fun runTurn(id: Long, input: String) {
+    private fun runTurn(id: Long, input: String, imageBytes: ByteArray?) {
         try {
             check(!cancelled.get() && !destroyed.get()) { "Generation cancelled before start" }
             val sdk = checkNotNull(engine) { "Runtime not prepared" }
             val technicalSession = checkNotNull(session) { "Native session not prepared" }
-            val messages = history.messagesFor(input)
-            observer.onStatus("Generating · ${messages.size} explicit messages")
+            val messages = if (imageBytes == null) history.messagesFor(input) else emptyList()
+            observer.onStatus(if (imageBytes == null) "Generating · ${messages.size} explicit messages" else "Analyzing photo locally…")
             val result = engineCalls.execute(
                 sdk,
                 technicalSession,
@@ -155,10 +220,12 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 cancelled,
                 destroyed,
                 activeGeneration,
+                imageBytes,
+                input,
             ) { text ->
                 if (state.current() == ChatPhase.GENERATING) observer.onAnswerDelta(id, text)
             }
-            completeTurn(id, input, messages.size, result)
+            completeTurn(id, input, messages.size, result, imageBytes != null)
         } catch (failure: GenerationTimeout) {
             closeRuntime()
             state.requirePreparation()
@@ -183,7 +250,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         }
     }
 
-    private fun completeTurn(id: Long, input: String, messageCount: Int, result: ChatGenerationOutcome) {
+    private fun completeTurn(id: Long, input: String, messageCount: Int, result: ChatGenerationOutcome, imageQuestion: Boolean) {
         when (val terminal = result.terminal) {
             is GenerationEvent.Completed -> {
                 val answer = terminal.answerOutput.ifBlank { result.streamedAnswer }
@@ -192,11 +259,14 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 } else if (answer.isBlank()) {
                     observer.onTurnFinished(id, "The model returned no answer", false, input)
                 } else {
-                    history.complete(input, answer)
+                    if (!imageQuestion) history.complete(input, answer)
                     observer.onTurnFinished(id, answer, true, null)
                     val metrics = terminal.metrics
                     val duration = SystemClock.elapsedRealtime() - result.startedAtMs
-                    observer.onStatus("Answer complete · ${history.completedTurns()} temporary turns")
+                    observer.onStatus(
+                        if (imageQuestion) "Image answer complete · photo not saved" else
+                            "Answer complete · ${history.completedTurns()} temporary turns",
+                    )
                     observer.onDiagnostics(formatMetrics(metrics, duration, messageCount))
                 }
             }
@@ -218,6 +288,8 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         val id = session
         session = null
         engine = null
+        visionReady.set(false)
+        observer.onVisionState(false, false)
         if (runtime != null) {
             if (id != null) runCatching { runtime.closeSession(id) }
             runCatching { runtime.close() }
@@ -226,6 +298,8 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
 
     private companion object {
         const val MODEL_ID = "qwen35-2b-q4-k-m"
+        const val MIB = 1024L * 1024L
+        const val MAX_IMAGE_BYTES = 2 * 1024 * 1024
 
         fun formatMetrics(metrics: GenerationMetrics, elapsedMs: Long, messageCount: Int): String {
             val rate = metrics.decodeTokensPerSecond?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
