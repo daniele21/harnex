@@ -95,3 +95,30 @@ jobs:
             build/embedded-sdk-repository/SHA256SUMS
           if-no-files-found: warn
           retention-days: 7
+
+  # Temporary diagnostic formatter for the external demo PR; remove before integration.
+  format-demo-candidate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Format candidate Kotlin sources without committing
+        run: ./gradlew --no-configuration-cache spotlessApply
+      - uses: actions/upload-artifact@v4
+        with:
+          name: formatted-embedded-demo-${{ github.run_id }}
+          path: |
+            samples/external-embedded-android/app/src/main/kotlin/io/github/daniele21/localllm/externalembedded/EmbeddedSmokeActivity.kt
+            samples/external-embedded-android/app/src/main/kotlin/io/github/daniele21/localllm/externalembedded/EphemeralChatHistory.kt
+          if-no-files-found: error
+          retention-days: 1
