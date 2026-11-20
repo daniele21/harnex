@@ -33,9 +33,9 @@ consumer build, and ARM64 JNI packaging checks pass.
    manager. Use the APK only for this test, not as a production application.
 
 Artifacts remain available for **7 days** and GitHub may require signing in.
-The APK does **not** include a GGUF model, a Harnex Host, or a chat app.
-It is debug-signed; it must not be represented as a published SDK or a
-production/Play release.
+The APK includes a **minimal, interactive local chat demo**, but no GGUF model
+or Harnex Host. It is debug-signed and is neither a production chat app nor a
+published SDK/Play release.
 
 ## Chat design references and intentionally narrow adoption
 
