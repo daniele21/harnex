@@ -67,7 +67,7 @@ class EmbeddedSmokeActivity :
 
     override fun onAnswerDelta(id: Long, answer: String) {
         ui {
-            if (activeRunId == id) answerBubble?.let { screen.updateBubble(it, answer) }
+            if (activeRunId == id && controller.isGenerating()) answerBubble?.let { screen.updateBubble(it, answer) }
         }
     }
 
