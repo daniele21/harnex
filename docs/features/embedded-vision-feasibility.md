@@ -1,6 +1,6 @@
 # Embedded Qwen3.5 2B image-question feasibility spike
 
-Status: experimental / unqualified (not integrated product support)
+Status: experimental Android implementation branch; not integrated product support
 Updated: 2026-11-20
 Owners: Harnex backend for future multimodal execution; `samples/external-embedded-android` for chat UX only.
 
@@ -46,16 +46,37 @@ Steps:
 5. Ask each color question through the upstream `libmtmd` path, requiring successful execution and the expected answer. Retain only SHA identities, verdict and the explicit `LINUX_HOST_ONLY` scope; inputs and process logs remain ephemeral.
 6. Remove downloaded model/projector bytes and test images on all completion paths. No personal images or prompts are included.
 
-**Automated result:** PENDING until the exact workflow run is inspected. Compilation success alone is not an inference PASS. A wrong color, crash, timeout, missing projector or hash mismatch is a real spike failure requiring diagnosis, not an excuse to bypass the test.
+**Automated result:** Linux-host PASS for both synthetic fixtures at commit \`a4c75d6414609eb2b6ec487350b0915681a1cb2d\`; Android qualification remains separate. Compilation success alone is not an inference PASS. A wrong color, crash, timeout, missing projector or hash mismatch is a real spike failure requiring diagnosis, not an excuse to bypass the test.
 
 ## Evidence and follow-on acceptance
 
-- **Linux-host model/projector functional compatibility:** PENDING. A passing CI job can establish this narrow claim only.
+- **Linux-host model/projector functional compatibility:** PASS on exact pinned input hashes and reference question fixtures (GitHub Actions run 44811518006). This result establishes this narrow host claim only.
 - **Android arm64 CMake/JNI/ELF packaging:** NOT TESTED. Must compile `libmtmd` via the existing backend owner and verify a single compatible native stack.
 - **Android Qwen+vision real-GGUF inference on representative phone:** NOT TESTED. Required before claiming on-device support.
 - **Memory/lifecycle/thermal:** NOT TESTED. Measure warm/cold model+projector residency, peak RSS/PSS, first-answer time, 10 sequential image questions, cancellation during image encoding/generation, backgrounding and recovery. Fail without leaking transient image buffers.
-- **Supported API and UX:** NOT IMPLEMENTED. After the above succeeds, shape a small image-aware neutral request at the canonical contract/runtime owner (with compatibility and direct-consumer evidence), then add one-photo selection and preview in the independent chat sample. Keep voice and text-only paths unchanged.
+- **Supported API and UX:** IMPLEMENTED EXPERIMENTALLY IN BRANCH. Requires Maven-only APK build, UI E2E and physical native qualification before integration; Shared Binder media remains intentionally unsupported. After the above succeeds, shape a small image-aware neutral request at the canonical contract/runtime owner (with compatibility and direct-consumer evidence), then add one-photo selection and preview in the independent chat sample. Keep voice and text-only paths unchanged.
 
 **Acceptance**: exact image+text request produces image-grounded answers locally, typed errors/cancellation and no content logs, while existing text chat remains equivalent. **Outcome**: an Android app can ask about a selected picture without implementing a second LLM engine. **Product impact**: representative user image-question task success and perceived latency, measured without content telemetry.
 
 The current experiment is an ITERATION / STRONG-risk native feasibility step. Native Android automated qualification is REMOTE_AUTOMATED when toolchain unavailable locally; true phone memory/thermal and actual-model behavior are REAL_ENVIRONMENT. No merge/release readiness claim follows from the host smoke.
+
+## Android prototype scope (unmerged)
+
+Experimental branch `agent/qwen35-2b-vision-android-apk` extends the canonical
+backend using `libmtmd` from the same llama.cpp pin, and retains Harnex
+`RuntimeOrchestrator` scheduling, a single backend model/context, text streaming
+and its cancellation registry. The embedded SDK alone owns the fixed
+SHA-256-verified F16 projector artifact. `GenerationInput.ImageQuestion`
+is a bounded byte payload and the Binder mapping explicitly rejects it.
+
+The independent sample now offers one-photo selection, bounded image decoding
+and a transient preview with explicit Send and Remove. The photo is not stored
+with history. The current vision projector is loaded for a request and released
+before decode to reduce simultaneous residency. Image preprocessing can be a
+blocking native operation, so responsiveness and cancellation require real
+ARM64 proof.
+
+**Build and physical acceptance pending:** exact Maven-only APK build, JNI ELF
+packaging and native load, genuine image questions on-device with red/blue and
+real photographs, stream/Stop/background/retry, PSS/RSS/thermal, representative
+a11y and UI full-media journey. Existing chat and Whisper must not regress.
