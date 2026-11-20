@@ -76,15 +76,29 @@ internal class EmbeddedChatGeneration {
     }
 
     private fun awaitTerminal(finished: CountDownLatch, handle: GenerationHandle, cancelled: AtomicBoolean, destroying: AtomicBoolean) {
-        var checks = 0
+        val startedAt = SystemClock.elapsedRealtime()
+        var cancellationStartedAt: Long? = null
         while (!finished.await(250, TimeUnit.MILLISECONDS)) {
-            if (cancelled.get() || destroying.get()) handle.cancel()
-            if (++checks >= 480) {
+            val now = SystemClock.elapsedRealtime()
+            if (cancelled.get() || destroying.get()) {
+                handle.cancel()
+                val firstCancel = cancellationStartedAt ?: now.also { cancellationStartedAt = it }
+                if (now - firstCancel >= CANCELLATION_TIMEOUT_MS) {
+                    throw GenerationTimeout("Cancellation not acknowledged; reinitialize the model")
+                }
+            } else if (now - startedAt >= GENERATION_TIMEOUT_MS) {
                 handle.cancel()
                 throw GenerationTimeout()
             }
         }
     }
+
+    private companion object {
+        const val GENERATION_TIMEOUT_MS = 120_000L
+        const val CANCELLATION_TIMEOUT_MS = 8_000L
+    }
 }
 
-internal class GenerationTimeout : IllegalStateException("Generation timed out; reinitialize model before retrying")
+internal class GenerationTimeout(
+    message: String = "Generation timed out; reinitialize model before retrying",
+) : IllegalStateException(message)
