@@ -120,6 +120,9 @@ class SingleDecodeScheduler(
 
     fun cancelAll(): Int = works.keys.count { requestId -> cancel(requestId) }
 
+    /** Prevent synchronous preflight reentry from a generation callback on this worker. */
+    fun isWorkerThread(): Boolean = Thread.currentThread() === worker
+
     fun snapshot(): DecodeSchedulerSnapshot = DecodeSchedulerSnapshot(
         activeRequest = activeRequest.get(),
         queuedRequests = queue.count { !it.cancelled.get() },

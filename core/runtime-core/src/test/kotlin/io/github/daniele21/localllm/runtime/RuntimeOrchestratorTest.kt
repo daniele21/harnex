@@ -111,6 +111,27 @@ class RuntimeOrchestratorTest {
     }
 
     @Test
+    fun `preview called inside stream callback fails immediately instead of deadlocking decode`() {
+        val fixture = RuntimeFixture()
+        val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)
+        val observed = Collections.synchronizedList(mutableListOf<PromptPreviewResult>())
+        val terminal = CountDownLatch(1)
+        fixture.runtime.generate(
+            fixture.request("outer", session),
+            GenerationListener { event ->
+                if (event is GenerationEvent.TextDelta && observed.isEmpty()) {
+                    observed += fixture.runtime.previewGeneration(fixture.request("inner", session))
+                }
+                if (event is GenerationEvent.Completed || event is GenerationEvent.Failed) terminal.countDown()
+            },
+        )
+        assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        assertTrue(observed.single() is PromptPreviewResult.Rejected)
+        assertEquals(1, fixture.backend.generationCalls)
+        fixture.close()
+    }
+
+    @Test
     fun `preview uses the same token and context plan without allocating native context`() {
         val fixture = RuntimeFixture()
         val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)

@@ -148,6 +148,9 @@ class RuntimeOrchestrator(
      */
     @Suppress("ReturnCount", "CyclomaticComplexMethod")
     fun previewGeneration(request: GenerationRequest): PromptPreviewResult {
+        if (scheduler.isWorkerThread()) {
+            return PromptPreviewResult.Rejected(LocalLlmError.Configuration("Cannot preview from a generation callback"))
+        }
         if (closed.get()) return PromptPreviewResult.Rejected(LocalLlmError.Configuration("Runtime is closed"))
         val session = sessions[request.sessionId]
             ?: return PromptPreviewResult.Rejected(LocalLlmError.Configuration("Unknown technical session"))
