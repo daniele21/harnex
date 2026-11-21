@@ -37,6 +37,23 @@ GLOBAL_GRADLE_PREFIXES = ("build-logic/", "gradle/")
 PUBLIC_CONTRACT_PREFIXES = ("core/contracts/", "evaluation/contracts/", "observability/contracts/")
 CROSS_BOUNDARY_PREFIXES = ("core/backend-spi/", "core/runtime-core/", "models/model-store/", "transports/android-binder-contract/", "transports/android-binder-client/", "integrations/android-service-host/", "apps/shared-runtime-client-consumer-fixture/", "evaluation/room-store/", "observability/room-store/")
 
+EMBEDDED_SAMPLE = "samples/external-embedded-android/"
+EMBEDDED_SOURCE_PREFIXES = tuple(
+    f"{EMBEDDED_SAMPLE}app/src/{source_set}/{language}/"
+    for source_set in ("main", "debug", "test") for language in ("kotlin", "java")
+)
+EMBEDDED_INPUT_PREFIXES = (
+    EMBEDDED_SAMPLE, "integrations/android-embedded-sdk/", "core/contracts/", "core/backend-spi/",
+    "core/runtime-core/", "models/model-profile/", "models/model-store/", "models/model-catalog/",
+    "models/model-download/", "models/model-install/", "observability/contracts/",
+    "transports/in-process/", "backends/llama-cpp/",
+)
+EMBEDDED_INPUT_FILES = {
+    ".github/workflows/embedded-sdk.yml", "scripts/verify-embedded-sdk-publication.sh",
+    "scripts/verify-embedded-smoke-ui-emulator.sh",
+}
+
+
 @dataclass(frozen=True)
 class ValidationScope:
     profile: str
@@ -47,6 +64,7 @@ class ValidationScope:
     reason: str
     risk_dimensions: tuple[str, ...] = ()
     required_gates: tuple[str, ...] = ()
+    embedded_consumer: bool = False
 
 
 def normalize_path(path: str) -> str: return str(PurePosixPath(path.strip().replace("\\", "/")))
@@ -82,8 +100,29 @@ def affected_gradle_modules(paths: Sequence[str]) -> tuple[str, ...]:
 
 def classify_paths(paths: Iterable[str], *, force_all: bool=False) -> ValidationScope:
     normalized=tuple(sorted({normalize_path(path) for path in paths if path.strip()}))
-    if force_all: return ValidationScope("full", True, True, True, ("all",), "explicit full validation", ("release_or_global",))
-    if not normalized: return ValidationScope("full", True, True, True, ("all",), "no reliable diff available", ("unknown_scope",))
+    if force_all:
+        return ValidationScope("full", True, True, True, ("all",), "explicit full validation",
+                               ("release_or_global",), embedded_consumer=True)
+    if not normalized:
+        return ValidationScope("full", True, True, True, ("all",), "no reliable diff available",
+                               ("unknown_scope",), embedded_consumer=True)
+    embedded = any(
+        path in EMBEDDED_INPUT_FILES or path.startswith(EMBEDDED_INPUT_PREFIXES)
+        or path in NATIVE_PATHS or is_global_build_path(path) or path in FORCE_ALL_PATHS
+        for path in normalized
+    )
+    # Only managed Kotlin/Java sources belong exclusively to the standalone Gradle build.
+    # JNI, manifests, build logic and unfamiliar paths retain conservative routing.
+    root_paths = tuple(path for path in normalized if not (
+        path.startswith(EMBEDDED_SOURCE_PREFIXES) and path.endswith((".kt", ".java"))
+    ))
+    if len(root_paths) < len(normalized) and all(is_docs_only(path) for path in root_paths):
+        return ValidationScope("scoped", False, False, False, (), "external embedded Android sample sources",
+                               ("embedded_consumer",), embedded_consumer=True)
+    return replace(classify_root_paths(root_paths), embedded_consumer=embedded)
+
+
+def classify_root_paths(normalized: Sequence[str]) -> ValidationScope:
     if any(path in FORCE_ALL_PATHS for path in normalized): return ValidationScope("full", True, True, True, ("all",), "validation selector or workflow changed", ("validation_routing",))
     if any(is_global_build_path(path) for path in normalized): return ValidationScope("full", True, True, True, ("all",), "global Gradle/toolchain or dependency inventory changed", ("global_build",))
     implementation=tuple(path for path in normalized if not is_docs_only(path))
@@ -108,7 +147,8 @@ def classify_paths(paths: Iterable[str], *, force_all: bool=False) -> Validation
 
 def gates_for(scope: ValidationScope, stage: str) -> tuple[str, ...]:
     gates=["repository-guards"]
-    if scope.profile == "lean": return tuple(gates)
+    if scope.embedded_consumer and stage != "iteration": gates.append("embedded-consumer")
+    if not scope.android: return tuple(gates)
     gates += ["format-static", "affected-compile", "affected-unit"]
     if scope.profile in {"strong", "full"}: gates.append("direct-contract")
     if stage in {"integration", "release"}: gates += ["affected-lint", "direct-consumer-compile"]
@@ -124,7 +164,7 @@ def apply_requested_profile(scope: ValidationScope, requested: str) -> Validatio
     if requested == "auto": return scope
     if requested not in {"strong", "full"}: raise ValueError("requested profile must be auto, strong or full")
     if PROFILE_RANK[requested] <= PROFILE_RANK[scope.profile]: return scope
-    if requested == "full": return replace(scope, profile="full", android=True, native=True, packaging=True, modules=("all",), reason=f"explicit full override; auto={scope.profile}: {scope.reason}", risk_dimensions=tuple(dict.fromkeys(scope.risk_dimensions + ("explicit_full",))))
+    if requested == "full": return replace(scope, profile="full", android=True, native=True, packaging=True, embedded_consumer=True, modules=("all",), reason=f"explicit full override; auto={scope.profile}: {scope.reason}", risk_dimensions=tuple(dict.fromkeys(scope.risk_dimensions + ("explicit_full",))))
     return replace(scope, profile="strong", reason=f"explicit strong override; auto={scope.profile}: {scope.reason}", risk_dimensions=tuple(dict.fromkeys(scope.risk_dimensions + ("explicit_strong",))))
 
 
@@ -138,7 +178,7 @@ def ensure_commit_available(sha: str) -> None:
     if present.returncode != 0: subprocess.run(["git", "fetch", "--no-tags", "--depth=1", "origin", sha], check=True)
 def git_changed_files(base_sha: str, head_sha: str) -> Sequence[str]:
     ensure_commit_available(base_sha); ensure_commit_available(head_sha)
-    result=subprocess.run(["git", "diff", "--name-only", "--diff-filter=ACMRD", base_sha, head_sha], check=True, capture_output=True, text=True)
+    result=subprocess.run(["git", "diff", "--name-only", "--no-renames", "--diff-filter=ACMRDT", base_sha, head_sha], check=True, capture_output=True, text=True)
     return tuple(line for line in result.stdout.splitlines() if line.strip())
 def write_outputs(path: str, scope: ValidationScope, stage: str) -> None:
     with open(path, "a", encoding="utf-8") as output:

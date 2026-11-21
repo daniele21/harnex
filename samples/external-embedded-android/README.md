@@ -20,7 +20,7 @@ dependency. An AAR/compile success is **not** evidence of real GGUF generation.
 
 ## Download the smoke APK without building
 
-The [Embedded SDK Maven staging GitHub Actions workflow](https://github.com/daniele21/harnex/actions/workflows/embedded-sdk.yml)
+The embedded consumer job in [Validate](https://github.com/daniele21/harnex/actions/workflows/validate.yml)
 uploads an installable **debug-only** APK when its Maven publication, external
 consumer build, and ARM64 JNI packaging checks pass.
 
