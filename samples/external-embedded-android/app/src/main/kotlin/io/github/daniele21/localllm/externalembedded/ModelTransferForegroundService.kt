@@ -13,6 +13,7 @@ class ModelTransferForegroundService : Service() {
     private val cancelled = AtomicBoolean(false)
     private val running = AtomicBoolean(false)
     private var wakeLock: PowerManager.WakeLock? = null
+
     @Volatile
     private var currentKind: ModelTransferKind? = null
 
@@ -33,7 +34,9 @@ class ModelTransferForegroundService : Service() {
         if (!running.compareAndSet(false, true)) {
             if (currentKind != kind) {
                 ModelTransferState.update(
-                    this, kind, ModelTransferPhase.FAILED,
+                    this,
+                    kind,
+                    ModelTransferPhase.FAILED,
                     "Another model download is already running · finish it first",
                 )
             }
@@ -71,7 +74,11 @@ class ModelTransferForegroundService : Service() {
                     ModelTransferState.update(
                         this,
                         kind,
-                        if (result.success) ModelTransferPhase.COMPLETED else ModelTransferPhase.FAILED,
+                        when {
+                            result.success -> ModelTransferPhase.COMPLETED
+                            cancelled.get() -> ModelTransferPhase.PAUSED
+                            else -> ModelTransferPhase.FAILED
+                        },
                         result.status,
                     )
                 }

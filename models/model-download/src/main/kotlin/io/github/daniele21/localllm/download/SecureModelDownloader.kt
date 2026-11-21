@@ -218,14 +218,24 @@ class SecureModelDownloader(
     ): TransferResult {
         val existingBytes = partial.length()
         reporter.emit(DownloadStage.CONNECTING, existingBytes, attempt, force = true)
+        if (existingBytes == artifact.sizeBytes) {
+            // A process may die after all bytes were flushed but before verified publication.
+            // Verify those complete bytes locally rather than discarding a valid multi-GB model.
+            val digest = MessageDigest.getInstance(SHA_256_ALGORITHM)
+            rehashExistingPartial(partial, digest, ByteArray(configuration.bufferSizeBytes), cancellationToken)
+            return TransferResult(existingBytes, digest.digest().toHex())
+        }
         var opened = openFollowingRedirects(initialSource, cancellationToken, existingBytes)
         val offset = if (existingBytes > 0 && validPartialResponse(opened.response, artifact, existingBytes)) {
             existingBytes
         } else {
             0L
         }
-        if (existingBytes > 0 && opened.response.statusCode != HTTP_OK && offset == 0L) {
-            // Invalid/missing Content-Range (including 416): use a full request, never append.
+        if (existingBytes > 0 && offset == 0L &&
+            (opened.response.statusCode == HTTP_PARTIAL || opened.response.statusCode == HTTP_RANGE_NOT_SATISFIABLE)
+        ) {
+            // Only an invalid range reply merits dropping the partial. A transient 503/429
+            // must preserve the already downloaded bytes for the next retry.
             opened.response.close()
             if (!partial.delete()) throw IOException("Unable to reset unsafe resume")
             opened = openFollowingRedirects(initialSource, cancellationToken, 0L)
@@ -619,6 +629,7 @@ class SecureModelDownloader(
     private companion object {
         const val HTTP_OK = 200
         const val HTTP_PARTIAL = 206
+        const val HTTP_RANGE_NOT_SATISFIABLE = 416
         const val RESUME_RETENTION_MS = 7L * 86_400_000L
         val CONTENT_RANGE = Regex("^bytes ([0-9]+)-([0-9]+)/([0-9]+)$")
         val concurrentOperations = ConcurrentHashMap<String, DownloadOperationId>()

@@ -14,8 +14,10 @@ internal object ModelTransferScheduler {
         val anotherActive = ModelTransferKind.values().any { other ->
             other != kind && (
                 ModelTransferState.snapshot(app, other).phase == ModelTransferPhase.RUNNING ||
-                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
-                        app.getSystemService(JobScheduler::class.java).getPendingJob(other.jobId) != null)
+                    (
+                        Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                            app.getSystemService(JobScheduler::class.java).getPendingJob(other.jobId) != null
+                        )
                 )
         }
         if (anotherActive) {

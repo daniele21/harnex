@@ -336,6 +336,61 @@ class SecureModelDownloaderTest {
     }
 
     @Test
+    fun retryableHttpErrorAfterPartialKeepsBytesForTheNextRangeAttempt() {
+        val root = temporaryDirectory()
+        val bytes = ByteArray(110_000) { (it % 199).toByte() }
+        downloader(
+            root,
+            QueueTransport(InterruptedResponse(bytes)),
+            retryPolicy = DownloadRetryPolicy(maxAttempts = 1, initialDelayMs = 0, maxDelayMs = 0),
+        ).download(ModelDownloadRequest(artifact(bytes)))
+        val resume = File(root, "partials").listFiles().orEmpty().single { it.name.endsWith(".resume") }
+        val offset = resume.length()
+        val transport = QueueTransport(
+            FakeResponse(503),
+            FakeResponse(
+                206,
+                bytes.copyOfRange(offset.toInt(), bytes.size),
+                contentRange = "bytes $offset-${bytes.size - 1}/${bytes.size}",
+            ),
+        )
+        val result = downloader(root, transport).download(ModelDownloadRequest(artifact(bytes)))
+        assertTrue(result is ModelDownloadResult.Success)
+        assertEquals(listOf(offset, offset), transport.requests.map { it.rangeStartBytes })
+    }
+
+    @Test
+    fun fullyReceivedPartialIsVerifiedWithoutAnotherHttpRequest() {
+        val root = temporaryDirectory()
+        val bytes = ByteArray(85_000) { (it % 157).toByte() }
+        val digest = sha256(bytes)
+        val partials = File(root, "partials").apply { mkdirs() }
+        val resumable = File(partials, "resume-$digest.resume").apply { writeBytes(bytes) }
+        val transport = QueueTransport()
+        val result = downloader(root, transport).download(ModelDownloadRequest(artifact(bytes)))
+        assertTrue(result is ModelDownloadResult.Success)
+        assertTrue(transport.requests.isEmpty())
+        assertFalse(resumable.exists())
+        val handle = (result as ModelDownloadResult.Success).handle
+        assertArrayEquals(bytes, downloader(root, QueueTransport()).resolveVerifiedFile(handle)!!.readBytes())
+    }
+
+    @Test
+    fun corruptFullyReceivedPartialIsRejectedWithoutAnHttpRequest() {
+        val root = temporaryDirectory()
+        val bytes = ByteArray(85_000) { (it % 157).toByte() }
+        val digest = sha256(bytes)
+        val partials = File(root, "partials").apply { mkdirs() }
+        val resumable = File(partials, "resume-$digest.resume").apply { writeBytes(bytes.copyOf().also { it[0] = 0 }) }
+        val transport = QueueTransport()
+        val result = downloader(root, transport).download(ModelDownloadRequest(artifact(bytes)))
+        assertFailure(result, DownloadFailureCode.SHA256_MISMATCH)
+        assertTrue(transport.requests.isEmpty())
+        assertFalse(resumable.exists())
+        assertTrue(File(root, "verified").listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
     fun existingCorruptPartialNeverPublishesAndIsPurgedOnDigestFailure() {
         val root = temporaryDirectory()
         val bytes = ByteArray(100_000) { (it % 107).toByte() }
