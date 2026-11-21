@@ -22,12 +22,33 @@ umask 077
 }
 command -v java >/dev/null || { echo "Java/JDK 17 is required on the Mac runner" >&2; exit 2; }
 command -v python3 >/dev/null || { echo "Python 3 is required on the Mac runner" >&2; exit 2; }
-sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
-[[ -d "$sdk/platforms/android-36" && -d "$sdk/build-tools/36.0.0" ]] || {
-  echo "Android SDK 36 platform/build-tools not installed at $sdk" >&2
+# The Homebrew Android command-line tools layout is already supported by
+# Harnex's other macOS build helpers. Do not assume Android Studio's SDK path.
+sdk=""
+for candidate in \
+  "${ANDROID_HOME:-}" \
+  "${ANDROID_SDK_ROOT:-}" \
+  "$HOME/Library/Android/sdk" \
+  "/opt/homebrew/share/android-commandlinetools" \
+  "$HOME/Library/Caches/harnex-local-ci/android-sdk"; do
+  [[ -n "$candidate" ]] || continue
+  if [[ -d "$candidate/platforms/android-36" && -d "$candidate/build-tools/36.0.0" ]]; then
+    sdk="$candidate"
+    break
+  fi
+done
+if [[ -z "$sdk" ]]; then
+  echo "::error::Android SDK 36 / build-tools 36.0.0 unavailable in supported Mac locations" >&2
+  echo "Expected: Android Studio SDK, Homebrew commandlinetools SDK, or project-scoped Harnex cache" >&2
+  if command -v sdkmanager >/dev/null 2>&1; then
+    echo "sdkmanager is available: provision SDK components with the operator's accepted licenses" >&2
+  else
+    echo "sdkmanager is not on PATH: first install Android command-line tools" >&2
+  fi
   exit 2
-}
+fi
 export ANDROID_HOME="$sdk" ANDROID_SDK_ROOT="$sdk"
+echo "Using Android SDK: $ANDROID_HOME"
 
 # Keep Gradle's reusable cache project-scoped; all job-temporary data is deleted.
 export GRADLE_USER_HOME="$HOME/Library/Caches/harnex-local-ci/gradle"
