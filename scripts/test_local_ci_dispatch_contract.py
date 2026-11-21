@@ -42,6 +42,9 @@ class LocalMacDispatchContract(unittest.TestCase):
             "git clean -ffdX -- .",
             "trap cleanup EXIT",
             "NOT FULL Android/release validation",
+            "/opt/homebrew/share/android-commandlinetools",
+            "Android SDK 36 / build-tools 36.0.0 unavailable",
+            "sdkmanager is available",
         ):
             with self.subTest(value=value):
                 self.assertIn(value, self.script)
