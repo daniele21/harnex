@@ -12,6 +12,7 @@ import io.github.daniele21.localllm.contracts.GenerationListener
 import io.github.daniele21.localllm.contracts.GenerationOverrides
 import io.github.daniele21.localllm.contracts.GenerationRequest
 import io.github.daniele21.localllm.contracts.LocalLlmClient
+import io.github.daniele21.localllm.contracts.PromptPreviewResult
 import io.github.daniele21.localllm.contracts.PrepareResult
 import io.github.daniele21.localllm.contracts.RequestId
 import io.github.daniele21.localllm.contracts.SessionId
@@ -236,6 +237,26 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
                 overrides = overrides,
             ),
             listener,
+        )
+    }
+
+    /** Uses the same model-aware token/template policy as generation, without decode. */
+    fun preview(
+        sessionId: SessionId,
+        messages: List<ConversationMessage>,
+        overrides: GenerationOverrides = GenerationOverrides(),
+    ): PromptPreviewResult {
+        requireWorkerThread()
+        checkOpen()
+        return runtime.previewGeneration(
+            GenerationRequest(
+                requestId = RequestId(UUID.randomUUID().toString()),
+                sessionId = sessionId,
+                applicationId = applicationId,
+                useCaseId = useCaseId,
+                input = GenerationInput.Messages(messages),
+                overrides = overrides,
+            ),
         )
     }
 
