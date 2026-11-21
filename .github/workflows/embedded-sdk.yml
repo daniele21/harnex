@@ -40,14 +40,39 @@ jobs:
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
+      - name: Identify embedded SDK inputs
+        id: inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          digest=$({
+            git ls-tree -r HEAD | awk -F '\t' '$2 !~ /^samples\/external-embedded-android\//'
+            printf '%s\n' "$ImageOS" "$ImageVersion" "$RUNNER_ARCH"
+            java -version 2>&1
+          } | sha256sum | cut -d' ' -f1)
+          echo "key=embedded-maven-v1-$digest" >> "$GITHUB_OUTPUT"
+          echo "EMBEDDED_SDK_VERSION=0.1.0-ci.$digest" >> "$GITHUB_ENV"
+      - name: Restore verified embedded repository
+        if: github.base_ref == 'dev' || github.ref == 'refs/heads/dev'
+        id: staging
+        uses: actions/cache/restore@v5
+        with:
+          path: build/embedded-sdk-repository
+          key: ${{ steps.inputs.outputs.key }}
       - name: Verify staged publications
         env:
-          EMBEDDED_SDK_VERSION: 0.1.0-ci.${{ github.run_id }}
+          REUSE_EMBEDDED_REPOSITORY: ${{ steps.staging.outputs.cache-hit }}
         run: bash scripts/verify-embedded-sdk-publication.sh
       - name: Install Android API 35 UI emulator
         run: sdkmanager 'emulator' 'system-images;android-35;google_apis;x86_64'
       - name: Verify external smoke controls are visible on Android
         run: bash scripts/verify-embedded-smoke-ui-emulator.sh
+      - name: Save verified dev staging
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev' && steps.staging.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: build/embedded-sdk-repository
+          key: ${{ steps.inputs.outputs.key }}
       - name: Retain UI control evidence
         if: always()
         uses: actions/upload-artifact@v4
