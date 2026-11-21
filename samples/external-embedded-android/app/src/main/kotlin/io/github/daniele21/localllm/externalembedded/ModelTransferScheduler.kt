@@ -1,9 +1,12 @@
 package io.github.daniele21.localllm.externalembedded
 
+import android.Manifest
 import android.app.job.JobInfo
 import android.app.job.JobScheduler
 import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
+import android.util.Log
 import android.content.Intent
 import android.os.Build
 
@@ -51,10 +54,31 @@ internal object ModelTransferScheduler {
         } catch (_: IllegalArgumentException) {
             ModelTransferState.update(app, kind, ModelTransferPhase.FAILED, "Unsupported download request · retry")
             false
-        } catch (_: SecurityException) {
-            ModelTransferState.update(app, kind, ModelTransferPhase.FAILED, "Android blocked the download · check app settings")
+        } catch (error: SecurityException) {
+            val uidt = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+            val uidtPermissionGranted = !uidt ||
+                app.checkSelfPermission(Manifest.permission.RUN_USER_INITIATED_JOBS) == PackageManager.PERMISSION_GRANTED
+            // This is a normal manifest permission, not a notification or battery setting.
+            // Keep system details in debug Logcat; never log model contents or user prompts.
+            Log.w(
+                "HarnexTransfer",
+                "Android denied ${kind.name} scheduling; user-initiated-job permission granted=$uidtPermissionGranted",
+                error,
+            )
+            ModelTransferState.update(
+                app,
+                kind,
+                ModelTransferPhase.FAILED,
+                downloadSecurityStatus(uidt, uidtPermissionGranted),
+            )
             false
         }
+    }
+
+    internal fun downloadSecurityStatus(uidt: Boolean, uidtPermissionGranted: Boolean): String = when {
+        uidt && !uidtPermissionGranted -> "Installed APK lacks download permission · install updated APK"
+        uidt -> "Android rejected background download · collect device diagnostics"
+        else -> "Android rejected foreground download · collect device diagnostics"
     }
 
     fun reconcile(context: Context, kind: ModelTransferKind) {
