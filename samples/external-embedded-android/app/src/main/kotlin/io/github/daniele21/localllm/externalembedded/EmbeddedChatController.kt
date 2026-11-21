@@ -6,7 +6,6 @@ import android.os.SystemClock
 import io.github.daniele21.localllm.contracts.GenerationEvent
 import io.github.daniele21.localllm.contracts.GenerationHandle
 import io.github.daniele21.localllm.contracts.GenerationMetrics
-import io.github.daniele21.localllm.contracts.SessionId
 import io.github.daniele21.localllm.embedded.EmbeddedConfiguration
 import io.github.daniele21.localllm.embedded.EmbeddedRuntime
 import java.util.Locale
@@ -52,9 +51,8 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     private val state = ChatSessionState()
     private val ids = AtomicLong(0L)
 
-    // Both values are accessed only by the serial worker.
+    // Accessed only by the serial worker.
     private var engine: EmbeddedRuntime? = null
-    private var session: SessionId? = null
 
     fun prepare() {
         if (!state.beginPreparation()) return
@@ -70,7 +68,6 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 observer.onStatus("Preparing GGUF…")
                 val prepared = runtime.prepare()
                 check(prepared.ready) { "Model preparation failed: ${prepared.detail}" }
-                session = runtime.openSession()
                 check(!cancelled.get() && !destroyed.get()) { "Preparation cancelled" }
                 check(state.completePreparation()) { "Preparation cancelled" }
                 observer.onStatus("Ready · all inference stays on this device")
@@ -145,18 +142,28 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         try {
             check(!cancelled.get() && !destroyed.get()) { "Generation cancelled before start" }
             val sdk = checkNotNull(engine) { "Runtime not prepared" }
-            val technicalSession = checkNotNull(session) { "Native session not prepared" }
             val messages = history.messagesFor(input)
             observer.onStatus("Generating · ${messages.size} explicit messages")
-            val result = engineCalls.execute(
-                sdk,
-                technicalSession,
-                messages,
-                cancelled,
-                destroyed,
-                activeGeneration,
-            ) { text ->
-                if (state.current() == ChatPhase.GENERATING) observer.onAnswerDelta(id, text)
+            val technicalSession = sdk.openSession()
+            val result = try {
+                engineCalls.execute(
+                    sdk,
+                    technicalSession,
+                    messages,
+                    cancelled,
+                    destroyed,
+                    activeGeneration,
+                ) { text ->
+                    if (state.current() == ChatPhase.GENERATING) observer.onAnswerDelta(id, text)
+                }
+            } finally {
+                try {
+                    sdk.closeSession(technicalSession)
+                } catch (failure: Exception) {
+                    state.requirePreparation()
+                    closeRuntime()
+                    throw IllegalStateException("Session cleanup failed; prepare the model again", failure)
+                }
             }
             completeTurn(id, input, messages.size, result)
         } catch (failure: GenerationTimeout) {
@@ -215,13 +222,8 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
 
     private fun closeRuntime() {
         val runtime = engine
-        val id = session
-        session = null
         engine = null
-        if (runtime != null) {
-            if (id != null) runCatching { runtime.closeSession(id) }
-            runCatching { runtime.close() }
-        }
+        if (runtime != null) runCatching { runtime.close() }
     }
 
     private companion object {
