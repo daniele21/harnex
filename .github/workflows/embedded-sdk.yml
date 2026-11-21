@@ -70,6 +70,16 @@ jobs:
         env:
           EMBEDDED_SDK_VERSION: 0.1.0-ci.${{ github.run_id }}
         run: bash scripts/verify-embedded-sdk-publication.sh
+      # The Maven-only ARM64 APK has already passed packaging + manifest checks.
+      # Keep it downloadable even when later emulator UI checks fail, without
+      # changing those checks or claiming the workflow is green.
+      - name: Upload installable Android embedded smoke APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: harnex-embedded-smoke-apk-${{ github.run_id }}
+          path: build/embedded-smoke-apk/
+          if-no-files-found: error
+          retention-days: 7
       - name: Install Android API 35 UI emulator
         run: sdkmanager 'emulator' 'system-images;android-35;google_apis;x86_64'
       - name: Verify external smoke controls are visible on Android
@@ -81,13 +91,6 @@ jobs:
           name: embedded-smoke-ui-evidence-${{ github.run_id }}
           path: build/embedded-smoke-ui-evidence/
           if-no-files-found: warn
-          retention-days: 7
-      - name: Upload installable Android embedded smoke APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: harnex-embedded-smoke-apk-${{ github.run_id }}
-          path: build/embedded-smoke-apk/
-          if-no-files-found: error
           retention-days: 7
       - name: Retain publication evidence
         if: always()
