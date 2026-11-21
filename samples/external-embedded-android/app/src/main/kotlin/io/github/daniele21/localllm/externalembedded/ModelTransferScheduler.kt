@@ -5,10 +5,10 @@ import android.app.job.JobInfo
 import android.app.job.JobScheduler
 import android.content.ComponentName
 import android.content.Context
-import android.content.pm.PackageManager
-import android.util.Log
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 
 /** Schedules user-visible long downloads only as a result of an Activity button press. */
 internal object ModelTransferScheduler {
