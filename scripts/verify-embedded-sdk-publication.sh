@@ -71,6 +71,20 @@ if [[ -f samples/external-embedded-android/settings.gradle.kts ]]; then
   fi
 
   apk="samples/external-embedded-android/app/build/outputs/apk/debug/app-debug.apk"
+  # Android 14+ JobScheduler network constraints require ACCESS_NETWORK_STATE.
+  # Verify the final APK (not just the source manifest) before shipping a smoke build.
+  aapt="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/build-tools/36.0.0/aapt"
+  if [[ ! -x "$aapt" ]]; then
+    echo "Android build-tools aapt is unavailable for APK permission verification" >&2
+    exit 1
+  fi
+  apk_permissions="$("$aapt" dump permissions "$apk")"
+  for permission in android.permission.INTERNET android.permission.ACCESS_NETWORK_STATE android.permission.RUN_USER_INITIATED_JOBS; do
+    if ! grep -Fq "name='$permission'" <<< "$apk_permissions"; then
+      echo "External APK is missing required Android permission: $permission" >&2
+      exit 1
+    fi
+  done
   if ! unzip -Z1 "$apk" | grep -Fx 'lib/arm64-v8a/liblocal_llm_jni.so'; then
     echo "External APK is missing the transitive native backend" >&2
     exit 1
