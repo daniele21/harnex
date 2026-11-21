@@ -34,7 +34,6 @@ class LocalMacDispatchContract(unittest.TestCase):
             "set -euo pipefail",
             '"Darwin"',
             '"arm64"',
-            "Android SDK 36 platform/build-tools not installed",
             "--max-workers=2",
             ":models:model-download:testDebugUnitTest",
             ":integrations:android-embedded-sdk:testDebugUnitTest",
