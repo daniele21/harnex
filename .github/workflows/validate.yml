@@ -358,10 +358,20 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  embedded:
+    needs: scope
+    if: >-
+      needs.scope.result == 'success' &&
+      !(github.event_name == 'pull_request' && github.event.pull_request.draft) &&
+      contains(needs.scope.outputs.required_gates, 'embedded-consumer')
+    uses: ./.github/workflows/embedded-sdk.yml
+    with:
+      source_sha: ${{ needs.scope.outputs.source_head_sha }}
+
   validation:
     name: Repository validation
     if: always()
-    needs: [scope, reuse, native, android]
+    needs: [scope, reuse, native, android, embedded]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -372,6 +382,8 @@ jobs:
           PR_DRAFT: ${{ github.event.pull_request.draft }}
           REUSED: ${{ needs.reuse.outputs.reused }}
           REUSE_KIND: ${{ needs.reuse.outputs.reuse_kind }}
+          EMBEDDED_REQUIRED: ${{ contains(needs.scope.outputs.required_gates, 'embedded-consumer') }}
+          EMBEDDED_RESULT: ${{ needs.embedded.result }}
           NATIVE_RESULT: ${{ needs.native.result }}
           ANDROID_RESULT: ${{ needs.android.result }}
           STAGE: ${{ needs.scope.outputs.stage }}
@@ -385,6 +397,10 @@ jobs:
             echo "Draft iteration checks passed; Android/native integration gates intentionally deferred until ready_for_review."
             exit 0
           fi
+          if [[ "$EMBEDDED_REQUIRED" == "true" && "$EMBEDDED_RESULT" != "success" ]]; then
+            echo "Required external embedded consumer validation: $EMBEDDED_RESULT" >&2
+            exit 1
+          fi
           if [[ "$REUSED" == "true" ]]; then
             echo "Equivalent validation evidence reused: $REUSE_KIND"
             exit 0
@@ -397,7 +413,7 @@ jobs:
   evidence:
     name: Publish reusable validation evidence
     needs: [scope, reuse, validation]
-    if: always() && needs.validation.result == 'success' && needs.reuse.outputs.reused != 'true' && needs.scope.outputs.stage != 'iteration'
+    if: always() && needs.validation.result == 'success' && needs.reuse.outputs.reused != 'true' && needs.scope.outputs.stage != 'iteration' && !(github.event_name == 'pull_request' && github.event.pull_request.draft)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -411,6 +427,7 @@ jobs:
           PROFILE: ${{ needs.scope.outputs.profile }}
           RISKS: ${{ needs.scope.outputs.risk_dimensions }}
           GATES: ${{ needs.scope.outputs.required_gates }}
+          E2E_ENV: ${{ contains(needs.scope.outputs.required_gates, 'embedded-consumer') && 'embedded-smoke-api35-x86_64' || 'none' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -418,7 +435,7 @@ jobs:
           gate_key=$(printf '%s' "$GATES" | sha256sum | cut -c1-16)
           exact_name="validation-evidence-${HEAD_SHA}-${BASE_SHA}-${PROFILE}-${gate_key}"
           tree_name="validation-tree-evidence-${SOURCE_TREE}-${BASE_SHA}-${PROFILE}-${gate_key}"
-          printf '{"head":"%s","source_tree":"%s","target_base":"%s","stage":"%s","profile":"%s","risk_dimensions":"%s","required_gates":"%s","e2e_environment":"none","run_id":"%s"}\n' "$HEAD_SHA" "$SOURCE_TREE" "$BASE_SHA" "$STAGE" "$PROFILE" "$RISKS" "$GATES" "$GITHUB_RUN_ID" > validation-evidence/evidence.json
+          printf '{"head":"%s","source_tree":"%s","target_base":"%s","stage":"%s","profile":"%s","risk_dimensions":"%s","required_gates":"%s","e2e_environment":"%s","run_id":"%s"}\n' "$HEAD_SHA" "$SOURCE_TREE" "$BASE_SHA" "$STAGE" "$PROFILE" "$RISKS" "$GATES" "$E2E_ENV" "$GITHUB_RUN_ID" > validation-evidence/evidence.json
           echo "EXACT_ARTIFACT_NAME=$exact_name" >> "$GITHUB_ENV"
           echo "TREE_ARTIFACT_NAME=$tree_name" >> "$GITHUB_ENV"
       - name: Upload exact-head validation evidence

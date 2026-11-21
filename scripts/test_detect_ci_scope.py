@@ -4,11 +4,47 @@ from __future__ import annotations
 
 import unittest
 
-from detect_ci_scope import adjust_for_event, apply_requested_profile, classify_paths
+from detect_ci_scope import adjust_for_event, apply_requested_profile, classify_paths, gates_for
 from test_development_velocity import DevelopmentVelocityTest  # imported for unittest discovery
 
 
 class DetectCiScopeTest(unittest.TestCase):
+    sample_controller = (
+        "samples/external-embedded-android/app/src/main/kotlin/"
+        "io/github/daniele21/localllm/externalembedded/EmbeddedChatController.kt"
+    )
+
+    def test_external_sample_routes_to_its_own_consumer_proof(self) -> None:
+        scope = classify_paths([self.sample_controller, "docs/architecture.md"])
+        self.assertEqual(scope.profile, "scoped")
+        self.assertFalse(scope.android)
+        self.assertEqual(scope.modules, ())
+        self.assertEqual(gates_for(scope, "integration"), ("repository-guards", "embedded-consumer"))
+        self.assertNotIn("embedded-consumer", gates_for(scope, "iteration"))
+
+    def test_sample_does_not_weaken_other_changed_owners(self) -> None:
+        for path, profile, modules in (
+            ("core/runtime-core/src/main/kotlin/Runtime.kt", "strong", ("core:runtime-core",)),
+            ("core/contracts/src/main/kotlin/Request.kt", "strong", ("all",)),
+            ("gradle/libs.versions.toml", "full", ("all",)),
+            ("future-module/unknown.sh", "full", ("all",)),
+            ("samples/external-embedded-android/app/src/main/cpp/whisper.cpp", "full", ("all",)),
+            ("samples/external-embedded-android/app/src/main/AndroidManifest.xml", "full", ("all",)),
+        ):
+            with self.subTest(path=path):
+                scope = classify_paths([self.sample_controller, path])
+                self.assertEqual(scope.profile, profile)
+                self.assertEqual(scope.modules, modules)
+                self.assertTrue(scope.android)
+                self.assertIn("embedded-consumer", gates_for(scope, "integration"))
+                if path.endswith(".cpp"):
+                    self.assertIn("native-host", gates_for(scope, "integration"))
+
+    def test_embedded_proof_on_full_override_but_not_unrelated_module(self) -> None:
+        scope = classify_paths(["evaluation/evaluators/src/test/kotlin/EvaluatorTest.kt"])
+        self.assertNotIn("embedded-consumer", gates_for(scope, "integration"))
+        self.assertIn("embedded-consumer", gates_for(apply_requested_profile(scope, "full"), "integration"))
+
     def test_documentation_only_is_lean_and_skips_expensive_jobs(self) -> None:
         scope = classify_paths(["README.md", "docs/architecture.md"])
         self.assertEqual(scope.profile, "lean")

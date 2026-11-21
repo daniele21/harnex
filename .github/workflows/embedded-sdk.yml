@@ -1,35 +1,11 @@
 name: Embedded SDK Maven staging
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
-    paths:
-      - '.github/workflows/embedded-sdk.yml'
-      - 'build.gradle.kts'
-      - 'core/contracts/**'
-      - 'core/backend-spi/**'
-      - 'core/runtime-core/**'
-      - 'models/model-profile/**'
-      - 'models/model-store/**'
-      - 'models/model-catalog/**'
-      - 'models/model-download/**'
-      - 'models/model-install/**'
-      - 'observability/contracts/**'
-      - 'transports/in-process/**'
-      - 'backends/llama-cpp/**'
-      - 'integrations/android-embedded-sdk/**'
-      - 'samples/external-embedded-android/**'
-      - 'scripts/verify-embedded-sdk-publication.sh'
-      - 'scripts/verify-embedded-smoke-ui-emulator.sh'
-  push:
-    branches: [dev]
-    paths:
-      - '.github/workflows/embedded-sdk.yml'
-      - 'build.gradle.kts'
-      - 'integrations/android-embedded-sdk/**'
-      - 'samples/external-embedded-android/**'
-      - 'scripts/verify-embedded-sdk-publication.sh'
-      - 'scripts/verify-embedded-smoke-ui-emulator.sh'
+  workflow_call:
+    inputs:
+      source_sha:
+        type: string
+        required: true
   workflow_dispatch:
 
 permissions:
@@ -43,15 +19,13 @@ concurrency:
 jobs:
   stage-maven:
     name: Stage all embedded SDK AARs
-    # Drafts are iterative work, never mergeable; publishing a Maven-only APK
-    # is mandatory again on ready_for_review, explicit dispatch, or dev push.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - name: Checkout native sources
         uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.source_sha || github.sha }}
           submodules: recursive
       - name: Set up JDK 17
         uses: actions/setup-java@v5

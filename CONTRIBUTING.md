@@ -90,6 +90,12 @@ This is **stage gating, not test reduction**. Neither local tooling shortages
 nor a draft check can substitute for the exact candidate/base evidence
 required to merge into `dev` or promote `main`.
 
+Kotlin/Java changes confined to the standalone embedded sample select its Maven
+consumer build, unit tests, ARM64 APK packaging checks and API 35 UI smoke.
+Find these under the candidate’s Validate run. Mixed changes also validate the
+affected Harnex modules. Native, build and unfamiliar sample inputs keep their
+conservative validation profile.
+
 ## Start with the owning boundary
 
 Harnex intentionally keeps one canonical owner for model/runtime/Binder state. Extend that owner instead of creating parallel policy or state.
