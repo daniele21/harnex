@@ -14,9 +14,28 @@ mkdir -p "$evidence"
 tmp="$(mktemp -d)"
 export ANDROID_AVD_HOME="$tmp/avd" ANDROID_USER_HOME="$tmp/user"
 mkdir -p "$ANDROID_AVD_HOME" "$ANDROID_USER_HOME"
+# The emulator may still be writing AVD files after the console accepts "kill".
+# Wait for the owned process to exit before removing its private workspace.
+emulator_pid=""
 cleanup() {
   adb -s emulator-5554 emu kill >/dev/null 2>&1 || true
-  rm -rf "$tmp"
+  if [[ -n "$emulator_pid" ]]; then
+    for _ in $(seq 1 50); do
+      kill -0 "$emulator_pid" 2>/dev/null || break
+      sleep 0.2
+    done
+    if kill -0 "$emulator_pid" 2>/dev/null; then
+      kill "$emulator_pid" 2>/dev/null || true
+    fi
+    wait "$emulator_pid" 2>/dev/null || true
+  fi
+  # AVD subprocesses can briefly recreate paths after their parent exits.
+  for _ in $(seq 1 10); do
+    rm -rf "$tmp" && [[ ! -e "$tmp" ]] && return 0
+    sleep 0.2
+  done
+  echo "Unable to clean isolated Android emulator workspace: $tmp" >&2
+  return 1
 }
 trap cleanup EXIT
 
@@ -46,6 +65,7 @@ nohup "$ANDROID_HOME/emulator/emulator" \
   -avd embedded-smoke-ui-api35 -port 5554 -no-window -no-audio \
   -no-boot-anim -gpu swiftshader_indirect -no-snapshot \
   > "$evidence/emulator.log" 2>&1 &
+emulator_pid=$!
 timeout 180 adb -s emulator-5554 wait-for-device
 for attempt in $(seq 1 90); do
   if [[ "$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == "1" ]]; then
