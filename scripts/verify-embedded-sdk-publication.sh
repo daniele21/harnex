@@ -6,7 +6,6 @@ cd "$ROOT_DIR"
 
 SDK_VERSION="${EMBEDDED_SDK_VERSION:-0.1.0-SNAPSHOT}"
 REPOSITORY="$ROOT_DIR/build/embedded-sdk-repository"
-rm -rf "$REPOSITORY"
 
 modules=(
   core:backend-spi
@@ -28,10 +27,16 @@ tasks=(":core:contracts:publishReleasePublicationToEmbeddedSdkRepository")
 for module in "${modules[@]}"; do
   tasks+=(":${module}:publishEmbeddedReleasePublicationToEmbeddedSdkRepository")
 done
-./gradlew --no-configuration-cache \
-  -PconsumerSdkVersion="$SDK_VERSION" \
-  -PembeddedSdkVersion="$SDK_VERSION" \
-  "${tasks[@]}"
+if [[ "${REUSE_EMBEDDED_REPOSITORY:-false}" == true ]] &&
+    (cd "$REPOSITORY" && sha256sum --check --status SHA256SUMS); then
+  echo "Using verified staged SDK $SDK_VERSION"
+else
+  rm -rf "$REPOSITORY"
+  ./gradlew --no-configuration-cache \
+    -PconsumerSdkVersion="$SDK_VERSION" \
+    -PembeddedSdkVersion="$SDK_VERSION" \
+    "${tasks[@]}"
+fi
 
 for module in core:contracts "${modules[@]}"; do
   artifact="${module##*:}"
@@ -140,7 +145,7 @@ manifest="$REPOSITORY/build-manifest.txt"
 } > "$manifest"
 
 checksum="$REPOSITORY/SHA256SUMS"
-find "$REPOSITORY/io/github/daniele21/localllm" -type f \
+(cd "$REPOSITORY" && find io/github/daniele21/localllm -type f \
   \( -name '*.aar' -o -name '*.pom' -o -name '*.module' \) -print0 |
   sort -z |
   while IFS= read -r -d '' artifact; do
@@ -149,6 +154,6 @@ find "$REPOSITORY/io/github/daniele21/localllm" -type f \
     else
       shasum -a 256 "$artifact"
     fi
-  done > "$checksum"
+  done) > "$checksum"
 
 echo "Embedded Android publication staged: $SDK_VERSION (${#modules[@]} runtime modules)"
