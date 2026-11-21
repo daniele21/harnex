@@ -26,4 +26,3 @@ This bounded HLM workstream coordinates only the additional **pre-generation adm
 **Integration seam:** LocalMaind sends `GenerationInput.Messages` with explicitly selected complete turns; Harnex performs real template/token/context admission, sampler validation, streaming/cancellation. If preview design cannot provide a truthful result independent of generation, return a typed non-admission/unsupported result and let the app fail closed; **do not** turn Kotlin heuristics into an SDK token estimate.
 
 **Validation:** HLM-00 docs/tests = LEAN/SCOPED; HLM-10 public contract/lifecycle = STRONG with external Maven-only fixture, exact candidate/base; release = FULL, plus blocking REAL_ENVIRONMENT where applicable. Toolchain absence is REMOTE_AUTOMATED; no manual deterministic gate. `dev` remains integration line; no stable/main promotion or release claim by creating this plan.
-
