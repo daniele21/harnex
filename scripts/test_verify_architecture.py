@@ -95,6 +95,47 @@ class ArchitectureFitnessTest(unittest.TestCase):
                 )
             self.assertEqual(find_dependency_violations(root, (source for source, _ in valid_edges)), ())
 
+    def test_embedded_sdk_is_the_only_integration_composition_root(self) -> None:
+        permitted = (
+            "core:contracts",
+            "core:runtime-core",
+            "models:model-profile",
+            "models:model-store",
+            "models:model-catalog",
+            "models:model-download",
+            "models:model-install",
+            "backends:llama-cpp",
+            "transports:in-process",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            embedded = root / "integrations" / "android-embedded-sdk"
+            service = root / "integrations" / "android-service-host"
+            embedded.mkdir(parents=True)
+            service.mkdir(parents=True)
+            (embedded / "build.gradle.kts").write_text(
+                "dependencies {\\n"
+                + "\\n".join(f'implementation(project(":{target}"))' for target in permitted)
+                + "\\n}\\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(find_dependency_violations(root, ("integrations:android-embedded-sdk",)), ())
+            (service / "build.gradle.kts").write_text(
+                'dependencies { implementation(project(":core:runtime-core")) }\\n', encoding="utf-8"
+            )
+            self.assertEqual(
+                find_dependency_violations(root, ("integrations:android-service-host",)),
+                (DependencyViolation("integrations:android-service-host", "core:runtime-core", "implementation"),),
+            )
+            (embedded / "build.gradle.kts").write_text(
+                'dependencies { implementation(project(":transports:android-binder-client")) }\\n',
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                find_dependency_violations(root, ("integrations:android-embedded-sdk",)),
+                (DependencyViolation("integrations:android-embedded-sdk", "transports:android-binder-client", "implementation"),),
+            )
+
     def test_production_rule_does_not_scan_test_only_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

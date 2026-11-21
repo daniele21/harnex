@@ -19,6 +19,9 @@ internal fun HostControlPlaneState.isAuthorizedConsumerForAnyUseCase(application
 internal fun HostControlPlaneState.isAuthorizedOmbraConsumer(applicationId: ApplicationId): Boolean =
     isAuthorizedConsumerForAnyUseCase(applicationId, setOf(HarnessSharedRuntimeBindings.ombraUseCaseId))
 
+internal fun HostControlPlaneState.isAuthorizedGenericTextConsumer(applicationId: ApplicationId): Boolean =
+    isAuthorizedConsumerForAnyUseCase(applicationId, setOf(HarnessSharedRuntimeBindings.genericTextUseCaseId))
+
 internal fun HostControlPlaneState.isAuthorizedAuraConsumer(applicationId: ApplicationId): Boolean =
     applicationId == HarnessSharedRuntimeBindings.auraApplicationId &&
         isAuthorizedConsumerForAnyUseCase(applicationId, HarnessSharedRuntimeBindings.auraUseCases)

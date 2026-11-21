@@ -19,6 +19,7 @@ import io.github.daniele21.localllm.contracts.UseCaseReadiness
 import io.github.daniele21.localllm.transport.binder.contract.ConsumerResultParcel
 import io.github.daniele21.localllm.transport.binder.contract.toConsumerWire
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -134,6 +135,53 @@ class BinderConsumerLifecycleAdapterTest {
             ConsumerCapabilityErrorCode.CAPABILITY_INCOMPATIBLE,
             (result as ConsumerCapabilityResult.Rejected).code,
         )
+    }
+
+    @Test(timeout = 2_000)
+    fun `blank endpoint invalidation reason immediately rejects in-flight capabilities`() {
+        val invalidations = FakeEndpointInvalidations()
+        val service = FakeSharedRuntimeRemoteService()
+        val endpoint = RegisteredSharedRuntimeEndpoint(service, token, connectionEpoch = 22L)
+        service.consumerCapabilitiesHandler = { _, _ -> invalidations.invalidate(22L, "") }
+        val adapter = BinderConsumerLifecycleAdapter(
+            endpointProvider = { endpoint },
+            endpointInvalidations = invalidations,
+            blockingCallGuard = BlockingCallGuard {},
+            operationTimeoutMillis = 60_000L,
+            correlationIds = deterministicIds(),
+        )
+
+        val result = adapter.capabilities(useCaseId)
+
+        assertTrue(result is ConsumerCapabilityResult.Rejected)
+        assertEquals(
+            ConsumerCapabilityErrorCode.CAPABILITY_INCOMPATIBLE,
+            (result as ConsumerCapabilityResult.Rejected).code,
+        )
+    }
+
+    @Test
+    fun `stale endpoint does not dispatch capabilities to the old host`() {
+        val service = FakeSharedRuntimeRemoteService()
+        var invoked = false
+        service.consumerCapabilitiesHandler = { _, _ -> invoked = true }
+        val endpoint = RegisteredSharedRuntimeEndpoint(service, token, connectionEpoch = 41L)
+        var reads = 0
+        val adapter = BinderConsumerLifecycleAdapter(
+            endpointProvider = { if (++reads == 1) endpoint else null },
+            blockingCallGuard = BlockingCallGuard {},
+            operationTimeoutMillis = 100L,
+            correlationIds = deterministicIds(),
+        )
+
+        val result = adapter.capabilities(useCaseId)
+
+        assertTrue(result is ConsumerCapabilityResult.Rejected)
+        assertEquals(
+            ConsumerCapabilityErrorCode.CAPABILITY_INCOMPATIBLE,
+            (result as ConsumerCapabilityResult.Rejected).code,
+        )
+        assertFalse(invoked)
     }
 
     private fun adapter(service: FakeSharedRuntimeRemoteService): BinderConsumerLifecycleAdapter = BinderConsumerLifecycleAdapter(

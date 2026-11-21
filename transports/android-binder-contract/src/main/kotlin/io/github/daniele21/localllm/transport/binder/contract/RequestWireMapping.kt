@@ -44,6 +44,9 @@ fun GenerationRequestParcel.toCore(
 private fun GenerationInput.toWire(): GenerationInputParcel = when (this) {
     is GenerationInput.Text -> GenerationInputParcel(WireTags.INPUT_TEXT, value, emptyList())
 
+    is GenerationInput.ImageQuestion ->
+        throw IllegalArgumentException("Image input is supported only by the embedded runtime; Binder does not transport media")
+
     is GenerationInput.RawCompletion -> GenerationInputParcel(WireTags.INPUT_RAW_COMPLETION, value, emptyList())
 
     is GenerationInput.Messages ->

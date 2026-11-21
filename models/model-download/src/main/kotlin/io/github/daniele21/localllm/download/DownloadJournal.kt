@@ -59,7 +59,11 @@ internal class DownloadJournal(private val operationsDirectory: File, private va
     private fun recoverRecord(file: File): InterruptedDownload? {
         val record = runCatching { read(file) }.getOrNull()
         if (record != null) {
-            safePartial(record.partialFileName)?.delete()
+            // New digest-bound .resume files are retained for byte-range continuation.
+            // Legacy per-operation .part files still follow their purge-on-recovery contract.
+            if (!record.partialFileName.endsWith(".resume")) {
+                safePartial(record.partialFileName)?.delete()
+            }
         }
         file.delete()
         return record?.let {

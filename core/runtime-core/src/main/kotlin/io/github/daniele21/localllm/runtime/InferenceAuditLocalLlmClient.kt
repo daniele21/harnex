@@ -342,6 +342,8 @@ private class AuditGenerationListener(
 private fun GenerationInput.toAuditInput(): InferenceAuditInput = when (this) {
     is GenerationInput.Text -> InferenceAuditInput.Text(value)
 
+    is GenerationInput.ImageQuestion -> InferenceAuditInput.Text(question)
+
     is GenerationInput.RawCompletion -> InferenceAuditInput.RawCompletion(value)
 
     is GenerationInput.Messages -> InferenceAuditInput.Messages(

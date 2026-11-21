@@ -3,7 +3,6 @@ package io.github.daniele21.localllm.runtime
 import io.github.daniele21.localllm.contracts.ApplicationId
 import io.github.daniele21.localllm.contracts.ConfigurationErrorCode
 import io.github.daniele21.localllm.contracts.ContextPolicy
-import io.github.daniele21.localllm.contracts.EffectiveGenerationMetadata
 import io.github.daniele21.localllm.contracts.GenerationContentType
 import io.github.daniele21.localllm.contracts.GenerationEvent
 import io.github.daniele21.localllm.contracts.GenerationHandle
@@ -17,8 +16,6 @@ import io.github.daniele21.localllm.contracts.PrepareResult
 import io.github.daniele21.localllm.contracts.RequestId
 import io.github.daniele21.localllm.contracts.RuntimeSnapshot
 import io.github.daniele21.localllm.contracts.RuntimeState
-import io.github.daniele21.localllm.contracts.SeedPolicy
-import io.github.daniele21.localllm.contracts.SeedPolicyType
 import io.github.daniele21.localllm.contracts.SessionId
 import io.github.daniele21.localllm.contracts.SessionKind
 import io.github.daniele21.localllm.contracts.SessionOptions
@@ -59,6 +56,7 @@ class RuntimeOrchestrator(
     private val memoryAwareContextPlanner: MemoryAwareContextPlanner? = null,
     private val memoryAwareModelLoadPlanner: MemoryAwareModelLoadPlanner? = null,
     private val memoryAwareEvaluationBatchContextPlanner: MemoryAwareEvaluationBatchContextPlanner? = null,
+    private val enforceMemoryAdmission: Boolean = true,
     seedSource: SeedSource = SeedSource { ThreadLocalRandom.current().nextLong(MAX_SEED_EXCLUSIVE) },
     telemetryRepository: TelemetryRepository = NoOpTelemetryRepository,
     epochClock: EpochClock = EpochClock { System.currentTimeMillis() },
@@ -71,7 +69,7 @@ class RuntimeOrchestrator(
     private val sessions = ConcurrentHashMap<SessionId, SessionDescriptor>()
     private val closed = AtomicBoolean(false)
     private val deferredModelUnload = AtomicBoolean(false)
-    private val runtimeTelemetry = RuntimeTelemetry(telemetryRepository, epochClock)
+    private val runtimeTelemetry = RuntimeTelemetry(telemetryRepository, epochClock, enforceMemoryAdmission)
     private val generationPlanning = GenerationPlanningPolicy(seedSource)
     private val modelResidency = ModelResidencyLifecycle()
 
@@ -364,231 +362,206 @@ class RuntimeOrchestrator(
         }
     }
 
-    @Suppress("CyclomaticComplexMethod", "LongMethod")
     private fun executeGeneration(request: GenerationRequest, session: SessionDescriptor, lifecycle: RequestLifecycle, enqueuedAt: Long) {
         if (lifecycle.isCancellationRequested()) {
-            val cancellation = LocalLlmError.Cancelled()
-            runtimeTelemetry.failed(request.requestId, cancellation)
-            lifecycle.finish(GenerationEvent.Failed(request.requestId, cancellation))
+            failGeneration(request.requestId, lifecycle, LocalLlmError.Cancelled())
             return
         }
 
         try {
-            val executionStartedAt = clock.nowNanos()
-            val resolved = generationPlanning.resolveConfiguration(request, session.resolved)
-            lifecycle.ensureNotCancelled()
-            val planningStartedAt = clock.nowNanos()
-            val promptPlan = backend.planPrompt(
-                session.model,
-                BackendPromptPlanningRequest(
-                    input = request.input,
-                    systemPrompt = resolved.systemPrompt,
-                    chatTemplatePolicy = session.resolved.model.chatTemplatePolicy,
-                    thinkingMode = resolved.thinkingMode,
-                ),
-            )
-            lifecycle.ensureNotCancelled()
-            val promptPlanningMs = nanosToMillis(clock.nowNanos() - planningStartedAt)
-            val capabilities = backend.modelCapabilities(session.model)
-            lifecycle.ensureNotCancelled()
-            generationPlanning.validateOutputConstraint(
-                outputConstraint = request.outputConstraint,
-                resolved = resolved,
-                resolvedUseCase = session.resolved,
-                capabilities = capabilities,
-            )
-            val contextPlan = generationPlanning.planContextSize(
-                resolvedUseCase = session.resolved,
-                options = session.options,
-                promptTokenCount = promptPlan.tokenCount,
-                maxOutputTokens = resolved.maxOutputTokens,
-                capabilities = capabilities,
-                preference = resolved.contextPreference,
-            )
-            lifecycle.ensureNotCancelled()
-            val contextResult = materializeContext(session, contextPlan)
-            if (lifecycle.isCancellationRequested()) {
-                releaseCancelledMaterialization(session, contextResult)
-                throw GenerationCancelledException()
-            }
-            val executionEvidence = backend.executionEvidence(contextResult.context)
-            val effective = EffectiveGenerationMetadata(
-                preset = resolved.preset?.ref,
-                temperature = resolved.temperature,
-                topP = resolved.topP,
-                topK = resolved.topK,
-                minP = resolved.minP,
-                presencePenalty = resolved.presencePenalty,
-                repeatPenalty = resolved.repeatPenalty,
-                repeatLastN = resolved.repeatLastN,
-                requestedSeedPolicy = resolved.seedPolicy.toType(),
-                effectiveSeed = resolved.effectiveSeed,
-                maxOutputTokens = resolved.maxOutputTokens,
-                contextSize = contextResult.context.contextSize,
-                promptTokenCount = promptPlan.tokenCount,
-                chatTemplateId = promptPlan.chatTemplateId,
-                chatTemplateSource = promptPlan.chatTemplateSource,
-                systemPromptVersion = resolved.systemPromptVersion,
-                thinkingMode = resolved.thinkingMode,
-            )
-            effectivePromptSink.publish(request.requestId, promptPlan.prompt)
-            runtimeTelemetry.prepared(
-                requestId = request.requestId,
-                configuration = effective,
-                promptPlanningMs = promptPlanningMs,
-                contextCreationMs = contextResult.creationMs,
-                executionEvidence = executionEvidence,
-            )
-            lifecycle.emit(GenerationEvent.Prepared(request.requestId, session.model.digest, effective))
+            val prepared = prepareGeneration(request, session, lifecycle)
+            val streamed = streamGeneration(request, session, lifecycle, prepared)
+            finalizeGeneration(request, session, lifecycle, enqueuedAt, prepared, streamed)
+        } catch (error: Throwable) {
+            failGeneration(request.requestId, lifecycle, generationFailure(error, lifecycle))
+        } finally {
+            settleRuntimeStateAfterExecution()
+        }
+    }
 
-            val firstTokenAt = AtomicLong(0)
-            val firstAnswerAt = AtomicLong(0)
-            val rawOutput = StringBuilder()
-            val reasoningOutput = StringBuilder()
-            val answerOutput = StringBuilder()
-            val streamProtocol = (resolved.preset?.generation ?: session.resolved.useCase.generationDefaults).reasoningStreamProtocol
-            val reasoningControl = generationPlanning.resolveReasoningControl(
+    private fun prepareGeneration(
+        request: GenerationRequest,
+        session: SessionDescriptor,
+        lifecycle: RequestLifecycle,
+    ): PreparedGeneration {
+        val executionStartedAt = clock.nowNanos()
+        val resolved = generationPlanning.resolveConfiguration(request, session.resolved)
+        lifecycle.ensureNotCancelled()
+        val planningStartedAt = clock.nowNanos()
+        val promptPlan = backend.planPrompt(
+            session.model,
+            BackendPromptPlanningRequest(
+                input = request.input,
+                systemPrompt = resolved.systemPrompt,
+                chatTemplatePolicy = session.resolved.model.chatTemplatePolicy,
                 thinkingMode = resolved.thinkingMode,
-                guardPolicy = resolved.guardPolicy,
-                streamProtocol = streamProtocol,
-                maxOutputTokens = resolved.maxOutputTokens,
-                capabilities = capabilities,
-            )
-            val streamParser = ReasoningStreamParser(resolved.thinkingMode, streamProtocol)
-            var lastGeneratedTokens = 0
-            state.set(RuntimeState.GENERATING)
-            runtimeTelemetry.started(request.requestId)
-            lifecycle.emit(GenerationEvent.Started(request.requestId, session.model.digest))
-            val generationGuard = GenerationGuard(
-                thinkingMode = resolved.thinkingMode,
-                policy = resolved.guardPolicy,
-                thinkingCloseMarker = streamProtocol.closeMarker,
-                enforceThinkingBudget = reasoningControl == null,
-            )
-            val guardStopReason = AtomicReference<StopReason?>(null)
-            val emitParsedChunk: (ParsedGenerationChunk, Int) -> Unit = { parsed, generatedTokens ->
-                when (parsed.contentType) {
-                    GenerationContentType.REASONING -> reasoningOutput.append(parsed.text)
+            ),
+        )
+        lifecycle.ensureNotCancelled()
+        val promptPlanningMs = nanosToMillis(clock.nowNanos() - planningStartedAt)
+        val capabilities = backend.modelCapabilities(session.model)
+        lifecycle.ensureNotCancelled()
+        generationPlanning.validateOutputConstraint(
+            outputConstraint = request.outputConstraint,
+            resolved = resolved,
+            resolvedUseCase = session.resolved,
+            capabilities = capabilities,
+        )
+        val contextPlan = generationPlanning.planContextSize(
+            resolvedUseCase = session.resolved,
+            options = session.options,
+            promptTokenCount = promptPlan.tokenCount,
+            maxOutputTokens = resolved.maxOutputTokens,
+            capabilities = capabilities,
+            preference = resolved.contextPreference,
+        )
+        lifecycle.ensureNotCancelled()
+        val contextResult = materializeContext(session, contextPlan)
+        if (lifecycle.isCancellationRequested()) {
+            releaseCancelledMaterialization(session, contextResult)
+            throw GenerationCancelledException()
+        }
+        val executionEvidence = backend.executionEvidence(contextResult.context)
+        val effective = resolved.effectiveMetadata(promptPlan, contextResult.context.contextSize)
+        effectivePromptSink.publish(request.requestId, promptPlan.prompt)
+        runtimeTelemetry.prepared(
+            requestId = request.requestId,
+            configuration = effective,
+            promptPlanningMs = promptPlanningMs,
+            contextCreationMs = contextResult.creationMs,
+            executionEvidence = executionEvidence,
+        )
+        lifecycle.emit(GenerationEvent.Prepared(request.requestId, session.model.digest, effective))
+        return PreparedGeneration(resolved, promptPlan, contextResult, capabilities, executionStartedAt, promptPlanningMs)
+    }
 
-                    GenerationContentType.ANSWER -> {
-                        answerOutput.append(parsed.text)
-                        if (parsed.text.isNotBlank()) {
-                            firstAnswerAt.compareAndSet(0, clock.nowNanos())
-                        }
+    @Suppress("CyclomaticComplexMethod")
+    private fun streamGeneration(
+        request: GenerationRequest,
+        session: SessionDescriptor,
+        lifecycle: RequestLifecycle,
+        prepared: PreparedGeneration,
+    ): StreamedGeneration {
+        val resolved = prepared.resolved
+        val promptPlan = prepared.promptPlan
+        val contextResult = prepared.contextResult
+        val capabilities = prepared.capabilities
+        val firstTokenAt = AtomicLong(0)
+        val firstAnswerAt = AtomicLong(0)
+        val rawOutput = StringBuilder()
+        val reasoningOutput = StringBuilder()
+        val answerOutput = StringBuilder()
+        val streamProtocol = (resolved.preset?.generation ?: session.resolved.useCase.generationDefaults).reasoningStreamProtocol
+        val reasoningControl = generationPlanning.resolveReasoningControl(
+            thinkingMode = resolved.thinkingMode,
+            guardPolicy = resolved.guardPolicy,
+            streamProtocol = streamProtocol,
+            maxOutputTokens = resolved.maxOutputTokens,
+            capabilities = capabilities,
+        )
+        val streamParser = ReasoningStreamParser(resolved.thinkingMode, streamProtocol)
+        var lastGeneratedTokens = 0
+        state.set(RuntimeState.GENERATING)
+        runtimeTelemetry.started(request.requestId)
+        lifecycle.emit(GenerationEvent.Started(request.requestId, session.model.digest))
+        val generationGuard = GenerationGuard(
+            thinkingMode = resolved.thinkingMode,
+            policy = resolved.guardPolicy,
+            thinkingCloseMarker = streamProtocol.closeMarker,
+            enforceThinkingBudget = reasoningControl == null,
+        )
+        val guardStopReason = AtomicReference<StopReason?>(null)
+        val emitParsedChunk: (ParsedGenerationChunk, Int) -> Unit = { parsed, generatedTokens ->
+            when (parsed.contentType) {
+                GenerationContentType.REASONING -> reasoningOutput.append(parsed.text)
+
+                GenerationContentType.ANSWER -> {
+                    answerOutput.append(parsed.text)
+                    if (parsed.text.isNotBlank()) {
+                        firstAnswerAt.compareAndSet(0, clock.nowNanos())
                     }
                 }
-                lifecycle.emit(
-                    GenerationEvent.TextDelta(
-                        requestId = request.requestId,
-                        text = parsed.text,
-                        generatedTokens = generatedTokens,
-                        contentType = parsed.contentType,
-                    ),
-                )
             }
-            val backendRequest = BackendGenerationRequest(
-                requestId = request.requestId.value,
-                prompt = promptPlan.prompt,
-                maxOutputTokens = resolved.maxOutputTokens,
-                temperature = resolved.temperature,
-                topP = resolved.topP,
-                topK = resolved.topK,
-                minP = resolved.minP,
-                presencePenalty = resolved.presencePenalty,
-                repeatPenalty = resolved.repeatPenalty,
-                repeatLastN = resolved.repeatLastN,
-                seed = resolved.effectiveSeed,
-                outputConstraint = request.outputConstraint,
-                stopTokenIds = promptPlan.stopTokenIds,
-                stopSequences = promptPlan.stopSequences,
-                reasoningControl = reasoningControl,
+            lifecycle.emit(
+                GenerationEvent.TextDelta(
+                    requestId = request.requestId,
+                    text = parsed.text,
+                    generatedTokens = generatedTokens,
+                    contentType = parsed.contentType,
+                ),
             )
-            lifecycle.ensureNotCancelled()
-            val outcome = backend.generate(contextResult.context, backendRequest) { text, generatedTokens ->
-                if (lifecycle.isCancellationRequested()) {
-                    false
-                } else {
-                    firstTokenAt.compareAndSet(0, clock.nowNanos())
-                    lastGeneratedTokens = generatedTokens
-                    rawOutput.append(text)
-                    streamParser.accept(text).forEach { emitParsedChunk(it, generatedTokens) }
-                    val guardReason = generationGuard.observe(text, generatedTokens)
-                    if (guardReason != null) guardStopReason.compareAndSet(null, guardReason)
-                    guardReason == null && !lifecycle.isCancellationRequested()
-                }
-            }
-            if (!lifecycle.isCancellationRequested()) {
-                streamParser.finish().forEach { emitParsedChunk(it, lastGeneratedTokens) }
-            }
-
-            val guardReason = guardStopReason.get()
+        }
+        val backendRequest = resolved.backendRequest(request, promptPlan, reasoningControl)
+        lifecycle.ensureNotCancelled()
+        val outcome = backend.generate(contextResult.context, backendRequest) { text, generatedTokens ->
             if (lifecycle.isCancellationRequested()) {
-                val cancellation = LocalLlmError.Cancelled()
-                runtimeTelemetry.failed(request.requestId, cancellation)
-                lifecycle.finish(GenerationEvent.Failed(request.requestId, cancellation))
-            } else if (guardReason != null) {
-                completeGeneration(
-                    request = request,
-                    session = session,
-                    lifecycle = lifecycle,
-                    output = rawOutput.toString(),
-                    reasoningOutput = reasoningOutput.toString(),
-                    answerOutput = answerOutput.toString(),
-                    backendMetrics = outcome.metrics().copy(stopReason = guardReason),
-                    executionStartedAt = executionStartedAt,
-                    enqueuedAt = enqueuedAt,
-                    firstTokenAt = firstTokenAt,
-                    firstAnswerAt = firstAnswerAt,
-                    promptPlanningMs = promptPlanningMs,
-                    contextCreationMs = contextResult.creationMs,
-                )
-            } else if (outcome is BackendGenerationOutcome.Cancelled) {
-                val cancellation = LocalLlmError.Cancelled()
-                runtimeTelemetry.failed(request.requestId, cancellation)
-                lifecycle.finish(GenerationEvent.Failed(request.requestId, cancellation))
+                false
             } else {
-                completeGeneration(
-                    request = request,
-                    session = session,
-                    lifecycle = lifecycle,
-                    output = rawOutput.toString(),
-                    reasoningOutput = reasoningOutput.toString(),
-                    answerOutput = answerOutput.toString(),
-                    backendMetrics = (outcome as BackendGenerationOutcome.Completed).metrics,
-                    executionStartedAt = executionStartedAt,
-                    enqueuedAt = enqueuedAt,
-                    firstTokenAt = firstTokenAt,
-                    firstAnswerAt = firstAnswerAt,
-                    promptPlanningMs = promptPlanningMs,
-                    contextCreationMs = contextResult.creationMs,
-                )
-            }
-        } catch (_: GenerationCancelledException) {
-            val cancellation = LocalLlmError.Cancelled()
-            runtimeTelemetry.failed(request.requestId, cancellation)
-            lifecycle.finish(GenerationEvent.Failed(request.requestId, cancellation))
-        } catch (error: GenerationPlanningException) {
-            val failure = LocalLlmError.Configuration(error.message.orEmpty(), error.reason)
-            runtimeTelemetry.failed(request.requestId, failure)
-            lifecycle.finish(GenerationEvent.Failed(request.requestId, failure))
-        } catch (error: BackendException) {
-            val failure = if (lifecycle.isCancellationRequested()) {
-                LocalLlmError.Cancelled()
-            } else {
-                error.toPublicError()
-            }
-            runtimeTelemetry.failed(request.requestId, failure)
-            lifecycle.finish(GenerationEvent.Failed(request.requestId, failure))
-        } catch (error: Throwable) {
-            val failure = LocalLlmError.NativeRuntime(error.message ?: "Unexpected local inference failure")
-            runtimeTelemetry.failed(request.requestId, failure)
-            lifecycle.finish(GenerationEvent.Failed(request.requestId, failure))
-        } finally {
-            val unloaded = attemptDeferredModelUnload(ignoreActiveGeneration = true)
-            if (!closed.get() && !unloaded) {
-                state.set(if (deferredModelUnload.get()) RuntimeState.DEGRADED else RuntimeState.READY)
+                firstTokenAt.compareAndSet(0, clock.nowNanos())
+                lastGeneratedTokens = generatedTokens
+                rawOutput.append(text)
+                streamParser.accept(text).forEach { emitParsedChunk(it, generatedTokens) }
+                val guardReason = generationGuard.observe(text, generatedTokens)
+                if (guardReason != null) guardStopReason.compareAndSet(null, guardReason)
+                guardReason == null && !lifecycle.isCancellationRequested()
             }
         }
+        if (!lifecycle.isCancellationRequested()) {
+            streamParser.finish().forEach { emitParsedChunk(it, lastGeneratedTokens) }
+        }
+        return StreamedGeneration(
+            outcome = outcome,
+            guardReason = guardStopReason.get(),
+            output = rawOutput.toString(),
+            reasoningOutput = reasoningOutput.toString(),
+            answerOutput = answerOutput.toString(),
+            firstTokenAt = firstTokenAt,
+            firstAnswerAt = firstAnswerAt,
+        )
+    }
+
+    private fun finalizeGeneration(
+        request: GenerationRequest,
+        session: SessionDescriptor,
+        lifecycle: RequestLifecycle,
+        enqueuedAt: Long,
+        prepared: PreparedGeneration,
+        streamed: StreamedGeneration,
+    ) {
+        val guardReason = streamed.guardReason
+        // Explicit cancellation wins; a guard stop remains successful even if the backend reports cancellation.
+        if (lifecycle.isCancellationRequested() || (guardReason == null && streamed.outcome is BackendGenerationOutcome.Cancelled)) {
+            failGeneration(request.requestId, lifecycle, LocalLlmError.Cancelled())
+            return
+        }
+        val metrics = streamed.outcome.metrics()
+        completeGeneration(
+            request = request,
+            session = session,
+            lifecycle = lifecycle,
+            output = streamed.output,
+            reasoningOutput = streamed.reasoningOutput,
+            answerOutput = streamed.answerOutput,
+            backendMetrics = if (guardReason != null) metrics.copy(stopReason = guardReason) else metrics,
+            executionStartedAt = prepared.executionStartedAt,
+            enqueuedAt = enqueuedAt,
+            firstTokenAt = streamed.firstTokenAt,
+            firstAnswerAt = streamed.firstAnswerAt,
+            promptPlanningMs = prepared.promptPlanningMs,
+            contextCreationMs = prepared.contextResult.creationMs,
+        )
+    }
+
+    private fun generationFailure(error: Throwable, lifecycle: RequestLifecycle): LocalLlmError = when (error) {
+        is GenerationCancelledException -> LocalLlmError.Cancelled()
+        is GenerationPlanningException -> LocalLlmError.Configuration(error.message.orEmpty(), error.reason)
+        is BackendException -> if (lifecycle.isCancellationRequested()) LocalLlmError.Cancelled() else error.toPublicError()
+        else -> LocalLlmError.NativeRuntime(error.message ?: "Unexpected local inference failure")
+    }
+
+    private fun failGeneration(requestId: RequestId, lifecycle: RequestLifecycle, error: LocalLlmError) {
+        runtimeTelemetry.failed(requestId, error)
+        lifecycle.finish(GenerationEvent.Failed(requestId, error))
     }
 
     @Suppress("CyclomaticComplexMethod", "LongMethod")
@@ -605,6 +578,7 @@ class RuntimeOrchestrator(
         }
 
         var context: BackendEvaluationBatchContextHandle? = null
+        var contextReleaseFailed = false
         try {
             val executionStartedAt = clock.nowNanos()
             val prepared = bindings.map { binding -> prepareEvaluationBatchCase(binding) }
@@ -625,25 +599,7 @@ class RuntimeOrchestrator(
             ensureEvaluationBatchNotCancelled(lifecycle)
             val executionEvidence = backend.executionEvidence(context)
             prepared.forEach { preparedCase ->
-                val effective = EffectiveGenerationMetadata(
-                    preset = preparedCase.resolved.preset?.ref,
-                    temperature = preparedCase.resolved.temperature,
-                    topP = preparedCase.resolved.topP,
-                    topK = preparedCase.resolved.topK,
-                    minP = preparedCase.resolved.minP,
-                    presencePenalty = preparedCase.resolved.presencePenalty,
-                    repeatPenalty = preparedCase.resolved.repeatPenalty,
-                    repeatLastN = preparedCase.resolved.repeatLastN,
-                    requestedSeedPolicy = preparedCase.resolved.seedPolicy.toType(),
-                    effectiveSeed = preparedCase.resolved.effectiveSeed,
-                    maxOutputTokens = preparedCase.resolved.maxOutputTokens,
-                    contextSize = perSequenceContextSize,
-                    promptTokenCount = preparedCase.promptPlan.tokenCount,
-                    chatTemplateId = preparedCase.promptPlan.chatTemplateId,
-                    chatTemplateSource = preparedCase.promptPlan.chatTemplateSource,
-                    systemPromptVersion = preparedCase.resolved.systemPromptVersion,
-                    thinkingMode = preparedCase.resolved.thinkingMode,
-                )
+                val effective = preparedCase.resolved.effectiveMetadata(preparedCase.promptPlan, perSequenceContextSize)
                 runtimeTelemetry.prepared(
                     requestId = preparedCase.binding.request.requestId,
                     configuration = effective,
@@ -688,7 +644,9 @@ class RuntimeOrchestrator(
             }
             val releasing = context
             context = null
-            releaseEvaluationBatchContext(batchBackend, releasing)
+            val release = runCatching { releaseEvaluationBatchContext(batchBackend, releasing) }
+            contextReleaseFailed = release.isFailure
+            release.getOrThrow()
             results.forEach { result ->
                 when (result) {
                     is RuntimeEvaluationBatchCaseResult.Completed -> runtimeTelemetry.completed(result.requestId, result.metrics)
@@ -699,48 +657,32 @@ class RuntimeOrchestrator(
                 }
             }
             lifecycle.finish(listener, RuntimeEvaluationBatchOutcome.Completed(results))
-        } catch (_: GenerationCancelledException) {
-            context?.let { activeContext ->
-                context = null
-                runCatching { releaseEvaluationBatchContext(batchBackend, activeContext) }
-                    .onFailure { state.set(RuntimeState.DEGRADED) }
-            }
-            failEvaluationBatch(bindings, lifecycle, listener, LocalLlmError.Cancelled())
-        } catch (error: GenerationPlanningException) {
-            context?.let { activeContext ->
-                context = null
-                runCatching { releaseEvaluationBatchContext(batchBackend, activeContext) }
-                    .onFailure { state.set(RuntimeState.DEGRADED) }
-            }
-            failEvaluationBatch(
-                bindings,
-                lifecycle,
-                listener,
-                LocalLlmError.Configuration(error.message.orEmpty(), error.reason),
-            )
-        } catch (error: BackendException) {
-            context?.let { activeContext ->
-                context = null
-                runCatching { releaseEvaluationBatchContext(batchBackend, activeContext) }
-                    .onFailure { state.set(RuntimeState.DEGRADED) }
-            }
-            failEvaluationBatch(bindings, lifecycle, listener, error.toPublicError())
         } catch (error: Throwable) {
             context?.let { activeContext ->
                 context = null
                 runCatching { releaseEvaluationBatchContext(batchBackend, activeContext) }
-                    .onFailure { state.set(RuntimeState.DEGRADED) }
+                    .onFailure { contextReleaseFailed = true }
             }
-            failEvaluationBatch(
-                bindings,
-                lifecycle,
-                listener,
-                LocalLlmError.NativeRuntime(error.message ?: "Unexpected evaluation batch failure"),
-            )
+            val failure = when (error) {
+                is GenerationCancelledException -> LocalLlmError.Cancelled()
+                is GenerationPlanningException -> LocalLlmError.Configuration(error.message.orEmpty(), error.reason)
+                is BackendException -> error.toPublicError()
+                else -> LocalLlmError.NativeRuntime(error.message ?: "Unexpected evaluation batch failure")
+            }
+            failEvaluationBatch(bindings, lifecycle, listener, failure)
         } finally {
-            val unloaded = attemptDeferredModelUnload(ignoreActiveGeneration = true)
-            if (!closed.get() && !unloaded) {
-                state.set(if (deferredModelUnload.get()) RuntimeState.DEGRADED else RuntimeState.READY)
+            settleRuntimeStateAfterExecution(contextReleaseFailed)
+        }
+    }
+
+    /** Do not overwrite a native/session release failure reported during terminal cleanup. */
+    private fun settleRuntimeStateAfterExecution(contextReleaseFailed: Boolean = false) {
+        val unloaded = attemptDeferredModelUnload(ignoreActiveGeneration = true)
+        if (contextReleaseFailed) {
+            state.set(RuntimeState.DEGRADED)
+        } else if (!closed.get() && !unloaded) {
+            state.updateAndGet { observed ->
+                if (observed == RuntimeState.DEGRADED || deferredModelUnload.get()) RuntimeState.DEGRADED else RuntimeState.READY
             }
         }
     }
@@ -856,23 +798,7 @@ class RuntimeOrchestrator(
             promptPlan = promptPlan,
             contextPlan = contextPlan,
             promptPlanningMs = promptPlanningMs,
-            backendRequest = BackendGenerationRequest(
-                requestId = binding.request.requestId.value,
-                prompt = promptPlan.prompt,
-                maxOutputTokens = resolved.maxOutputTokens,
-                temperature = resolved.temperature,
-                topP = resolved.topP,
-                topK = resolved.topK,
-                minP = resolved.minP,
-                presencePenalty = resolved.presencePenalty,
-                repeatPenalty = resolved.repeatPenalty,
-                repeatLastN = resolved.repeatLastN,
-                seed = resolved.effectiveSeed,
-                outputConstraint = binding.request.outputConstraint,
-                stopTokenIds = promptPlan.stopTokenIds,
-                stopSequences = promptPlan.stopSequences,
-                reasoningControl = null,
-            ),
+            backendRequest = resolved.backendRequest(binding.request, promptPlan, null),
         )
     }
 
@@ -924,7 +850,7 @@ class RuntimeOrchestrator(
                     requestedContextTokens = requestedAggregate,
                     effectiveContextTokens = decision.aggregateContextTokens,
                 )
-                decision.perSequenceContextTokens
+                if (enforceMemoryAdmission) decision.perSequenceContextTokens else requestedPerSequence
             }
 
             is MemoryAwareEvaluationBatchContextDecision.Reject -> {
@@ -935,10 +861,13 @@ class RuntimeOrchestrator(
                     admissionReason = decision.admissionReason,
                     requestedContextTokens = requestedAggregate,
                 )
-                throw GenerationPlanningException(
-                    ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
-                    evaluationBatchMemoryFailureMessage(requestedAggregate, decision),
-                )
+                if (enforceMemoryAdmission) {
+                    throw GenerationPlanningException(
+                        ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
+                        evaluationBatchMemoryFailureMessage(requestedAggregate, decision),
+                    )
+                }
+                requestedPerSequence
             }
         }
     }
@@ -1053,7 +982,7 @@ class RuntimeOrchestrator(
                     requestedContextTokens = contextPlan.requestedContextTokens,
                     effectiveContextTokens = decision.contextTokens,
                 )
-                decision.contextTokens
+                if (enforceMemoryAdmission) decision.contextTokens else contextPlan.requestedContextTokens
             }
 
             is MemoryAwareContextDecision.Reject -> {
@@ -1064,10 +993,13 @@ class RuntimeOrchestrator(
                     admissionReason = decision.admissionReason,
                     requestedContextTokens = contextPlan.requestedContextTokens,
                 )
-                throw GenerationPlanningException(
-                    ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
-                    memoryAdmissionFailureMessage(contextPlan, decision),
-                )
+                if (enforceMemoryAdmission) {
+                    throw GenerationPlanningException(
+                        ConfigurationErrorCode.MEMORY_BUDGET_EXCEEDED,
+                        memoryAdmissionFailureMessage(contextPlan, decision),
+                    )
+                }
+                contextPlan.requestedContextTokens
             }
         }
     }
@@ -1093,11 +1025,6 @@ class RuntimeOrchestrator(
                 session.context = null
             }
         }
-    }
-
-    private fun SeedPolicy.toType(): SeedPolicyType = when (this) {
-        SeedPolicy.Random -> SeedPolicyType.RANDOM
-        is SeedPolicy.Fixed -> SeedPolicyType.FIXED
     }
 
     private fun BackendException.toPublicError(): LocalLlmError {
@@ -1206,7 +1133,7 @@ class RuntimeOrchestrator(
                     decisionReason = decision.reason.name,
                     admissionReason = decision.admissionReason,
                 )
-                throw ModelLoadMemoryAdmissionException(resolved.model.id, decision)
+                if (enforceMemoryAdmission) throw ModelLoadMemoryAdmissionException(resolved.model.id, decision)
             }
         }
     }
@@ -1379,6 +1306,25 @@ class RuntimeOrchestrator(
     private fun nanosToMillis(nanos: Long): Long = nanos / 1_000_000
 
     private data class BatchSessionBinding(val request: GenerationRequest, val session: SessionDescriptor)
+
+    private data class PreparedGeneration(
+        val resolved: ResolvedRequestConfiguration,
+        val promptPlan: BackendPromptPlan,
+        val contextResult: ContextMaterialization,
+        val capabilities: BackendModelCapabilities,
+        val executionStartedAt: Long,
+        val promptPlanningMs: Long,
+    )
+
+    private data class StreamedGeneration(
+        val outcome: BackendGenerationOutcome,
+        val guardReason: StopReason?,
+        val output: String,
+        val reasoningOutput: String,
+        val answerOutput: String,
+        val firstTokenAt: AtomicLong,
+        val firstAnswerAt: AtomicLong,
+    )
 
     private data class PreparedEvaluationBatchCase(
         val binding: BatchSessionBinding,

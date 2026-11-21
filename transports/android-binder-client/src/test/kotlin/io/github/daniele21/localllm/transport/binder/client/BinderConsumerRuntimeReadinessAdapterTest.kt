@@ -8,6 +8,7 @@ import io.github.daniele21.localllm.contracts.ConsumerRuntimeReadinessResult
 import io.github.daniele21.localllm.transport.binder.contract.BinderProtocolV1
 import io.github.daniele21.localllm.transport.binder.contract.ConsumerRuntimeReadinessResultParcel
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -86,6 +87,55 @@ class BinderConsumerRuntimeReadinessAdapterTest {
             ConsumerControlPlaneErrorCode.TRANSPORT_FAILURE,
             (result as ConsumerRuntimeReadinessResult.Rejected).failure.code,
         )
+    }
+
+    @Test(timeout = 2_000)
+    fun `blank endpoint invalidation reason immediately rejects in-flight readiness`() {
+        val invalidations = FakeEndpointInvalidations()
+        val service = FakeSharedRuntimeRemoteService()
+        val endpoint = RegisteredSharedRuntimeEndpoint(service, token, connectionEpoch = 21L)
+        service.consumerRuntimeReadinessHandler = { _, _ -> invalidations.invalidate(21L, "") }
+        val adapter = BinderConsumerRuntimeReadinessAdapter(
+            endpointProvider = { endpoint },
+            enabledFeaturesProvider = { setOf(BinderProtocolV1.FEATURE_CONSUMER_RUNTIME_READINESS_V1) },
+            endpointInvalidations = invalidations,
+            blockingCallGuard = BlockingCallGuard {},
+            operationTimeoutMillis = 60_000L,
+            correlationIds = CorrelationIdSource { "readiness-blank-op" },
+        )
+
+        val result = adapter.runtimeReadiness(activationId)
+
+        assertTrue(result is ConsumerRuntimeReadinessResult.Rejected)
+        assertEquals(
+            ConsumerControlPlaneErrorCode.TRANSPORT_FAILURE,
+            (result as ConsumerRuntimeReadinessResult.Rejected).failure.code,
+        )
+    }
+
+    @Test
+    fun `stale endpoint does not dispatch runtime readiness to the old host`() {
+        val service = FakeSharedRuntimeRemoteService()
+        var invoked = false
+        service.consumerRuntimeReadinessHandler = { _, _ -> invoked = true }
+        val endpoint = RegisteredSharedRuntimeEndpoint(service, token, connectionEpoch = 42L)
+        var reads = 0
+        val adapter = BinderConsumerRuntimeReadinessAdapter(
+            endpointProvider = { if (++reads == 1) endpoint else null },
+            enabledFeaturesProvider = { setOf(BinderProtocolV1.FEATURE_CONSUMER_RUNTIME_READINESS_V1) },
+            blockingCallGuard = BlockingCallGuard {},
+            operationTimeoutMillis = 100L,
+            correlationIds = CorrelationIdSource { "stale-readiness-op" },
+        )
+
+        val result = adapter.runtimeReadiness(activationId)
+
+        assertTrue(result is ConsumerRuntimeReadinessResult.Rejected)
+        assertEquals(
+            ConsumerControlPlaneErrorCode.TRANSPORT_FAILURE,
+            (result as ConsumerRuntimeReadinessResult.Rejected).failure.code,
+        )
+        assertFalse(invoked)
     }
 
     private fun adapter(service: FakeSharedRuntimeRemoteService): BinderConsumerRuntimeReadinessAdapter =

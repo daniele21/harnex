@@ -10,6 +10,7 @@ import io.github.daniele21.localllm.contracts.GenerationRequest
 import io.github.daniele21.localllm.contracts.LocalLlmError
 import io.github.daniele21.localllm.contracts.ModelDigest
 import io.github.daniele21.localllm.contracts.RequestId
+import io.github.daniele21.localllm.contracts.RuntimeState
 import io.github.daniele21.localllm.contracts.SeedPolicy
 import io.github.daniele21.localllm.contracts.SessionOptions
 import io.github.daniele21.localllm.contracts.StopReason
@@ -82,6 +83,29 @@ class RuntimeOrchestratorTest {
         assertEquals(2, completed.metrics.inputTokens)
         assertEquals(2, completed.metrics.outputTokens)
         assertEquals(200.0, completed.metrics.decodeTokensPerSecond!!, 0.001)
+        fixture.close()
+    }
+
+    @Test
+    fun `backend failure after preparation emits one typed terminal failure`() {
+        val fixture = RuntimeFixture()
+        fixture.backend.generateFailureCode = "GENERATION_FAILED"
+        val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)
+        val events = Collections.synchronizedList(mutableListOf<GenerationEvent>())
+        val terminal = CountDownLatch(1)
+
+        fixture.runtime.generate(
+            fixture.request("backend-failure", session),
+            GenerationListener { event ->
+                events += event
+                if (event is GenerationEvent.Completed || event is GenerationEvent.Failed) terminal.countDown()
+            },
+        )
+
+        assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        assertEquals(listOf("Queued", "Prepared", "Started", "Failed"), events.map { it::class.simpleName })
+        assertEquals(1, events.count { it is GenerationEvent.Completed || it is GenerationEvent.Failed })
+        assertTrue((events.last() as GenerationEvent.Failed).error is LocalLlmError.NativeRuntime)
         fixture.close()
     }
 
@@ -364,6 +388,8 @@ class RuntimeOrchestratorTest {
             },
         )
         assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        // The fake backend reports Cancelled when the guard stops streaming; the public result must still complete once.
+        assertEquals(1, events.count { it is GenerationEvent.Completed || it is GenerationEvent.Failed })
         val completed = events.last() as GenerationEvent.Completed
         assertEquals(StopReason.GENERATION_GUARD_THINKING_BUDGET, completed.metrics.stopReason)
         assertEquals("hello ", completed.output)
@@ -390,6 +416,42 @@ class RuntimeOrchestratorTest {
         fixture.backend.blockGeneration?.countDown()
         assertTrue(terminal.await(2, TimeUnit.SECONDS))
         assertTrue(eventually { fixture.backend.releaseCalls == 1 })
+        fixture.close()
+    }
+
+    @Test
+    fun `deferred session release failure stays degraded after worker finishes and remains retryable`() {
+        val fixture = RuntimeFixture()
+        val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)
+        fixture.backend.failContextRelease = true
+        fixture.backend.blockGeneration = CountDownLatch(1)
+        val events = Collections.synchronizedList(mutableListOf<GenerationEvent>())
+        val terminal = CountDownLatch(1)
+
+        fixture.runtime.generate(
+            fixture.request("deferred-release-failure", session),
+            GenerationListener { event ->
+                events += event
+                if (event is GenerationEvent.Completed || event is GenerationEvent.Failed) terminal.countDown()
+            },
+        )
+        assertTrue(fixture.backend.generationStarted.await(2, TimeUnit.SECONDS))
+        fixture.runtime.closeSession(session)
+        assertEquals(0, fixture.backend.releaseCalls)
+
+        fixture.backend.blockGeneration?.countDown()
+        assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        assertTrue(eventually { !fixture.runtime.memoryResourceSnapshot().activeGeneration })
+        assertEquals(1, events.count { it is GenerationEvent.Completed || it is GenerationEvent.Failed })
+        assertTrue(events.last() is GenerationEvent.Completed)
+        assertEquals(1, fixture.backend.releaseCalls)
+        assertEquals(RuntimeState.DEGRADED, fixture.runtime.runtimeSnapshot().state)
+        assertEquals(1, fixture.runtime.runtimeSnapshot().activeSessions)
+
+        fixture.backend.failContextRelease = false
+        fixture.runtime.closeSession(session)
+        assertEquals(2, fixture.backend.releaseCalls)
+        assertEquals(0, fixture.runtime.runtimeSnapshot().activeSessions)
         fixture.close()
     }
 
@@ -546,6 +608,7 @@ private class FakeInferenceBackend : InferenceBackend {
     var loadCalls: Int = 0
     var unloadCalls: Int = 0
     var releaseCalls: Int = 0
+    var failContextRelease: Boolean = false
     var cancelCalls: Int = 0
     var blockGeneration: CountDownLatch? = null
     var blockPlanning: CountDownLatch? = null
@@ -597,6 +660,7 @@ private class FakeInferenceBackend : InferenceBackend {
 
     override fun releaseContext(context: BackendContextHandle) {
         releaseCalls += 1
+        check(!failContextRelease) { "Native context release failed" }
     }
 
     override fun generate(

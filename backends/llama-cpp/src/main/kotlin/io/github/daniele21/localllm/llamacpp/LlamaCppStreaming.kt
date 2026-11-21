@@ -31,6 +31,32 @@ interface NativeLlamaStreamingApi {
         callback: NativeStreamingCallback,
     ): Array<String>
 
+    @Suppress("LongParameterList")
+    fun generateImageStreaming(
+        contextHandle: Long,
+        requestId: String,
+        prompt: String,
+        maxOutputTokens: Int,
+        temperature: Float,
+        topP: Float,
+        topK: Int,
+        minP: Float,
+        presencePenalty: Float,
+        repeatPenalty: Float,
+        repeatLastN: Int,
+        seed: Long,
+        outputConstraintType: String,
+        outputSchema: String?,
+        stopTokenIds: IntArray,
+        stopSequences: Array<String>,
+        reasoningMaxTokens: Int,
+        reasoningCloseMarker: String?,
+        reasoningForcedCloseText: String?,
+        callback: NativeStreamingCallback,
+        imageBytes: ByteArray,
+        projectorPath: String,
+    ): Array<String> = arrayOf("error", "UNSUPPORTED_MODEL", "Image generation is not implemented by this native adapter")
+
     fun cancel(requestId: String): Array<String>
 }
 
@@ -63,6 +89,32 @@ class JniLlamaStreamingApi : NativeLlamaStreamingApi {
         callback: NativeStreamingCallback,
     ): Array<String>
 
+    @Suppress("LongParameterList")
+    external override fun generateImageStreaming(
+        contextHandle: Long,
+        requestId: String,
+        prompt: String,
+        maxOutputTokens: Int,
+        temperature: Float,
+        topP: Float,
+        topK: Int,
+        minP: Float,
+        presencePenalty: Float,
+        repeatPenalty: Float,
+        repeatLastN: Int,
+        seed: Long,
+        outputConstraintType: String,
+        outputSchema: String?,
+        stopTokenIds: IntArray,
+        stopSequences: Array<String>,
+        reasoningMaxTokens: Int,
+        reasoningCloseMarker: String?,
+        reasoningForcedCloseText: String?,
+        callback: NativeStreamingCallback,
+        imageBytes: ByteArray,
+        projectorPath: String,
+    ): Array<String>
+
     external override fun cancel(requestId: String): Array<String>
 }
 
@@ -73,6 +125,8 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
         prompt: String,
         config: NativeGenerationConfig,
         listener: NativeStreamingListener,
+        imageBytes: ByteArray? = null,
+        projectorPath: String? = null,
     ): NativeStreamingResult {
         val validationError = validate(requestId, prompt, config)
         if (validationError != null) {
@@ -89,28 +143,60 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
         }
 
         return decodeTerminal(
-            nativeApi.generateStreaming(
-                contextHandle = context.handle.value,
-                requestId = requestId,
-                prompt = prompt,
-                maxOutputTokens = config.maxOutputTokens,
-                temperature = config.temperature,
-                topP = config.topP,
-                topK = config.topK,
-                minP = config.minP,
-                presencePenalty = config.presencePenalty,
-                repeatPenalty = config.repeatPenalty,
-                repeatLastN = config.repeatLastN,
-                seed = config.seed,
-                outputConstraintType = config.outputConstraintType,
-                outputSchema = config.outputSchema,
-                stopTokenIds = config.stopTokenIds,
-                stopSequences = config.stopSequences.toTypedArray(),
-                reasoningMaxTokens = config.reasoningMaxTokens ?: 0,
-                reasoningCloseMarker = config.reasoningCloseMarker,
-                reasoningForcedCloseText = config.reasoningForcedCloseText,
-                callback = callback,
-            ),
+            if (imageBytes != null) {
+                if (projectorPath.isNullOrBlank()) {
+                    return NativeStreamingResult.Failure(
+                        StreamingNativeError(StreamingNativeErrorCode.UNSUPPORTED_MODEL, "Verified vision projector is not available"),
+                    )
+                }
+                nativeApi.generateImageStreaming(
+                    contextHandle = context.handle.value,
+                    requestId = requestId,
+                    prompt = prompt,
+                    maxOutputTokens = config.maxOutputTokens,
+                    temperature = config.temperature,
+                    topP = config.topP,
+                    topK = config.topK,
+                    minP = config.minP,
+                    presencePenalty = config.presencePenalty,
+                    repeatPenalty = config.repeatPenalty,
+                    repeatLastN = config.repeatLastN,
+                    seed = config.seed,
+                    outputConstraintType = config.outputConstraintType,
+                    outputSchema = config.outputSchema,
+                    stopTokenIds = config.stopTokenIds,
+                    stopSequences = config.stopSequences.toTypedArray(),
+                    reasoningMaxTokens = config.reasoningMaxTokens ?: 0,
+                    reasoningCloseMarker = config.reasoningCloseMarker,
+                    reasoningForcedCloseText = config.reasoningForcedCloseText,
+                    callback = callback,
+                    imageBytes = imageBytes,
+                    projectorPath = projectorPath,
+                )
+            } else {
+                nativeApi.generateStreaming(
+                    contextHandle = context.handle.value,
+                    requestId = requestId,
+                    prompt = prompt,
+                    maxOutputTokens = config.maxOutputTokens,
+                    temperature = config.temperature,
+                    topP = config.topP,
+                    topK = config.topK,
+                    minP = config.minP,
+                    presencePenalty = config.presencePenalty,
+                    repeatPenalty = config.repeatPenalty,
+                    repeatLastN = config.repeatLastN,
+                    seed = config.seed,
+                    outputConstraintType = config.outputConstraintType,
+                    outputSchema = config.outputSchema,
+                    stopTokenIds = config.stopTokenIds,
+                    stopSequences = config.stopSequences.toTypedArray(),
+                    reasoningMaxTokens = config.reasoningMaxTokens ?: 0,
+                    reasoningCloseMarker = config.reasoningCloseMarker,
+                    reasoningForcedCloseText = config.reasoningForcedCloseText,
+                    callback = callback,
+                )
+            },
         )
     }
 

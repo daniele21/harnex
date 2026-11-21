@@ -25,6 +25,45 @@ internal class DownloadFileStore(rootDirectory: File) {
         ensureDirectory(verifiedDirectory)
     }
 
+    /**
+     * Digest-bound partial survives network errors and process death. No downloaded name
+     * or URI is ever used for a filesystem path; verified publication still checks full SHA.
+     */
+    fun resumablePartial(digest: ModelDigest, expectedBytes: Long): File {
+        val candidate = resumeFile(digest)
+        if (candidate.exists()) {
+            if (!candidate.isFile || Files.isSymbolicLink(candidate.toPath())) {
+                throw IOException("Resume path is not an owned regular file")
+            }
+            if (candidate.length() > expectedBytes) {
+                if (!candidate.delete()) throw IOException("Unable to reset oversized resume file")
+            }
+        }
+        return candidate
+    }
+
+    fun resumableLength(digest: ModelDigest, expectedBytes: Long): Long =
+        resumablePartial(digest, expectedBytes).takeIf(File::exists)?.length() ?: 0L
+
+    fun discardResumable(digest: ModelDigest): Boolean = resumeFile(digest).let { !it.exists() || it.delete() }
+
+    fun cleanupAbandonedResumes(cutoffEpochMs: Long): Pair<Int, Int> {
+        var deleted = 0
+        var failures = 0
+        partialsDirectory.listFiles { candidate ->
+            candidate.isFile && RESUME_FILENAME.matches(candidate.name) &&
+                candidate.lastModified() <= cutoffEpochMs
+        }.orEmpty().forEach { candidate ->
+            if (candidate.delete()) deleted++ else failures++
+        }
+        return deleted to failures
+    }
+
+    private fun resumeFile(digest: ModelDigest): File {
+        require(digest.sha256.matches(SHA_256))
+        return File(partialsDirectory, "resume-${digest.sha256}.resume")
+    }
+
     fun createPartial(): File = File.createTempFile(PARTIAL_PREFIX, PARTIAL_SUFFIX, partialsDirectory)
 
     fun findVerified(digest: ModelDigest, expectedBytes: Long): File? {
@@ -88,7 +127,7 @@ internal class DownloadFileStore(rootDirectory: File) {
     private fun requireControlledPartial(file: File) {
         val canonical = file.canonicalFile
         require(canonical.parentFile == partialsDirectory)
-        require(canonical.name.endsWith(PARTIAL_SUFFIX))
+        require(canonical.name.endsWith(PARTIAL_SUFFIX) || RESUME_FILENAME.matches(canonical.name))
     }
 
     private fun ensureDirectory(directory: File) {
@@ -135,5 +174,6 @@ internal class DownloadFileStore(rootDirectory: File) {
         const val SHA_256_ALGORITHM = "SHA-256"
         const val HASH_BUFFER_SIZE = 65_536
         val SHA_256 = Regex("^[0-9a-f]{64}$")
+        val RESUME_FILENAME = Regex("^resume-[0-9a-f]{64}\\.resume$")
     }
 }

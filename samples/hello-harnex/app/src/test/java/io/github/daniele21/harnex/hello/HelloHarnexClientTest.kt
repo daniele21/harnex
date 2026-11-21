@@ -6,6 +6,8 @@ import io.github.daniele21.localllm.contracts.ConsumerActivationRequest
 import io.github.daniele21.localllm.contracts.ConsumerActivationResult
 import io.github.daniele21.localllm.contracts.ConsumerAssignedUseCase
 import io.github.daniele21.localllm.contracts.ConsumerAssignedUseCasesResult
+import io.github.daniele21.localllm.contracts.ConsumerCapabilityErrorCode
+import io.github.daniele21.localllm.contracts.ConsumerCapabilityResult
 import io.github.daniele21.localllm.contracts.ConsumerControlPlaneErrorCode
 import io.github.daniele21.localllm.contracts.ConsumerControlPlaneFailure
 import io.github.daniele21.localllm.contracts.ConsumerDeactivationResult
@@ -13,9 +15,11 @@ import io.github.daniele21.localllm.contracts.ConsumerErrorCode
 import io.github.daniele21.localllm.contracts.ConsumerFailure
 import io.github.daniele21.localllm.contracts.ConsumerGenerationEvent
 import io.github.daniele21.localllm.contracts.ConsumerGenerationHandle
+import io.github.daniele21.localllm.contracts.ConsumerGenerationInput
 import io.github.daniele21.localllm.contracts.ConsumerGenerationListener
 import io.github.daniele21.localllm.contracts.ConsumerGenerationRequest
 import io.github.daniele21.localllm.contracts.ConsumerGenerationStartResult
+import io.github.daniele21.localllm.contracts.ConsumerOutputConstraint
 import io.github.daniele21.localllm.contracts.ConsumerOutputConstraintKind
 import io.github.daniele21.localllm.contracts.ConsumerPrepareRequest
 import io.github.daniele21.localllm.contracts.ConsumerPrepareResult
@@ -23,6 +27,7 @@ import io.github.daniele21.localllm.contracts.ConsumerPreparedId
 import io.github.daniele21.localllm.contracts.ConsumerPreparedSelection
 import io.github.daniele21.localllm.contracts.ConsumerPublishedPreset
 import io.github.daniele21.localllm.contracts.ConsumerPublishedPresetsResult
+import io.github.daniele21.localllm.contracts.ConsumerReasoningPreference
 import io.github.daniele21.localllm.contracts.ConsumerSessionResult
 import io.github.daniele21.localllm.contracts.EffectiveConsumerReasoningMode
 import io.github.daniele21.localllm.contracts.InferencePresetId
@@ -40,6 +45,32 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class HelloHarnexClientTest {
+    @Test
+    fun `generic text request forwards prompt unchanged with text output constraint`() {
+        val runtime = FakeHelloHarnexRuntime()
+        val client = HelloHarnexClient(runtime)
+        try {
+            client.run("Explain local AI", {}, {}, {})
+            assertTrue(runtime.generationStarted.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+
+            val request = requireNotNull(runtime.lastGenerationRequest)
+            assertEquals(
+                ConsumerGenerationInput.Text("Explain local AI"),
+                request.input,
+            )
+            assertEquals(ConsumerOutputConstraint.Text, request.outputConstraint)
+            val prepare = requireNotNull(runtime.lastPrepareRequest)
+            assertEquals(USE_CASE, prepare.useCaseId)
+            assertEquals(PRESET, prepare.selection.preset)
+            assertEquals(ConsumerReasoningPreference.DISABLED, prepare.selection.reasoning)
+            assertEquals(ConsumerOutputConstraintKind.TEXT, prepare.selection.outputConstraint)
+            assertEquals(SessionKind.STATELESS, prepare.selection.sessionKind)
+        } finally {
+            client.close()
+            assertTrue(runtime.closed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        }
+    }
+
     @Test
     fun `second inference is rejected while first generation is active`() {
         val runtime = FakeHelloHarnexRuntime()
@@ -138,17 +169,8 @@ class HelloHarnexClientTest {
     }
 
     @Test
-    fun `authorization rejection is surfaced as actionable failure`() {
-        val runtime =
-            FakeHelloHarnexRuntime(
-                assignments =
-                ConsumerAssignedUseCasesResult.Rejected(
-                    ConsumerControlPlaneFailure(
-                        ConsumerControlPlaneErrorCode.APPLICATION_NOT_AUTHORIZED,
-                        "authorization required",
-                    ),
-                ),
-            )
+    fun `mismatched preset binding is rejected before activating the host`() {
+        val runtime = FakeHelloHarnexRuntime(publishedBindingRevision = 2)
         val client = HelloHarnexClient(runtime)
         try {
             val resultReady = CountDownLatch(1)
@@ -157,6 +179,114 @@ class HelloHarnexClientTest {
                 result = it
                 resultReady.countDown()
             })
+
+            assertTrue(resultReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            val failure = requireNotNull(result).exceptionOrNull() as HelloHarnexException
+            assertEquals(HelloHarnexFailureKind.CONFIGURATION_REQUIRED, failure.kind)
+            assertEquals(0, runtime.activations.get())
+            assertEquals(0, runtime.deactivations.get())
+            assertEquals(0, runtime.sessionsOpened.get())
+        } finally {
+            client.close()
+            assertTrue(runtime.closed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
+    fun `mismatched activation is released without preparing a session`() {
+        val runtime = FakeHelloHarnexRuntime(activationBindingRevision = 2)
+        val client = HelloHarnexClient(runtime)
+        try {
+            val resultReady = CountDownLatch(1)
+            var result: Result<HelloInferenceResult>? = null
+            client.run("test", {}, {}, {
+                result = it
+                resultReady.countDown()
+            })
+
+            assertTrue(resultReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            val failure = requireNotNull(result).exceptionOrNull() as HelloHarnexException
+            assertEquals(HelloHarnexFailureKind.CONFIGURATION_REQUIRED, failure.kind)
+            assertEquals(1, runtime.activations.get())
+            assertEquals(1, runtime.deactivations.get())
+            assertEquals(0, runtime.sessionsOpened.get())
+        } finally {
+            client.close()
+            assertTrue(runtime.closed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
+    fun `mismatched prepared preset releases activation without opening session`() {
+        val runtime = FakeHelloHarnexRuntime(preparedPreset = InferencePresetRef(InferencePresetId("other"), 1))
+        val client = HelloHarnexClient(runtime)
+        try {
+            val resultReady = CountDownLatch(1)
+            var result: Result<HelloInferenceResult>? = null
+            client.run("test", {}, {}, {
+                result = it
+                resultReady.countDown()
+            })
+
+            assertTrue(resultReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            val failure = requireNotNull(result).exceptionOrNull() as HelloHarnexException
+            assertEquals(HelloHarnexFailureKind.CONFIGURATION_REQUIRED, failure.kind)
+            assertEquals(1, runtime.deactivations.get())
+            assertEquals(0, runtime.sessionsOpened.get())
+            assertEquals(null, runtime.lastGenerationRequest)
+        } finally {
+            client.close()
+            assertTrue(runtime.closed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
+    fun `mismatched prepared output constraint releases activation before generation`() {
+        val runtime = FakeHelloHarnexRuntime(preparedOutputConstraint = ConsumerOutputConstraintKind.JSON_SCHEMA)
+        val client = HelloHarnexClient(runtime)
+        try {
+            val resultReady = CountDownLatch(1)
+            var result: Result<HelloInferenceResult>? = null
+            client.run("test", {}, {}, {
+                result = it
+                resultReady.countDown()
+            })
+
+            assertTrue(resultReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+            val failure = requireNotNull(result).exceptionOrNull() as HelloHarnexException
+            assertEquals(HelloHarnexFailureKind.CONFIGURATION_REQUIRED, failure.kind)
+            assertEquals(1, runtime.deactivations.get())
+            assertEquals(0, runtime.sessionsOpened.get())
+            assertEquals(null, runtime.lastGenerationRequest)
+        } finally {
+            client.close()
+            assertTrue(runtime.closed.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test
+    fun `authorization rejection is surfaced as actionable failure`() {
+        val runtime = FakeHelloHarnexRuntime(
+            assignments = ConsumerAssignedUseCasesResult.Rejected(
+                ConsumerControlPlaneFailure(
+                    ConsumerControlPlaneErrorCode.APPLICATION_NOT_AUTHORIZED,
+                    "authorization required",
+                ),
+            ),
+        )
+        val client = HelloHarnexClient(runtime)
+        try {
+            val resultReady = CountDownLatch(1)
+            var result: Result<HelloInferenceResult>? = null
+            client.run(
+                "test",
+                {},
+                {},
+                {
+                    result = it
+                    resultReady.countDown()
+                },
+            )
 
             assertTrue(resultReady.await(TIMEOUT_SECONDS, TimeUnit.SECONDS))
             val failure = requireNotNull(result).exceptionOrNull() as HelloHarnexException
@@ -171,14 +301,28 @@ class HelloHarnexClientTest {
     private class FakeHelloHarnexRuntime(
         private val assignments: ConsumerAssignedUseCasesResult = validAssignments(),
         private val blockGenerationReturn: Boolean = false,
+        private val publishedBindingRevision: Int = 1,
+        private val activationBindingRevision: Int = 1,
+        private val preparedPreset: InferencePresetRef = PRESET,
+        private val preparedOutputConstraint: ConsumerOutputConstraintKind = ConsumerOutputConstraintKind.TEXT,
     ) : HelloHarnexRuntime {
         val generationStarted = CountDownLatch(1)
         val closed = CountDownLatch(1)
         val cancelCount = AtomicInteger(0)
         val closedSessions = AtomicInteger(0)
         val deactivations = AtomicInteger(0)
+        val activations = AtomicInteger(0)
+        val sessionsOpened = AtomicInteger(0)
         val closeCount = AtomicInteger(0)
         val assignmentCalls = AtomicInteger(0)
+
+        @Volatile
+        var lastGenerationRequest: ConsumerGenerationRequest? = null
+            private set
+
+        @Volatile
+        var lastPrepareRequest: ConsumerPrepareRequest? = null
+            private set
 
         private val generationReturnAllowed = CountDownLatch(if (blockGenerationReturn) 1 else 0)
         private var generationRequestId: RequestId? = null
@@ -188,6 +332,11 @@ class HelloHarnexClientTest {
 
         override fun disconnect() = Unit
 
+        override fun capabilities(useCaseId: UseCaseId): ConsumerCapabilityResult = ConsumerCapabilityResult.Rejected(
+            ConsumerCapabilityErrorCode.CAPABILITY_INCOMPATIBLE,
+            "Capabilities are not queried by this callback-only sample",
+        )
+
         override fun assignedUseCases(): ConsumerAssignedUseCasesResult {
             assignmentCalls.incrementAndGet()
             return assignments
@@ -195,49 +344,57 @@ class HelloHarnexClientTest {
 
         override fun publishedPresets(useCaseId: UseCaseId): ConsumerPublishedPresetsResult = ConsumerPublishedPresetsResult.Available(
             useCaseId = useCaseId,
-            bindingRevision = 1,
-            presets =
-            listOf(
+            bindingRevision = publishedBindingRevision,
+            presets = listOf(
                 ConsumerPublishedPreset(
                     preset = PRESET,
-                    displayName = "Balanced",
-                    description = "Balanced test preset",
+                    displayName = "Quality",
+                    description = "General-purpose text preset",
                     isDefault = true,
                 ),
             ),
         )
 
-        override fun activate(request: ConsumerActivationRequest): ConsumerActivationResult = ConsumerActivationResult.Activated(
-            ConsumerActivation(
-                activationId = ConsumerActivationId("activation-1"),
-                useCaseId = request.useCaseId,
-                useCaseRevision = request.useCaseRevision,
-                bindingRevision = request.bindingRevision,
-                preset = request.preset,
-            ),
-        )
+        override fun activate(request: ConsumerActivationRequest): ConsumerActivationResult {
+            activations.incrementAndGet()
+            return ConsumerActivationResult.Activated(
+                ConsumerActivation(
+                    activationId = ConsumerActivationId("activation-1"),
+                    useCaseId = request.useCaseId,
+                    useCaseRevision = request.useCaseRevision,
+                    bindingRevision = activationBindingRevision,
+                    preset = request.preset,
+                ),
+            )
+        }
 
         override fun deactivate(activationId: ConsumerActivationId): ConsumerDeactivationResult {
             deactivations.incrementAndGet()
             return ConsumerDeactivationResult.Released
         }
 
-        override fun prepare(request: ConsumerPrepareRequest): ConsumerPrepareResult = ConsumerPrepareResult.Prepared(
-            ConsumerPreparedSelection(
-                preparedId = ConsumerPreparedId("prepared-1"),
-                useCaseId = request.useCaseId,
-                capabilityRevision = "capability-1",
-                preset = PRESET,
-                reasoningMode = EffectiveConsumerReasoningMode.DISABLED,
-                outputConstraint = ConsumerOutputConstraintKind.JSON_SCHEMA,
-                sessionKind = SessionKind.STATELESS,
-            ),
-        )
+        override fun prepare(request: ConsumerPrepareRequest): ConsumerPrepareResult {
+            lastPrepareRequest = request
+            return ConsumerPrepareResult.Prepared(
+                ConsumerPreparedSelection(
+                    preparedId = ConsumerPreparedId("prepared-1"),
+                    useCaseId = request.useCaseId,
+                    capabilityRevision = "capability-1",
+                    preset = preparedPreset,
+                    reasoningMode = EffectiveConsumerReasoningMode.DISABLED,
+                    outputConstraint = preparedOutputConstraint,
+                    sessionKind = SessionKind.STATELESS,
+                ),
+            )
+        }
 
-        override fun createSession(preparedId: ConsumerPreparedId): ConsumerSessionResult =
-            ConsumerSessionResult.Created(SessionId("session-1"))
+        override fun createSession(preparedId: ConsumerPreparedId): ConsumerSessionResult {
+            sessionsOpened.incrementAndGet()
+            return ConsumerSessionResult.Created(SessionId("session-1"))
+        }
 
         override fun generate(request: ConsumerGenerationRequest, listener: ConsumerGenerationListener): ConsumerGenerationStartResult {
+            lastGenerationRequest = request
             generationRequestId = request.requestId
             generationListener = listener
             generationStarted.countDown()
@@ -283,8 +440,8 @@ class HelloHarnexClientTest {
 
     private companion object {
         const val TIMEOUT_SECONDS = 5L
-        val USE_CASE = UseCaseId("document-pii-detection")
-        val PRESET = InferencePresetRef(InferencePresetId("balanced"), 1)
+        val USE_CASE = UseCaseId("generic-text-generation")
+        val PRESET = InferencePresetRef(InferencePresetId("qwen35-text-quality"), 1)
 
         fun validAssignments(): ConsumerAssignedUseCasesResult = ConsumerAssignedUseCasesResult.Available(
             listOf(
@@ -292,8 +449,8 @@ class HelloHarnexClientTest {
                     useCaseId = USE_CASE,
                     useCaseRevision = 1,
                     bindingRevision = 1,
-                    displayName = "Document PII detection",
-                    description = "Detect personal information",
+                    displayName = "Generic text generation",
+                    description = "Run bounded local text generation",
                     isDefault = true,
                 ),
             ),

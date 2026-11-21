@@ -22,19 +22,29 @@ import io.github.daniele21.localllm.models.ModelProfileRegistry
 import io.github.daniele21.localllm.models.ResolvedUseCase
 import io.github.daniele21.localllm.models.controlplane.room.RoomHostControlPlaneStoreOwner
 import io.github.daniele21.localllm.observability.GenerationRunRecord
+import io.github.daniele21.localllm.observability.ResourceSnapshotProvider
 import io.github.daniele21.localllm.observability.StructuredLog
 import io.github.daniele21.localllm.observability.TelemetryRepository
 import io.github.daniele21.localllm.observability.TelemetryRetentionPolicy
+import io.github.daniele21.localllm.observability.android.AndroidResourceSnapshotProvider
 import io.github.daniele21.localllm.observability.room.RoomTelemetryRepository
 import io.github.daniele21.localllm.runtime.ActivationIdFactory
 import io.github.daniele21.localllm.runtime.ActivationResidencyCoordinator
 import io.github.daniele21.localllm.runtime.ConsumerCapabilityPolicyService
 import io.github.daniele21.localllm.runtime.ConsumerLocalLlmFacade
 import io.github.daniele21.localllm.runtime.ConsumerUseCasePolicy
+import io.github.daniele21.localllm.runtime.ContextMemoryCostEstimator
 import io.github.daniele21.localllm.runtime.InMemoryConsumerUseCasePolicyRegistry
 import io.github.daniele21.localllm.runtime.InferenceAuditLocalLlmClient
 import io.github.daniele21.localllm.runtime.InferenceAuditOriginResolver
+import io.github.daniele21.localllm.runtime.MemoryAdmissionController
+import io.github.daniele21.localllm.runtime.MemoryAwareContextPlanner
+import io.github.daniele21.localllm.runtime.MemoryAwareEvaluationBatchContextPlanner
+import io.github.daniele21.localllm.runtime.MemoryAwareModelLoadPlanner
+import io.github.daniele21.localllm.runtime.ModelMemoryCostEstimator
 import io.github.daniele21.localllm.runtime.OneShotInferenceAuditEffectivePromptBridge
+import io.github.daniele21.localllm.runtime.RuntimeMemoryBudget
+import io.github.daniele21.localllm.runtime.RuntimeMemoryObservationSource
 import io.github.daniele21.localllm.runtime.RuntimeMemoryPressure
 import io.github.daniele21.localllm.runtime.RuntimeOrchestrator
 import io.github.daniele21.localllm.runtime.UseCaseActivationId
@@ -77,6 +87,7 @@ internal class HarnessRuntimeGraph private constructor(context: Context) : AutoC
     val auditStartupState = inferenceActivitySource.reconcileInterrupted(System.currentTimeMillis())
 
     init {
+        val genericTextSpec = HarnessSharedRuntimePolicy.builtInGenericTextControlPlaneSpec(authorizedClientPolicies)
         val auraSpecs = HarnessSharedRuntimePolicy.builtInAuraControlPlaneSpecs(authorizedClientPolicies)
         HarnessControlPlaneStartup(
             store = controlPlaneStoreOwner.store,
@@ -84,7 +95,8 @@ internal class HarnessRuntimeGraph private constructor(context: Context) : AutoC
             HarnessControlPlaneReconciler(
                 HarnessSharedRuntimePolicy.builtInOmbraControlPlaneSpec(authorizedClientPolicies),
             ),
-            additionalReconcilers = auraSpecs.map(::HarnessControlPlaneReconciler),
+            additionalReconcilers =
+            listOf(HarnessControlPlaneReconciler(genericTextSpec)) + auraSpecs.map(::HarnessControlPlaneReconciler),
         ).reconcile()
     }
 
@@ -159,7 +171,11 @@ internal class HarnessRuntimeGraph private constructor(context: Context) : AutoC
                                 maxJsonSchemaCharacters = 32_768,
                             ),
                         )
-                    listOf(legacyConsolePolicy, HarnessOmbraConsumerPolicy.create(applicationId))
+                    listOf(
+                        legacyConsolePolicy,
+                        HarnessOmbraConsumerPolicy.create(applicationId),
+                        HarnessGenericTextConsumerPolicy.create(applicationId),
+                    )
                 }
 
                 HarnessSharedRuntimeBindings.redactGuardApplicationId ->
@@ -177,10 +193,18 @@ internal class HarnessRuntimeGraph private constructor(context: Context) : AutoC
 
                 else -> {
                     val state = controlPlaneStore.snapshot()
-                    require(state.isAuthorizedOmbraConsumer(applicationId)) {
+                    val configuredPolicies = buildList {
+                        if (state.isAuthorizedOmbraConsumer(applicationId)) {
+                            add(HarnessOmbraConsumerPolicy.create(applicationId))
+                        }
+                        if (state.isAuthorizedGenericTextConsumer(applicationId)) {
+                            add(HarnessGenericTextConsumerPolicy.create(applicationId))
+                        }
+                    }
+                    require(configuredPolicies.isNotEmpty()) {
                         "Consumer API is not configured for applicationId ${applicationId.value}"
                     }
-                    listOf(HarnessOmbraConsumerPolicy.create(applicationId))
+                    configuredPolicies
                 }
             }
         val fallbackPolicyRegistry = InMemoryConsumerUseCasePolicyRegistry(policies)
@@ -288,10 +312,40 @@ internal class HarnessRuntimeGraph private constructor(context: Context) : AutoC
         if (runtime != null) return
 
         val backend = HarnessRuntimePlatform.backend(appContext, activationResidency)
+        // MEM-A: capture real pre-allocation snapshots, but never enforce uncalibrated estimates.
+        val resourceProvider = AndroidResourceSnapshotProvider(appContext)
+        val observation = HarnessRuntimeMemoryObservationSource(
+            ResourceSnapshotProvider {
+                resourceProvider.snapshot().also { snapshot ->
+                    runCatching { telemetryRepository.recordResourceSnapshot(snapshot) }
+                }
+            },
+        )
+        val observationSource = RuntimeMemoryObservationSource { runCatching(observation::observe).getOrNull() }
+        // Shadow-only: no numeric cost profiles or device-safe thresholds have been certified.
+        val advisoryController = MemoryAdmissionController(
+            RuntimeMemoryBudget(minimumAvailableBytes = 0L, safetyReserveBytes = 0L, maxResidentContexts = 1),
+        )
         val orchestrator = RuntimeOrchestrator(
             registry = registry,
             modelStore = modelStore,
             backend = backend,
+            memoryAwareModelLoadPlanner = MemoryAwareModelLoadPlanner(
+                observationSource,
+                ModelMemoryCostEstimator { null },
+                advisoryController,
+            ),
+            memoryAwareContextPlanner = MemoryAwareContextPlanner(
+                observationSource,
+                ContextMemoryCostEstimator { _, _ -> null },
+                advisoryController,
+            ),
+            memoryAwareEvaluationBatchContextPlanner = MemoryAwareEvaluationBatchContextPlanner(
+                observationSource,
+                ContextMemoryCostEstimator { _, _ -> null },
+                advisoryController,
+            ),
+            enforceMemoryAdmission = false,
             telemetryRepository = telemetryRepository,
             effectivePromptSink = effectivePromptBridge,
         )

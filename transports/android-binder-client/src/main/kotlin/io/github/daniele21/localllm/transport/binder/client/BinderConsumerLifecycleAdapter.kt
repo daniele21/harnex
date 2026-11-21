@@ -150,12 +150,17 @@ internal class BinderConsumerLifecycleAdapter(
 
     private fun await(endpoint: RegisteredSharedRuntimeEndpoint, call: ((ConsumerResultParcel) -> Unit) -> Unit): ConsumerRemoteOutcome {
         val waiter = ConsumerCallbackWaiter()
-        val subscription = endpointInvalidations?.addListener { epoch, detail ->
-            if (epoch == endpoint.connectionEpoch) waiter.disconnect(detail)
+        val subscription = endpointInvalidations?.addListener { epoch, _ ->
+            if (epoch == endpoint.connectionEpoch) waiter.disconnect()
         }
         return try {
-            call(waiter::complete)
-            waiter.await(operationTimeoutMillis)
+            // Invalidation can race with listener registration; do not dispatch through a stale endpoint.
+            if (!isCurrent(endpoint)) {
+                ConsumerRemoteOutcome.Disconnected
+            } else {
+                call(waiter::complete)
+                waiter.await(operationTimeoutMillis)
+            }
         } catch (_: DeadObjectException) {
             ConsumerRemoteOutcome.Disconnected
         } catch (_: RemoteException) {
@@ -186,8 +191,8 @@ private class ConsumerCallbackWaiter {
 
     fun complete(result: ConsumerResultParcel) = finish(ConsumerRemoteOutcome.Received(result))
 
-    fun disconnect(detail: String) {
-        if (detail.isNotBlank()) finish(ConsumerRemoteOutcome.Disconnected)
+    fun disconnect() {
+        finish(ConsumerRemoteOutcome.Disconnected)
     }
 
     fun await(timeoutMillis: Long): ConsumerRemoteOutcome = if (latch.await(timeoutMillis, TimeUnit.MILLISECONDS)) {

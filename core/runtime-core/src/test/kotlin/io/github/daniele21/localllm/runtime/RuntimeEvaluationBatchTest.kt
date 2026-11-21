@@ -1,9 +1,13 @@
 package io.github.daniele21.localllm.runtime
 
 import io.github.daniele21.localllm.contracts.ApplicationId
+import io.github.daniele21.localllm.contracts.ConfigurationErrorCode
+import io.github.daniele21.localllm.contracts.GenerationOverrides
 import io.github.daniele21.localllm.contracts.GenerationRequest
+import io.github.daniele21.localllm.contracts.LocalLlmError
 import io.github.daniele21.localllm.contracts.ModelDigest
 import io.github.daniele21.localllm.contracts.RequestId
+import io.github.daniele21.localllm.contracts.RuntimeState
 import io.github.daniele21.localllm.contracts.SessionId
 import io.github.daniele21.localllm.contracts.UseCaseId
 import io.github.daniele21.localllm.models.AppModelBinding
@@ -56,6 +60,48 @@ class RuntimeEvaluationBatchTest {
         assertEquals(0, fixture.backend.ordinaryGenerationCalls)
         assertEquals(2, fixture.backend.lastBatchConfiguration?.maxSequences)
         assertTrue(fixture.backend.lastBatchConfiguration!!.perSequenceContextSize > 0)
+        fixture.close()
+    }
+
+    @Test
+    fun `batch preserves per-case sampling overrides with no reasoning control`() {
+        val fixture = BatchRuntimeFixture()
+        val initial = fixture.batchRequest("batch-settings", fixture.sessions(2))
+        val requests = initial.requests.mapIndexed { index, request ->
+            request.copy(
+                overrides = GenerationOverrides(
+                    maxOutputTokens = 20 + index,
+                    temperature = 0.3f + index * 0.2f,
+                    topP = 0.8f,
+                    topK = 12,
+                    minP = 0.07f,
+                    presencePenalty = 0.2f,
+                    repeatPenalty = 1.1f,
+                    repeatLastN = 32,
+                    seed = 17L + index,
+                ),
+            )
+        }
+        val terminal = CountDownLatch(1)
+        var outcome: RuntimeEvaluationBatchOutcome? = null
+
+        fixture.runtime.generateEvaluationBatch(
+            initial.copy(requests = requests),
+            RuntimeEvaluationBatchListener {
+                outcome = it
+                terminal.countDown()
+            },
+        )
+
+        assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        assertTrue(outcome is RuntimeEvaluationBatchOutcome.Completed)
+        val projected = fixture.backend.lastBatchRequests
+        assertEquals(requests.map { it.requestId.value }, projected.map { it.requestId })
+        assertEquals(listOf(20, 21), projected.map { it.maxOutputTokens })
+        assertEquals(listOf(17L, 18L), projected.map { it.seed })
+        assertEquals(listOf(0.07f, 0.07f), projected.map { it.minP })
+        assertEquals(listOf(0.2f, 0.2f), projected.map { it.presencePenalty })
+        assertTrue(projected.all { it.reasoningControl == null })
         fixture.close()
     }
 
@@ -115,6 +161,175 @@ class RuntimeEvaluationBatchTest {
         assertTrue(completed.cases[1] is RuntimeEvaluationBatchCaseResult.Completed)
         assertEquals(listOf("case-0"), fixture.backend.cancelledCaseIds.toList())
         fixture.close()
+    }
+
+    @Test
+    fun `batch invalid generation settings remain a typed configuration failure before context creation`() {
+        val fixture = BatchRuntimeFixture()
+        try {
+            val request = fixture.batchRequest("invalid-batch", fixture.sessions(2)).let { batch ->
+                batch.copy(requests = batch.requests.map { it.copy(overrides = GenerationOverrides(maxOutputTokens = 0)) })
+            }
+            val terminal = CountDownLatch(1)
+            var outcomes = 0
+            var outcome: RuntimeEvaluationBatchOutcome? = null
+            fixture.runtime.generateEvaluationBatch(
+                request,
+                RuntimeEvaluationBatchListener {
+                    outcomes++
+                    outcome = it
+                    terminal.countDown()
+                },
+            )
+
+            assertTrue(terminal.await(2, TimeUnit.SECONDS))
+            val failure = (outcome as RuntimeEvaluationBatchOutcome.Failed).error as LocalLlmError.Configuration
+            assertEquals(ConfigurationErrorCode.INVALID_GENERATION_CONFIGURATION, failure.reason)
+            assertEquals(0, fixture.backend.batchContextCreateCalls)
+            assertEquals(0, fixture.backend.batchContextReleaseCalls)
+            assertEquals(1, outcomes)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun `batch backend failure retains typed code and releases the native context once`() {
+        val fixture = BatchRuntimeFixture()
+        fixture.backend.batchFailure = BackendException("OUTPUT_CONSTRAINT_UNSUPPORTED", "Output schema unsupported")
+        try {
+            val terminal = CountDownLatch(1)
+            var outcomes = 0
+            var outcome: RuntimeEvaluationBatchOutcome? = null
+            fixture.runtime.generateEvaluationBatch(
+                fixture.batchRequest("backend-failure", fixture.sessions(2)),
+                RuntimeEvaluationBatchListener {
+                    outcomes++
+                    outcome = it
+                    terminal.countDown()
+                },
+            )
+
+            assertTrue(terminal.await(2, TimeUnit.SECONDS))
+            val failure = (outcome as RuntimeEvaluationBatchOutcome.Failed).error as LocalLlmError.Configuration
+            assertEquals(ConfigurationErrorCode.OUTPUT_CONSTRAINT_UNSUPPORTED, failure.reason)
+            assertEquals(1, fixture.backend.batchContextCreateCalls)
+            assertEquals(1, fixture.backend.batchContextReleaseCalls)
+            assertEquals(1, outcomes)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun `batch unexpected failure retains native error and releases its context once`() {
+        val fixture = BatchRuntimeFixture()
+        fixture.backend.batchFailure = IllegalStateException("Batch decode failure")
+        try {
+            val terminal = CountDownLatch(1)
+            var outcomes = 0
+            var outcome: RuntimeEvaluationBatchOutcome? = null
+            fixture.runtime.generateEvaluationBatch(
+                fixture.batchRequest("unexpected-failure", fixture.sessions(2)),
+                RuntimeEvaluationBatchListener {
+                    outcomes++
+                    outcome = it
+                    terminal.countDown()
+                },
+            )
+
+            assertTrue(terminal.await(2, TimeUnit.SECONDS))
+            val failure = (outcome as RuntimeEvaluationBatchOutcome.Failed).error as LocalLlmError.NativeRuntime
+            assertEquals("Batch decode failure", failure.message)
+            assertEquals(1, fixture.backend.batchContextCreateCalls)
+            assertEquals(1, fixture.backend.batchContextReleaseCalls)
+            assertEquals(1, outcomes)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun `cancelled running batch releases context once and reports one terminal failure`() {
+        val fixture = BatchRuntimeFixture()
+        fixture.backend.blockBatchGeneration = CountDownLatch(1)
+        try {
+            val terminal = CountDownLatch(1)
+            var outcomes = 0
+            var outcome: RuntimeEvaluationBatchOutcome? = null
+            val handle = fixture.runtime.generateEvaluationBatch(
+                fixture.batchRequest("cancelled-batch", fixture.sessions(2)),
+                RuntimeEvaluationBatchListener {
+                    outcomes++
+                    outcome = it
+                    terminal.countDown()
+                },
+            )
+            assertTrue(fixture.backend.batchGenerationStarted.await(2, TimeUnit.SECONDS))
+            assertTrue(handle.cancel())
+            fixture.backend.blockBatchGeneration!!.countDown()
+
+            assertTrue(terminal.await(2, TimeUnit.SECONDS))
+            assertTrue((outcome as RuntimeEvaluationBatchOutcome.Failed).error is LocalLlmError.Cancelled)
+            assertEquals(1, fixture.backend.batchContextCreateCalls)
+            assertEquals(1, fixture.backend.batchContextReleaseCalls)
+            assertEquals(1, outcomes)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun `release failure after successful batch preserves degraded runtime state`() {
+        val fixture = BatchRuntimeFixture()
+        fixture.backend.batchReleaseFailure = IllegalStateException("Native context release failed")
+        try {
+            val terminal = CountDownLatch(1)
+            var outcome: RuntimeEvaluationBatchOutcome? = null
+            fixture.runtime.generateEvaluationBatch(
+                fixture.batchRequest("release-failure", fixture.sessions(2)),
+                RuntimeEvaluationBatchListener {
+                    outcome = it
+                    terminal.countDown()
+                },
+            )
+
+            assertTrue(terminal.await(2, TimeUnit.SECONDS))
+            fixture.awaitWorkerIdle()
+            val failure = (outcome as RuntimeEvaluationBatchOutcome.Failed).error as LocalLlmError.NativeRuntime
+            assertEquals("Native context release failed", failure.message)
+            assertEquals(1, fixture.backend.batchContextReleaseCalls)
+            assertEquals(RuntimeState.DEGRADED, fixture.runtime.runtimeSnapshot().state)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    @Test
+    fun `release failure while handling backend error preserves original error and degraded state`() {
+        val fixture = BatchRuntimeFixture()
+        fixture.backend.batchFailure = BackendException("OUTPUT_CONSTRAINT_UNSUPPORTED", "Output schema unsupported")
+        fixture.backend.batchReleaseFailure = IllegalStateException("Native context release failed")
+        try {
+            val terminal = CountDownLatch(1)
+            var outcome: RuntimeEvaluationBatchOutcome? = null
+            fixture.runtime.generateEvaluationBatch(
+                fixture.batchRequest("backend-and-release-failure", fixture.sessions(2)),
+                RuntimeEvaluationBatchListener {
+                    outcome = it
+                    terminal.countDown()
+                },
+            )
+
+            assertTrue(terminal.await(2, TimeUnit.SECONDS))
+            fixture.awaitWorkerIdle()
+            val failure = (outcome as RuntimeEvaluationBatchOutcome.Failed).error as LocalLlmError.Configuration
+            assertEquals(ConfigurationErrorCode.OUTPUT_CONSTRAINT_UNSUPPORTED, failure.reason)
+            assertEquals(1, fixture.backend.batchContextReleaseCalls)
+            assertEquals(RuntimeState.DEGRADED, fixture.runtime.runtimeSnapshot().state)
+        } finally {
+            fixture.close()
+        }
     }
 
     @Test
@@ -180,6 +395,14 @@ private class BatchRuntimeFixture {
         useCaseId = useCaseId,
         input = "prompt $id",
     )
+
+    fun awaitWorkerIdle() {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (runtime.memoryResourceSnapshot().activeGeneration && System.nanoTime() < deadline) {
+            Thread.sleep(10)
+        }
+        assertFalse(runtime.memoryResourceSnapshot().activeGeneration)
+    }
 
     fun close() {
         backend.blockOrdinaryGeneration?.countDown()
@@ -255,8 +478,12 @@ private class BatchFakeInferenceBackend :
     var batchGenerationCalls = 0
     var batchContextReleaseCalls = 0
     var lastBatchConfiguration: BackendEvaluationBatchContextConfiguration? = null
+
+    @Volatile var lastBatchRequests: List<BackendGenerationRequest> = emptyList()
     var blockOrdinaryGeneration: CountDownLatch? = null
     var blockBatchGeneration: CountDownLatch? = null
+    var batchFailure: Throwable? = null
+    var batchReleaseFailure: Throwable? = null
     val ordinaryGenerationStarted = CountDownLatch(1)
     val batchGenerationStarted = CountDownLatch(1)
     val cancelledCaseIds = Collections.synchronizedSet(LinkedHashSet<String>())
@@ -326,15 +553,18 @@ private class BatchFakeInferenceBackend :
 
     override fun releaseEvaluationBatchContext(context: BackendEvaluationBatchContextHandle) {
         batchContextReleaseCalls += 1
+        batchReleaseFailure?.let { throw it }
     }
 
     override fun generateEvaluationBatch(
         context: BackendEvaluationBatchContextHandle,
         requests: List<BackendGenerationRequest>,
     ): BackendEvaluationBatchResult {
+        lastBatchRequests = requests
         batchGenerationCalls += 1
         batchGenerationStarted.countDown()
         blockBatchGeneration?.await()
+        batchFailure?.let { throw it }
         return BackendEvaluationBatchResult(
             requests.map { request ->
                 if (request.requestId in cancelledCaseIds) {

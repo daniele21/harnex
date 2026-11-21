@@ -2,10 +2,12 @@ package io.github.daniele21.localllm.runtime
 
 import io.github.daniele21.localllm.contracts.ConfigurationErrorCode
 import io.github.daniele21.localllm.contracts.ContextPolicy
+import io.github.daniele21.localllm.contracts.EffectiveGenerationMetadata
 import io.github.daniele21.localllm.contracts.GenerationInput
 import io.github.daniele21.localllm.contracts.GenerationRequest
 import io.github.daniele21.localllm.contracts.OutputConstraint
 import io.github.daniele21.localllm.contracts.SeedPolicy
+import io.github.daniele21.localllm.contracts.SeedPolicyType
 import io.github.daniele21.localllm.contracts.SessionOptions
 import io.github.daniele21.localllm.contracts.ThinkingMode
 import io.github.daniele21.localllm.models.ContextPreference
@@ -289,6 +291,56 @@ internal data class ResolvedRequestConfiguration(
     val systemPrompt: String?,
     val contextPreference: ContextPreference,
     val guardPolicy: GenerationGuardPolicy,
-)
+) {
+    /** The supplied context size is actual ordinary capacity or per-sequence batch capacity. */
+    fun effectiveMetadata(promptPlan: BackendPromptPlan, contextSize: Int): EffectiveGenerationMetadata = EffectiveGenerationMetadata(
+        preset = preset?.ref,
+        temperature = temperature,
+        topP = topP,
+        topK = topK,
+        minP = minP,
+        presencePenalty = presencePenalty,
+        repeatPenalty = repeatPenalty,
+        repeatLastN = repeatLastN,
+        requestedSeedPolicy = seedPolicy.toType(),
+        effectiveSeed = effectiveSeed,
+        maxOutputTokens = maxOutputTokens,
+        contextSize = contextSize,
+        promptTokenCount = promptPlan.tokenCount,
+        chatTemplateId = promptPlan.chatTemplateId,
+        chatTemplateSource = promptPlan.chatTemplateSource,
+        systemPromptVersion = systemPromptVersion,
+        thinkingMode = thinkingMode,
+    )
+
+    /** Ordinary generation may pass reasoning control; evaluation batching passes null. */
+    fun backendRequest(
+        request: GenerationRequest,
+        promptPlan: BackendPromptPlan,
+        reasoningControl: BackendReasoningControl?,
+    ): BackendGenerationRequest = BackendGenerationRequest(
+        requestId = request.requestId.value,
+        prompt = promptPlan.prompt,
+        maxOutputTokens = maxOutputTokens,
+        temperature = temperature,
+        topP = topP,
+        topK = topK,
+        minP = minP,
+        presencePenalty = presencePenalty,
+        repeatPenalty = repeatPenalty,
+        repeatLastN = repeatLastN,
+        seed = effectiveSeed,
+        outputConstraint = request.outputConstraint,
+        stopTokenIds = promptPlan.stopTokenIds,
+        stopSequences = promptPlan.stopSequences,
+        reasoningControl = reasoningControl,
+        imageBytes = promptPlan.imageBytes,
+    )
+
+    private fun SeedPolicy.toType(): SeedPolicyType = when (this) {
+        SeedPolicy.Random -> SeedPolicyType.RANDOM
+        is SeedPolicy.Fixed -> SeedPolicyType.FIXED
+    }
+}
 
 internal class GenerationPlanningException(val reason: ConfigurationErrorCode, message: String) : IllegalArgumentException(message)

@@ -1,0 +1,77 @@
+name: Embedded SDK Maven staging
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        type: string
+        required: true
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Native AAR publication is expensive; newer revisions supersede older PR jobs.
+concurrency:
+  group: embedded-sdk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stage-maven:
+    name: Stage all embedded SDK AARs
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout native sources
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          submodules: recursive
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android platform and native toolchain
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358' 'cmake;3.22.1'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+      - name: Verify staged publications
+        env:
+          EMBEDDED_SDK_VERSION: 0.1.0-ci.${{ github.run_id }}
+        run: bash scripts/verify-embedded-sdk-publication.sh
+      # Upload only after the Maven consumer build, manifest permission and ARM64
+      # native packaging checks; emulator UI remains a separate required gate.
+      - name: Upload installable Android embedded smoke APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: harnex-embedded-smoke-apk-${{ github.run_id }}
+          path: build/embedded-smoke-apk/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Install Android API 35 UI emulator
+        run: sdkmanager 'emulator' 'system-images;android-35;google_apis;x86_64'
+      - name: Verify external smoke controls are visible on Android
+        run: bash scripts/verify-embedded-smoke-ui-emulator.sh
+      - name: Retain UI control evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: embedded-smoke-ui-evidence-${{ github.run_id }}
+          path: build/embedded-smoke-ui-evidence/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Retain publication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: embedded-sdk-maven-${{ github.run_id }}
+          path: |
+            build/embedded-sdk-repository/build-manifest.txt
+            build/embedded-sdk-repository/SHA256SUMS
+          if-no-files-found: warn
+          retention-days: 7

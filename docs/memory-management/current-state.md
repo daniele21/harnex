@@ -50,6 +50,14 @@ No numeric production `MEASURED` profiles are committed yet. Qwen3.5 recurrent/l
 
 The phone-test composition adapts the canonical Android `ResourceSnapshotProvider` into `RuntimeMemoryObservation` without reversing module dependencies.
 
+### MEM-A — shadow admission (integration, not calibration)
+
+The primary `HarnessRuntimeGraph` now wires **all three existing planners** (cold model, ordinary context, aggregate evaluation batch) using a fresh Android resource snapshot at each new allocation boundary. Snapshots are retained through the existing bounded telemetry repository, without prompt/output content. The testable `RuntimeOrchestrator` option `enforceMemoryAdmission = false` records `memory.admission.shadow` decisions but never rejects, downshifts, or claims an allocation was approved. The previous default remains enforcing when a caller explicitly supplies planners.
+
+**No production cost profiles are supplied in this shadow composition.** Missing estimates are recorded as `MEMORY_COST_ESTIMATE_UNAVAILABLE`; the shadow-only controller has zero numeric budget floors and **must not be reused for enforcement**. Shadow telemetry is evidence of attempted assessment, not certified headroom and not a `MEASURED` cost profile. Snapshot capture or persistence failure must not stop inference in observation mode. Existing Android low-memory callbacks, one-model residency, warm-idle TTL and bounded work remain authoritative.
+
+Before any enforcing Android policy, publish reviewed model-load/context peak-cost profiles that distinguish exact model artifact, backend revision, runtime tuning identity and device class as applicable (including batch/ubatch, flash attention and other material memory knobs). Calibrate safety floors/reserve, ensure the profile registry rejects incompatible identities, then enable real admission only for qualified combinations. Do not silently enforce with the shadow placeholders.
+
 Warm shared-runtime residency is bounded by policy:
 
 - Binder disconnect is only a demand-absent signal;
@@ -70,6 +78,14 @@ The observability path now includes:
 - typed `memory.admission` structured logs for governor allow/downshift/reject decisions, without prompt or generated-content fields.
 
 The regression evaluator currently thresholds PSS peak/residual and available-memory floor. Native-heap and thermal signals remain available raw evidence and may be added to policy only when their interpretation is defined.
+
+## MEM-B — physical native cost calibration preparation
+
+A separate candidate-only physical runner, `scripts/run-qwen35-memory-cost-calibration.sh`, now exercises the production ARM64 `LlamaCppInferenceBackend` on the exact curated Qwen3.5 0.8B and 2B Q4_K_M artifacts. The runner uses pinned llama.cpp and a clean Harness identity, private model staging, a serialized thermal-start gate, independent cold instrumentation repetitions and a hashed evidence manifest. By default it covers 1024/2048-token contexts; 4096/8192 require explicit selection and physical headroom review. The previous QRT-40 lifecycle suite is unchanged and remains separately required.
+
+The native calibration instrumentation samples process PSS (200 ms cadence and boundaries), available system memory, Java/native heaps, Android low-memory state and thermal state across backend initialization, model load, context creation, fixed native generation, context release, model unload and settled shutdown. It does **not** collect prompts or generated text in evidence. Observed sampled peaks are **lower bounds**, not guaranteed physical maxima.
+
+`scripts/summarize-qwen35-memory-calibration.py` validates complete comparable repetitions and exact backend/model/runtime/device/configuration identities. It produces only `CANDIDATE_UNREVIEWED` envelopes with no automatic `MEASURED` promotion or safety margin. Native isolated costs are not yet full Harnex end-to-end admission costs; the published production registry still has **no MEASURED entries**. Physical execution on representative ARM64 devices and explicit review remain outstanding. In particular, a calibrated 1024/2048 subset does not qualify untested context tiers.
 
 ## Remaining gap: representative-device evidence
 

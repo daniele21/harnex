@@ -1,8 +1,10 @@
-name: Local CI (dispatch)
+name: Harnex local Mac CI (trusted dev dispatch)
 
+# Hosted dispatcher only; the Mac runners are attached to the private infra repo.
+# Never dispatch code from pull_request, fork or an arbitrary branch.
 on:
   push:
-    branches: [main, dev]
+    branches: [dev]
   workflow_dispatch:
 
 permissions:
@@ -10,19 +12,28 @@ permissions:
 
 jobs:
   dispatch:
+    if: ${{ github.repository == 'daniele21/harnex' && github.ref == 'refs/heads/dev' && github.actor == 'daniele21' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Trigger central Mac runner
+      - name: Dispatch reviewed dev commit to private Mac runner
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.CENTRAL_DISPATCH_TOKEN }}
-          CENTRAL_REPO: "daniele21/local-runner-infra"
           SOURCE_REPO: ${{ github.repository }}
           SOURCE_SHA: ${{ github.sha }}
-        shell: bash
         run: |
           set -euo pipefail
-          gh api --method POST "repos/$CENTRAL_REPO/dispatches" \
+          [[ -n "${GH_TOKEN:-}" ]] || {
+            echo "::error::CENTRAL_DISPATCH_TOKEN missing; local Mac lane not configured" >&2
+            exit 2
+          }
+          [[ "$SOURCE_REPO" == "daniele21/harnex" && "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::Unexpected source repository or SHA" >&2
+            exit 2
+          }
+          gh api --method POST repos/daniele21/local-runner-infra/dispatches \
             -f event_type=run-ci \
             -f "client_payload[repository]=$SOURCE_REPO" \
             -f "client_payload[sha]=$SOURCE_SHA"
+          echo "Central dispatch accepted; authoritative result: local-ci/mac on $SOURCE_SHA"

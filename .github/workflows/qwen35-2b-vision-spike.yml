@@ -1,0 +1,149 @@
+name: Qwen3.5 2B vision feasibility (host-only)
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/qwen35-2b-vision-spike.yml"
+      - "docs/features/embedded-vision-feasibility.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qwen35-2b-vision-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-vision-smoke:
+    name: Exact GGUF + mmproj image question (Linux host, not Android)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout pinned native sources
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Check production llama.cpp identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/verify-llama-cpp-pin.sh
+          test "$(git -C third_party/llama.cpp rev-parse HEAD)" = "aedb2a5e9ca3d4064148bbb919e0ddc0c1b70ab3"
+
+      - name: Build only the pinned experimental mtmd CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S third_party/llama.cpp -B build/qwen35-vision-host \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_NATIVE=OFF \
+            -DGGML_OPENMP=OFF \
+            -DLLAMA_CURL=OFF \
+            -DLLAMA_BUILD_TOOLS=ON \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
+            -DMTMD_VIDEO=OFF
+          cmake --build build/qwen35-vision-host --target llama-mtmd-cli --parallel 2
+
+      - name: Download SHA-256-pinned model and projector
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/qwen35-vision-input
+          curl --fail --location --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 900 \
+            --output build/qwen35-vision-input/qwen35-2b-q4-k-m.gguf \
+            "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/802854bfd388ed92748de119df31327962811548/Qwen3.5-2B-Q4_K_M.gguf?download=true"
+          curl --fail --location --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 900 \
+            --output build/qwen35-vision-input/mmproj-f16.gguf \
+            "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/1c466474d208da1a7c4b8cb87ebcdac78f160e34/mmproj-F16.gguf?download=true"
+          echo "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223  build/qwen35-vision-input/qwen35-2b-q4-k-m.gguf" | sha256sum --check
+          echo "7035e9cb8d7c6a9681d07eef9a364783e86ea4cd73faab2eabb4f43a101830c7  build/qwen35-vision-input/mmproj-f16.gguf" | sha256sum --check
+          test "$(stat -c%s build/qwen35-vision-input/qwen35-2b-q4-k-m.gguf)" = "1280835840"
+
+      - name: Create synthetic color fixtures (no personal images)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import struct
+          import zlib
+
+          root = pathlib.Path("build/qwen35-vision-input")
+          def chunk(tag, data):
+              return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data) & 0xffffffff)
+
+          for number, rgb in [(1, (255, 0, 0)), (2, (0, 0, 255))]:
+              width, height = 128, 128
+              scanline = b"\x00" + bytes(rgb) * width
+              raw = scanline * height
+              payload = (
+                  b"\x89PNG\r\n\x1a\n"
+                  + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+                  + chunk(b"IDAT", zlib.compress(raw))
+                  + chunk(b"IEND", b"")
+              )
+              (root / f"probe-{number}.png").write_bytes(payload)
+          PY
+
+      - name: Evaluate two image-grounded questions
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence=build/qwen35-vision-evidence.txt
+          printf '%s\n' \
+            "scope=LINUX_HOST_ONLY" \
+            "backend_sha=aedb2a5e9ca3d4064148bbb919e0ddc0c1b70ab3" \
+            "model_sha256=aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223" \
+            "mmproj_sha256=7035e9cb8d7c6a9681d07eef9a364783e86ea4cd73faab2eabb4f43a101830c7" \
+            "android_support=NOT_TESTED" > "$evidence"
+
+          failed=0
+          for number in 1 2; do
+            if [[ "$number" == 1 ]]; then expected=red; else expected=blue; fi
+            log="$RUNNER_TEMP/qwen35-vision-${number}.log"
+            if timeout 300 build/qwen35-vision-host/bin/llama-mtmd-cli \
+              -m build/qwen35-vision-input/qwen35-2b-q4-k-m.gguf \
+              --mmproj build/qwen35-vision-input/mmproj-f16.gguf \
+              --no-mmproj-offload -ngl 0 -t 4 -c 4096 -n 128 \
+              --image "build/qwen35-vision-input/probe-${number}.png" \
+              -p "What single color fills the image? Answer in English using one color word." \
+              > "$log" 2>&1; then
+              if grep -Eiq "(^|[^[:alpha:]])${expected}([^[:alpha:]]|$)" "$log"; then
+                printf 'fixture_%s=PASS\n' "$number" >> "$evidence"
+              else
+                printf 'fixture_%s=FAIL_WRONG_OR_MISSING_COLOR\n' "$number" >> "$evidence"
+                tail -n 40 "$log"
+                failed=1
+              fi
+            else
+              printf 'fixture_%s=FAIL_NATIVE_EXECUTION\n' "$number" >> "$evidence"
+              tail -n 40 "$log"
+              failed=1
+            fi
+          done
+          cat "$evidence"
+          if [[ "$failed" != 0 ]]; then
+            echo "Linux Qwen3.5 2B image+text feasibility is not established; inspect logs before changing Harnex." >&2
+            exit 1
+          fi
+          echo "Linux host multimodal smoke passed; Android/JNI, memory, thermal and UX remain unqualified." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload content-free feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: qwen35-2b-vision-host-feasibility
+          path: build/qwen35-vision-evidence.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Remove model and synthetic media from runner
+        if: always()
+        shell: bash
+        run: rm -rf build/qwen35-vision-input build/qwen35-vision-host

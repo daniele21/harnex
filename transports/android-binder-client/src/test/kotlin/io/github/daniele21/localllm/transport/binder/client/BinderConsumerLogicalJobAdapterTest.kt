@@ -119,6 +119,31 @@ class BinderConsumerLogicalJobAdapterTest {
         assertEquals(0, service.consumerLogicalJobCancelCalls)
     }
 
+    @Test(timeout = 2_000)
+    fun `blank invalidation reason rejects durable submit without cancelling logical job`() {
+        val invalidations = FakeEndpointInvalidations()
+        val service = FakeSharedRuntimeRemoteService()
+        val endpoint = RegisteredSharedRuntimeEndpoint(service, token, connectionEpoch = 23L)
+        service.consumerLogicalJobSubmitHandler = { _, _ -> invalidations.invalidate(23L, "") }
+        val adapter = BinderConsumerLogicalJobAdapter(
+            endpointProvider = { endpoint },
+            enabledFeaturesProvider = { setOf(BinderProtocolV1.FEATURE_CONSUMER_LOGICAL_JOBS_V1) },
+            endpointInvalidations = invalidations,
+            blockingCallGuard = BlockingCallGuard {},
+            operationTimeoutMillis = 60_000L,
+            correlationIds = CorrelationIdSource { "logical-job-blank-op" },
+        )
+
+        val result = adapter.submitLogicalGeneration(submitRequest())
+
+        assertTrue(result is ConsumerInferenceJobResponse.Rejected)
+        assertEquals(
+            ConsumerErrorCode.RUNTIME_FAILURE,
+            (result as ConsumerInferenceJobResponse.Rejected).failure.code,
+        )
+        assertEquals(0, service.consumerLogicalJobCancelCalls)
+    }
+
     @Test
     fun `stale endpoint after invalidation subscription fails before remote logical job wait`() {
         val service = FakeSharedRuntimeRemoteService()

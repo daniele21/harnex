@@ -5,7 +5,7 @@ Document type: current-state
 Owner: repository
 Canonical scope: state.repository
 Read when: determining the integrated baseline, open blockers or next repository work block
-Last reviewed: 2026-09-09
+Last reviewed: 2026-11-21
 
 This is the operational ledger for integrated state, blockers and immediate work. Capability history belongs in [`roadmap.md`](roadmap.md); milestone detail stays in focused workstreams.
 
@@ -42,6 +42,15 @@ That Play run observed the **same Play App Signing SHA-256 digest for Harnex and
 
 CA-0..4 are integrated; concrete model/runtime/residency authority stays in Harnex. OMB-6B identity approval, OMB-8 measured quality execution and physical evidence remain open. Model-evaluation work is integrated through EVAL-D-09. Local inference Activity/audit is integrated under ADR 0017 with bounded encrypted app-private history and verified Binder caller attribution; normal telemetry stays content-free.
 
+## Embedded Android SDK (development integration)
+
+The [embedded Android SDK workstream](workstreams/embedded-android-sdk.md) owns the one-APK in-process mode alongside the existing Shared Host/Binder Consumer SDK. Through [PR #606](https://github.com/daniele21/harnex/pull/606), the development branch integrates `integrations/android-embedded-sdk`: explicit Qwen3.5 2B Q4_K_M selection, app-private verified download/install, runtime preparation, stateless `GenerationInput.Messages`, streaming/cancellation and technical-session cleanup. Harnex reuses `RuntimeOrchestrator`, the secure downloader, verified installer and llama.cpp backend; the consuming app owns conversation state and UI.
+
+PR [#611](https://github.com/daniele21/harnex/pull/611) adds **offline Whisper Small multilingual Q5_1 dictation** to that independent sample only: explicit microphone permission, bounded foreground recording, verified on-demand 190 MB GGML model, private isolated whisper.cpp JNI, cancellable transcription into an editable composer and explicit Send to existing local Qwen. The public embedded SDK, runtime and Binder contracts are unchanged. FULL Android/native validation and independent Maven-only ARM64 APK packaging, symbol checks and simulated UI journey passed against the PR's integration candidate. The user reported that the APK's basic flow works on a real device, but exact-device/model identity, sustained latency, PSS/thermal, interruption and cancellation/permission matrix still lack recorded physical evidence. These are deferred to release/consumer qualification, not blockers for the development integration.
+PR [#613](https://github.com/daniele21/harnex/pull/613) introduces experimental embedded photo questions and resumable model transfers. See [vision evidence and release limits](features/embedded-vision-feasibility.md).
+
+Maven staging assembles the independent `samples/external-embedded-android` consumer from published AAR coordinates, with ARM64 JNI. PR #609 adds in-memory bounded chat, streaming/Stop and latency/PSS diagnostics. An earlier fixed-prompt phone run was reported; multi-turn/cancellation/restart and resources remained unqualified. This is development integration evidence, not a published SDK or general physical qualification. Versioned publication and representative ARM64 lifecycle/resource proof remain release/consumer-handoff blockers (EMB-40/50).
+
 ## Release evidence state
 
 ### GitHub release productization
@@ -68,7 +77,11 @@ OMB-6B/OMB-8, model evaluation, Q35 device tuning, RAM/thermal evidence and LLUP
 
 ## Parallel consumer integration quality lane
 
-The active [consumer integration resilience workstream](workstreams/consumer-integration-resilience.md) coordinates simpler, safer external-app onboarding against the existing published SDK. It is separate from RA-4/RA-5 runtime hardening and from open PR #562's Host-owned generic-text onboarding. No unvalidated convenience API or implicit automatic retry is assumed; release/physical obligations remain unchanged.
+The active [consumer integration resilience workstream](workstreams/consumer-integration-resilience.md) coordinates simpler, safer external-app onboarding against the existing published SDK. It remains distinct from RA-4/RA-5 runtime hardening. PR #577 has integrated Host-owned generic-text onboarding, superseding closed #562; PR #578 has integrated blank-epoch Binder invalidation with external-Consumer and Android STRONG validation. No unvalidated convenience API or implicit automatic retry is assumed; release/physical obligations remain unchanged.
+
+## Simplicity-first improvement lane (plan only)
+
+The active [simplicity-first runtime workstream](workstreams/simplicity-first-runtime.md) tracks observed complexity, bounded runtime-core/JNI cleanup and the order of outcomes. It **does not** duplicate the already-owned Consumer onboarding ([CIH](workstreams/consumer-integration-resilience.md)), memory/Q35 device qualification or llama.cpp [LLUP](workstreams/llama-cpp-v0-3-residency-qualification.md) migration. CIH-10, SIMP-00, SIMP-10 and SIMP-20 are complete, including the bounded terminal-path refactor in PR #584. CIH-20, representative mobile memory evidence and upstream pin qualification remain separately owned.
 
 ## Immediate next block
 
