@@ -13,6 +13,7 @@ import io.github.daniele21.localllm.contracts.LocalLlmClient
 import io.github.daniele21.localllm.contracts.LocalLlmError
 import io.github.daniele21.localllm.contracts.ModelLoadKind
 import io.github.daniele21.localllm.contracts.PrepareResult
+import io.github.daniele21.localllm.contracts.PromptPreviewResult
 import io.github.daniele21.localllm.contracts.RequestId
 import io.github.daniele21.localllm.contracts.RuntimeSnapshot
 import io.github.daniele21.localllm.contracts.RuntimeState
@@ -29,8 +30,11 @@ import io.github.daniele21.localllm.observability.TelemetryRepository
 import io.github.daniele21.localllm.store.ModelStore
 import io.github.daniele21.localllm.store.StoredModel
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -135,6 +139,100 @@ class RuntimeOrchestrator(
             )
             state.set(RuntimeState.READY)
             sessionId
+        }
+    }
+
+    /**
+     * Off-main, queued with generation to keep native planning serialized with decode.
+     * Returns only template/token capacity; context memory admission remains at generation.
+     */
+    @Suppress("ReturnCount", "CyclomaticComplexMethod")
+    fun previewGeneration(request: GenerationRequest): PromptPreviewResult {
+        if (scheduler.isWorkerThread()) {
+            return PromptPreviewResult.Rejected(LocalLlmError.Configuration("Cannot preview from a generation callback"))
+        }
+        if (closed.get()) return PromptPreviewResult.Rejected(LocalLlmError.Configuration("Runtime is closed"))
+        val session = sessions[request.sessionId]
+            ?: return PromptPreviewResult.Rejected(LocalLlmError.Configuration("Unknown technical session"))
+        if (session.applicationId != request.applicationId || session.useCaseId != request.useCaseId) {
+            return PromptPreviewResult.Rejected(LocalLlmError.Configuration("Preview does not match session"))
+        }
+        if (!session.lifecycle.tryAcquireRequest()) {
+            return PromptPreviewResult.Rejected(LocalLlmError.Configuration("Session is closing"))
+        }
+        val response = CompletableFuture<PromptPreviewResult>()
+        val previewId = RequestId("preview-" + UUID.randomUUID())
+        val submitted = try {
+            scheduler.submit(
+                requestId = previewId,
+                priority = DecodePriority.USER_INTERACTIVE,
+                task = {
+                    val planned = try {
+                        val resolved = generationPlanning.resolveConfiguration(request, session.resolved)
+                        val prompt = backend.planPrompt(
+                            session.model,
+                            BackendPromptPlanningRequest(
+                                input = request.input,
+                                systemPrompt = resolved.systemPrompt,
+                                chatTemplatePolicy = session.resolved.model.chatTemplatePolicy,
+                                thinkingMode = resolved.thinkingMode,
+                            ),
+                        )
+                        val capabilities = backend.modelCapabilities(session.model)
+                        generationPlanning.validateOutputConstraint(
+                            request.outputConstraint,
+                            resolved,
+                            session.resolved,
+                            capabilities,
+                        )
+                        val context = generationPlanning.planContextSize(
+                            resolvedUseCase = session.resolved,
+                            options = session.options,
+                            promptTokenCount = prompt.tokenCount,
+                            maxOutputTokens = resolved.maxOutputTokens,
+                            capabilities = capabilities,
+                            preference = resolved.contextPreference,
+                        )
+                        PromptPreviewResult.Fits(
+                            promptTokens = prompt.tokenCount,
+                            contextTokens = context.requestedContextTokens,
+                            maxOutputTokens = resolved.maxOutputTokens,
+                            chatTemplateSource = prompt.chatTemplateSource,
+                        )
+                    } catch (error: Throwable) {
+                        PromptPreviewResult.Rejected(
+                            when (error) {
+                                is GenerationPlanningException ->
+                                    LocalLlmError.Configuration(error.message.orEmpty(), error.reason)
+
+                                is BackendException -> error.toPublicError()
+
+                                else -> LocalLlmError.NativeRuntime("Prompt preview failed")
+                            },
+                        )
+                    }
+                    response.complete(planned)
+                },
+                onQueuedCancellation = { response.complete(PromptPreviewResult.Rejected(LocalLlmError.Cancelled())) },
+                onRunningCancellation = { response.complete(PromptPreviewResult.Rejected(LocalLlmError.Cancelled())) },
+                onFinished = { releaseSessionRequest(session) },
+            )
+        } catch (_: Throwable) {
+            releaseSessionRequest(session)
+            return PromptPreviewResult.Rejected(LocalLlmError.NativeRuntime("Prompt preview could not be scheduled"))
+        }
+        return try {
+            response.get(30L, TimeUnit.SECONDS)
+        } catch (_: TimeoutException) {
+            submitted.handle.cancel()
+            PromptPreviewResult.Rejected(LocalLlmError.NativeRuntime("Prompt preview timed out"))
+        } catch (_: InterruptedException) {
+            submitted.handle.cancel()
+            Thread.currentThread().interrupt()
+            PromptPreviewResult.Rejected(LocalLlmError.Cancelled())
+        } catch (_: java.util.concurrent.ExecutionException) {
+            submitted.handle.cancel()
+            PromptPreviewResult.Rejected(LocalLlmError.NativeRuntime("Prompt preview failed"))
         }
     }
 

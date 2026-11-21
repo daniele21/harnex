@@ -47,6 +47,26 @@ class EmbeddedModelPolicyTest {
     }
 
     @Test
+    fun rejectsOversizedHistorySnapshotsInsteadOfSilentlyDroppingMessages() {
+        val tooMany = (1..129).map { index ->
+            ConversationMessage(ConversationRole.USER, "user-$index")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            GenerationInput.Messages(tooMany)
+        }
+        assertEquals(129, tooMany.size)
+
+        val tooLong = listOf(
+            ConversationMessage(ConversationRole.USER, "u".repeat(16_385)),
+            ConversationMessage(ConversationRole.ASSISTANT, "a".repeat(16_385)),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            GenerationInput.Messages(tooLong)
+        }
+        assertEquals(2, tooLong.size)
+    }
+
+    @Test
     fun passesExplicitHistoryAsBoundedTypedModelInput() {
         val history =
             listOf(

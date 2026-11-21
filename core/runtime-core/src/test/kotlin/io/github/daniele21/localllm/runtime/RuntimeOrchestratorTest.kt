@@ -9,6 +9,7 @@ import io.github.daniele21.localllm.contracts.GenerationOverrides
 import io.github.daniele21.localllm.contracts.GenerationRequest
 import io.github.daniele21.localllm.contracts.LocalLlmError
 import io.github.daniele21.localllm.contracts.ModelDigest
+import io.github.daniele21.localllm.contracts.PromptPreviewResult
 import io.github.daniele21.localllm.contracts.RequestId
 import io.github.daniele21.localllm.contracts.RuntimeState
 import io.github.daniele21.localllm.contracts.SeedPolicy
@@ -106,6 +107,72 @@ class RuntimeOrchestratorTest {
         assertEquals(listOf("Queued", "Prepared", "Started", "Failed"), events.map { it::class.simpleName })
         assertEquals(1, events.count { it is GenerationEvent.Completed || it is GenerationEvent.Failed })
         assertTrue((events.last() as GenerationEvent.Failed).error is LocalLlmError.NativeRuntime)
+        fixture.close()
+    }
+
+    @Test
+    fun `preview called inside stream callback fails immediately instead of deadlocking decode`() {
+        val fixture = RuntimeFixture()
+        val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)
+        val observed = Collections.synchronizedList(mutableListOf<PromptPreviewResult>())
+        val terminal = CountDownLatch(1)
+        fixture.runtime.generate(
+            fixture.request("outer", session),
+            GenerationListener { event ->
+                if (event is GenerationEvent.TextDelta && observed.isEmpty()) {
+                    observed += fixture.runtime.previewGeneration(fixture.request("inner", session))
+                }
+                if (event is GenerationEvent.Completed || event is GenerationEvent.Failed) terminal.countDown()
+            },
+        )
+        assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        assertTrue(observed.single() is PromptPreviewResult.Rejected)
+        assertEquals(1, fixture.backend.generationCalls)
+        fixture.close()
+    }
+
+    @Test
+    fun `preview uses the same token and context plan without allocating native context`() {
+        val fixture = RuntimeFixture()
+        val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)
+        val request = fixture.request("preflight", session)
+        val preview = fixture.runtime.previewGeneration(request) as PromptPreviewResult.Fits
+        assertEquals(1_024, preview.contextTokens)
+        assertTrue(preview.promptTokens > 0)
+        assertEquals(16, preview.maxOutputTokens)
+        assertTrue(fixture.backend.createdContextSizes.isEmpty())
+        assertEquals(0, fixture.backend.generationCalls)
+
+        val events = Collections.synchronizedList(mutableListOf<GenerationEvent>())
+        val terminal = CountDownLatch(1)
+        fixture.runtime.generate(
+            request,
+            GenerationListener { event ->
+                events += event
+                if (event is GenerationEvent.Completed || event is GenerationEvent.Failed) terminal.countDown()
+            },
+        )
+        assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        val prepared = events.filterIsInstance<GenerationEvent.Prepared>().single().configuration
+        assertEquals(preview.promptTokens, prepared.promptTokenCount)
+        assertEquals(preview.contextTokens, prepared.contextSize)
+        fixture.close()
+    }
+
+    @Test
+    fun `preview rejects context overflow without prefill or context allocation`() {
+        val fixture = RuntimeFixture()
+        val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)
+        val req = fixture.request("overflow-preview", session).copy(
+            overrides = GenerationOverrides(maxOutputTokens = 5_000),
+        )
+        val preview = fixture.runtime.previewGeneration(req) as PromptPreviewResult.Rejected
+        assertEquals(
+            ConfigurationErrorCode.CONTEXT_CAPACITY_EXCEEDED,
+            (preview.error as LocalLlmError.Configuration).reason,
+        )
+        assertTrue(fixture.backend.createdContextSizes.isEmpty())
+        assertEquals(0, fixture.backend.generationCalls)
         fixture.close()
     }
 

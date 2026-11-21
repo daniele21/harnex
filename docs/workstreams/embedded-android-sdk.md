@@ -60,6 +60,10 @@ Last reviewed: 2026-11-20
 | **EMB-40 ACTIVE — FIXTURE CANDIDATE** | Create standalone **external embedded** sample/consumer fixture; use only published artifact, no Host APK/Binder. Prove install -> model ready -> 1st generation -> next turn with prior messages supplied -> streaming/cancel -> app restart/cleanup. Document minimal Gradle/manifest/JNI/proguard setup and ownership. | EMB-10 + EMB-20 + EMB-30 | CI verifies exact staged SDK through external consumer, dependency closure, ABI/public API and APK; no leaked Host/service dependency or prompt content in ordinary logs |
 | **EMB-50 BLOCKED** | Qualify first independent-app integration candidate and publish a clearly pre-release, versioned embedded SDK. Distinguish developer integration readiness from commercial release readiness. | EMB-40 | Repository-selected STRONG/FULL gates as appropriate; exact-head clean external build, representative physical `arm64-v8a` with real supported GGUF, streaming/cancel, process/memory and storage lifecycle; explicit unsupported-device and remaining thermal/quality caveats |
 
+## LocalMaind consumer handoff
+
+LocalMaind admission plan: [HLM tasks](embedded-context-admission.md). EMB-40/50 retain package/device evidence; conversation state and UX stay app-owned.
+
 ## Critical acceptance / handoff to commercial app
 
 **READY TO START EXTERNAL CHAT REPO** only after the documented **exact SDK version** can be independently resolved and the standalone sample, without Host, demonstrates:

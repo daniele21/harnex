@@ -245,6 +245,39 @@ class GenerationPlanningPolicyTest {
         )
     }
 
+    @Test
+    fun `context exhaustion rejects the complete prompt without automatic truncation`() {
+        val policy = GenerationPlanningPolicy(SeedSource { 1L })
+        val useCase = resolvedUseCase()
+        val settings = policy.resolveConfiguration(request(), useCase)
+        val capabilities = BackendModelCapabilities(4_096, supportsGrammar = true)
+
+        val failure = runCatching {
+            policy.planContextSize(
+                resolvedUseCase = useCase,
+                options = SessionOptions(),
+                promptTokenCount = 4_096,
+                maxOutputTokens = settings.maxOutputTokens,
+                capabilities = capabilities,
+                preference = settings.contextPreference,
+            )
+        }.exceptionOrNull()
+
+        assertEquals(ConfigurationErrorCode.CONTEXT_CAPACITY_EXCEEDED, (failure as GenerationPlanningException).reason)
+
+        // A consumer may explicitly select fewer complete history turns and submit a new snapshot.
+        // The Harnex planner itself does not drop messages or truncate the prompt.
+        val smallerSnapshot = policy.planContextSize(
+            resolvedUseCase = useCase,
+            options = SessionOptions(),
+            promptTokenCount = 64,
+            maxOutputTokens = settings.maxOutputTokens,
+            capabilities = capabilities,
+            preference = settings.contextPreference,
+        )
+        assertEquals(1_024, smallerSnapshot.requestedContextTokens)
+    }
+
     private fun request(): GenerationRequest = GenerationRequest(
         requestId = RequestId("planning-request"),
         sessionId = SessionId("planning-session"),
