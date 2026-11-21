@@ -68,8 +68,7 @@ is a self-contained, independent Android consumer of the staged
 The first **Prepare local model** tap opens the embedded runtime on a worker,
 downloads the exact reviewed Qwen3.5 2B Q4_K_M GGUF if absent, verifies the
 download, installs the artifact in the app's private storage, checks the
-installation, prepares the native engine, and opens one **stateless technical
-session**. Later app launches reuse the verified GGUF; the large model is not
+installation and prepares the native engine. Each turn opens a stateless session and requests its release on exit while the model remains warm. Later app launches reuse the verified GGUF; the large model is not
 bundled in the APK.
 
 After **Ready**, type a question and press **Send**. The demo streams answer

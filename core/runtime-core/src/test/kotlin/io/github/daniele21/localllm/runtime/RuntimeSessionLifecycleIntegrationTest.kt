@@ -7,6 +7,8 @@ import io.github.daniele21.localllm.contracts.GenerationRequest
 import io.github.daniele21.localllm.contracts.ModelDigest
 import io.github.daniele21.localllm.contracts.RequestId
 import io.github.daniele21.localllm.contracts.SessionId
+import io.github.daniele21.localllm.contracts.SessionKind
+import io.github.daniele21.localllm.contracts.SessionOptions
 import io.github.daniele21.localllm.contracts.UseCaseId
 import io.github.daniele21.localllm.models.AppModelBinding
 import io.github.daniele21.localllm.models.ArtifactSource
@@ -32,6 +34,30 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 class RuntimeSessionLifecycleIntegrationTest {
+    @Test
+    fun `two stateless turns release both contexts and load the model once`() {
+        val backend = DeterministicFakeInferenceBackend()
+        val fixture = RuntimeSessionLifecycleFixture(backend)
+        try {
+            assertTrue(fixture.runtime.prepare(fixture.applicationId, fixture.useCaseId).ready)
+            repeat(2) { turn ->
+                val session = fixture.runtime.createSession(
+                    fixture.applicationId,
+                    fixture.useCaseId,
+                    SessionOptions(kind = SessionKind.STATELESS),
+                )
+                assertTrue(fixture.generateAndAwait("turn-$turn", session) is GenerationEvent.Completed)
+                fixture.runtime.closeSession(session)
+                assertTrue(waitUntil { fixture.runtime.runtimeSnapshot().activeSessions == 0 })
+                assertEquals(turn + 1, backend.releaseContextCalls)
+            }
+            assertEquals(1, backend.loadCalls)
+            assertEquals(0, backend.unloadCalls)
+        } finally {
+            fixture.close()
+        }
+    }
+
     @Test
     fun `close waits for active generation rejects new work and releases exactly once after drain`() {
         val delegate = DeterministicFakeInferenceBackend()
