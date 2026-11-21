@@ -60,5 +60,7 @@ jobs:
           python3 scripts/test_llrt6_physical_evidence.py
           python3 scripts/test_llrt9_width4_diagnostic.py
           python3 scripts/test_qwen35_lifecycle_acceptance.py
+      - name: Verify protected Harnex Mac dispatch contract
+        run: python3 scripts/test_local_ci_dispatch_contract.py
       - name: Verify clean diff semantics
         run: git diff --check
