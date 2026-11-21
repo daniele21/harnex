@@ -20,8 +20,10 @@ umask 077
   echo "Will not clean or compile outside the owned runner checkout" >&2
   exit 2
 }
-command -v java >/dev/null || { echo "Java/JDK 17 is required on the Mac runner" >&2; exit 2; }
 command -v python3 >/dev/null || { echo "Python 3 is required on the Mac runner" >&2; exit 2; }
+export JAVA_HOME="$(bash .github/ci/bootstrap-mac-jdk.sh)"
+export PATH="$JAVA_HOME/bin:$PATH"
+"$JAVA_HOME/bin/java" -version
 sdk="$(bash .github/ci/bootstrap-android-sdk.sh)"
 [[ -d "$sdk/platforms/android-36" && -d "$sdk/build-tools/36.0.0" ]] || {
   echo "::error::Harnex Android bootstrap did not provide the required SDK" >&2

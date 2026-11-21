@@ -84,6 +84,15 @@ if [[ ! -x "$manager" ]]; then
   mv "$work/unpacked/cmdline-tools" "$sdk/cmdline-tools/latest"
 fi
 
+# The macOS /usr/bin/java may be an Apple stub even if command -v succeeds.
+# The parent Mac smoke prepares pinned Temurin 17 in the isolated project cache.
+[[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]] || {
+  echo "::error::Java 17 home not supplied by Harnex Mac lane" >&2
+  exit 2
+}
+export PATH="$JAVA_HOME/bin:$PATH"
+"$JAVA_HOME/bin/java" -version >&2
+
 # User explicitly requested SDK installation. Only SDK licenses requested by
 # Google's pinned sdkmanager are accepted; no Homebrew, sudo, global paths,
 # paid APIs, models, emulator images, or unrelated software are installed.

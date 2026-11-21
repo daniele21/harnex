@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DISPATCH = ROOT / ".github/workflows/local-ci.yml"
 SCRIPT = ROOT / ".github/ci/local-test.sh"
 BOOTSTRAP = ROOT / ".github/ci/bootstrap-android-sdk.sh"
+JDK = ROOT / ".github/ci/bootstrap-mac-jdk.sh"
 
 
 class LocalMacDispatchContract(unittest.TestCase):
@@ -14,6 +15,7 @@ class LocalMacDispatchContract(unittest.TestCase):
         cls.dispatch = DISPATCH.read_text(encoding="utf-8")
         cls.script = SCRIPT.read_text(encoding="utf-8")
         cls.bootstrap = BOOTSTRAP.read_text(encoding="utf-8")
+        cls.jdk = JDK.read_text(encoding="utf-8")
 
     def test_only_trusted_dev_owner_push_dispatches(self):
         for value in (
@@ -44,6 +46,8 @@ class LocalMacDispatchContract(unittest.TestCase):
             "trap cleanup EXIT",
             "NOT FULL Android/release validation",
             "bash .github/ci/bootstrap-android-sdk.sh",
+            "bash .github/ci/bootstrap-mac-jdk.sh",
+            "export JAVA_HOME=",
         ):
             with self.subTest(value=value):
                 self.assertIn(value, self.script)
@@ -68,6 +72,24 @@ class LocalMacDispatchContract(unittest.TestCase):
         for forbidden in ("sudo ", "brew install", "rm -rf $HOME", "curl | bash"):
             self.assertNotIn(forbidden, self.bootstrap)
 
+
+
+    def test_java17_is_pinned_to_official_adoptium_cache(self):
+        for required in (
+            "jdk-17.0.20.1%2B1",
+            "OpenJDK17U-jdk_aarch64_mac_hotspot_17.0.20.1_1.tar.gz",
+            "196d13ba5f10414bef7f6a05a9b3f00edacb18ebacef2b99485db9e2ee18f0e8",
+            'dest="$cache/jdk/temurin-17.0.20.1_1"',
+            '"$RUNNER_TEMP/harnex-jdk.XXXXXXXX"',
+            '[[ "$actual" == "$expected" ]]',
+            'rmdir "$lock"',
+            "usable_jdk",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, self.jdk)
+        self.assertIn('[[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]]', self.bootstrap)
+        for unsafe in ("sudo ", "brew install", "rm -rf $HOME", "curl | bash"):
+            self.assertNotIn(unsafe, self.jdk)
 
 if __name__ == "__main__":
     unittest.main()
