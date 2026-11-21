@@ -34,7 +34,6 @@ class LocalMacDispatchContract(unittest.TestCase):
             "set -euo pipefail",
             '"Darwin"',
             '"arm64"',
-            "Android SDK 36 platform/build-tools not installed",
             "--max-workers=2",
             ":models:model-download:testDebugUnitTest",
             ":integrations:android-embedded-sdk:testDebugUnitTest",
@@ -42,6 +41,9 @@ class LocalMacDispatchContract(unittest.TestCase):
             "git clean -ffdX -- .",
             "trap cleanup EXIT",
             "NOT FULL Android/release validation",
+            "/opt/homebrew/share/android-commandlinetools",
+            "Android SDK 36 / build-tools 36.0.0 unavailable",
+            "sdkmanager is available",
         ):
             with self.subTest(value=value):
                 self.assertIn(value, self.script)
