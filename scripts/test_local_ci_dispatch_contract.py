@@ -38,7 +38,9 @@ class LocalMacDispatchContract(unittest.TestCase):
             "--max-workers=2",
             ":models:model-download:testDebugUnitTest",
             ":integrations:android-embedded-sdk:testDebugUnitTest",
-            'trap \'rm -rf -- "$scratch"\' EXIT',
+            "GITHUB_WORKSPACE",
+            "git clean -ffdX -- .",
+            "trap cleanup EXIT",
             "NOT FULL Android/release validation",
         ):
             with self.subTest(value=value):

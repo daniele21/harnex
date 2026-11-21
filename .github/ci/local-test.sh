@@ -12,6 +12,14 @@ umask 077
   echo "Missing GitHub runner temporary directory" >&2
   exit 2
 }
+[[ -n "${GITHUB_WORKSPACE:-}" && -d "$GITHUB_WORKSPACE" ]] || {
+  echo "Missing owned GitHub checkout" >&2
+  exit 2
+}
+[[ "$(pwd -P)" == "$(cd "$GITHUB_WORKSPACE" && pwd -P)" ]] || {
+  echo "Will not clean or compile outside the owned runner checkout" >&2
+  exit 2
+}
 command -v java >/dev/null || { echo "Java/JDK 17 is required on the Mac runner" >&2; exit 2; }
 command -v python3 >/dev/null || { echo "Python 3 is required on the Mac runner" >&2; exit 2; }
 sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
@@ -26,7 +34,16 @@ export GRADLE_USER_HOME="$HOME/Library/Caches/harnex-local-ci/gradle"
 mkdir -p "$GRADLE_USER_HOME"
 chmod 700 "$GRADLE_USER_HOME"
 scratch="$(mktemp -d "$RUNNER_TEMP/harnex-ci.XXXXXXXX")"
-trap 'rm -rf -- "$scratch"' EXIT
+# Clean only generated/ignored files within this exact owned checkout, not
+# other runner workspaces, repositories or the deliberate project Gradle cache.
+cleanup() {
+  result=$?
+  trap - EXIT
+  rm -rf -- "$scratch" || result=1
+  git clean -ffdX -- . >/dev/null || result=1
+  exit "$result"
+}
+trap cleanup EXIT
 
 python3 scripts/verify_no_tracked_generated_artifacts.py
 python3 scripts/verify_repository.py
