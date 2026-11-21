@@ -6,9 +6,9 @@ import io.github.daniele21.localllm.contracts.GenerationListener
 import io.github.daniele21.localllm.contracts.GenerationRequest
 import io.github.daniele21.localllm.contracts.ModelDigest
 import io.github.daniele21.localllm.contracts.RequestId
+import io.github.daniele21.localllm.contracts.SessionId
 import io.github.daniele21.localllm.contracts.SessionKind
 import io.github.daniele21.localllm.contracts.SessionOptions
-import io.github.daniele21.localllm.contracts.SessionId
 import io.github.daniele21.localllm.contracts.UseCaseId
 import io.github.daniele21.localllm.models.AppModelBinding
 import io.github.daniele21.localllm.models.ArtifactSource
