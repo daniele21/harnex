@@ -13,21 +13,36 @@ class ModelTransferForegroundService : Service() {
     private val cancelled = AtomicBoolean(false)
     private val running = AtomicBoolean(false)
     private var wakeLock: PowerManager.WakeLock? = null
+    @Volatile
+    private var currentKind: ModelTransferKind? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val request = intent ?: return START_NOT_STICKY
         val kind = ModelTransferKind.values().firstOrNull {
-            it.name == intent?.getStringExtra(EXTRA_KIND)
+            it.name == request.getStringExtra(EXTRA_KIND)
         } ?: return START_NOT_STICKY
-        if (intent.action == ACTION_CANCEL) {
-            cancelled.set(true)
+        if (request.action == ACTION_CANCEL) {
+            // A stale notification for another model cannot cancel an unrelated download.
+            if (currentKind == kind) cancelled.set(true)
             if (!running.get()) stopSelf(startId)
             return START_NOT_STICKY
         }
-        if (intent.action != ACTION_START || !running.compareAndSet(false, true)) return START_REDELIVER_INTENT
+        if (request.action != ACTION_START) return START_NOT_STICKY
+        if (!running.compareAndSet(false, true)) {
+            if (currentKind != kind) {
+                ModelTransferState.update(
+                    this, kind, ModelTransferPhase.FAILED,
+                    "Another model download is already running · finish it first",
+                )
+            }
+            return START_NOT_STICKY
+        }
+        currentKind = kind
         cancelled.set(false)
         active = true
+        ModelTransferState.update(this, kind, ModelTransferPhase.RUNNING, "Downloading ${kind.label}…")
         ModelTransferNotifications.create(this)
         startForeground(
             kind.jobId,
@@ -40,13 +55,17 @@ class ModelTransferForegroundService : Service() {
         }
         worker.execute {
             try {
-                val result = ModelTransferTask.execute(this, kind, cancelled) { status, percent ->
-                    if (!cancelled.get()) {
-                        getSystemService(android.app.NotificationManager::class.java).notify(
-                            kind.jobId,
-                            ModelTransferNotifications.notification(this, kind, status, percent),
-                        )
+                val result = try {
+                    ModelTransferTask.execute(this, kind, cancelled) { status, percent ->
+                        if (!cancelled.get()) {
+                            getSystemService(android.app.NotificationManager::class.java).notify(
+                                kind.jobId,
+                                ModelTransferNotifications.notification(this, kind, status, percent),
+                            )
+                        }
                     }
+                } catch (error: RuntimeException) {
+                    ModelTransferOutcome(false, false, "Download failed (${error.javaClass.simpleName}) · retry")
                 }
                 if (!ModelTransferState.cancelRequested(this, kind)) {
                     ModelTransferState.update(
@@ -57,7 +76,8 @@ class ModelTransferForegroundService : Service() {
                     )
                 }
             } finally {
-                wakeLock?.takeIf { it.isHeld }?.release()
+                releaseWakeLock()
+                currentKind = null
                 running.set(false)
                 active = false
                 stopSelf(startId)
@@ -68,10 +88,17 @@ class ModelTransferForegroundService : Service() {
 
     override fun onDestroy() {
         cancelled.set(true)
-        wakeLock?.takeIf { it.isHeld }?.release()
+        releaseWakeLock()
         worker.shutdownNow()
+        currentKind = null
         active = false
         super.onDestroy()
+    }
+
+    @Synchronized
+    private fun releaseWakeLock() {
+        wakeLock?.let { lock -> if (lock.isHeld) lock.release() }
+        wakeLock = null
     }
 
     companion object {

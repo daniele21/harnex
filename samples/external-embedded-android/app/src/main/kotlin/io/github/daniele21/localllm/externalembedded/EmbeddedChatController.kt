@@ -269,7 +269,6 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     private companion object {
         const val MODEL_ID = "qwen35-2b-q4-k-m"
 
-
         fun formatMetrics(metrics: GenerationMetrics, elapsedMs: Long, messageCount: Int): String {
             val rate = metrics.decodeTokensPerSecond?.let { String.format(Locale.US, "%.1f", it) } ?: "—"
             val firstToken = metrics.timeToFirstTokenMs?.toString() ?: "—"

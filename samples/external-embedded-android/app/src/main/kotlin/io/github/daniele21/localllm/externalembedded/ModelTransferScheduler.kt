@@ -11,6 +11,17 @@ import android.os.Build
 internal object ModelTransferScheduler {
     fun start(context: Context, kind: ModelTransferKind): Boolean {
         val app = context.applicationContext
+        val anotherActive = ModelTransferKind.values().any { other ->
+            other != kind && (
+                ModelTransferState.snapshot(app, other).phase == ModelTransferPhase.RUNNING ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+                        app.getSystemService(JobScheduler::class.java).getPendingJob(other.jobId) != null)
+                )
+        }
+        if (anotherActive) {
+            ModelTransferState.update(app, kind, ModelTransferPhase.FAILED, "Finish the other download first")
+            return false
+        }
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 val scheduler = app.getSystemService(JobScheduler::class.java)

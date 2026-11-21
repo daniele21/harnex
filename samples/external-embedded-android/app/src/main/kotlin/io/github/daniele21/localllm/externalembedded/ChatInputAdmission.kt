@@ -14,8 +14,10 @@ internal object ChatInputAdmission {
         if (imageError != null) return Rejection(imageError, true)
         val textError = when {
             input.isBlank() -> "Write a message before sending"
+
             input.length > EphemeralChatHistory.MAX_USER_CHARS ->
                 "Message limit: ${EphemeralChatHistory.MAX_USER_CHARS} characters"
+
             else -> null
         }
         return textError?.let { Rejection(it, false) }
