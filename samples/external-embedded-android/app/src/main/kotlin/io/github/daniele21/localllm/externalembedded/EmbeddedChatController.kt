@@ -145,7 +145,14 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
             val messages = history.messagesFor(input)
             observer.onStatus("Generating · ${messages.size} explicit messages")
             val technicalSession = sdk.openSession()
-            val result = try {
+            val sessionLifetime = AutoCloseable {
+                runCatching { sdk.closeSession(technicalSession) }.getOrElse { failure ->
+                    state.requirePreparation()
+                    closeRuntime()
+                    throw IllegalStateException("Session cleanup failed; prepare the model again", failure)
+                }
+            }
+            val result = sessionLifetime.use {
                 engineCalls.execute(
                     sdk,
                     technicalSession,
@@ -155,14 +162,6 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                     activeGeneration,
                 ) { text ->
                     if (state.current() == ChatPhase.GENERATING) observer.onAnswerDelta(id, text)
-                }
-            } finally {
-                try {
-                    sdk.closeSession(technicalSession)
-                } catch (failure: Exception) {
-                    state.requirePreparation()
-                    closeRuntime()
-                    throw IllegalStateException("Session cleanup failed; prepare the model again", failure)
                 }
             }
             completeTurn(id, input, messages.size, result)
