@@ -29,7 +29,9 @@ class ModelTransferForegroundService : Service() {
                 cancelTransfer(kind, startId)
                 START_NOT_STICKY
             }
+
             ACTION_START -> startTransfer(kind, startId)
+
             else -> START_NOT_STICKY
         }
     }
