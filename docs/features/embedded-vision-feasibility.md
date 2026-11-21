@@ -1,7 +1,7 @@
-# Embedded Qwen3.5 2B image-question feasibility spike
+# Embedded Qwen3.5 2B image-question feasibility and Android integration
 
-Status: experimental Android implementation branch; not integrated product support
-Updated: 2026-11-20
+Status: experimental embedded-Android capability for `dev` integration; not release-qualified or general model support
+Updated: 2026-11-21
 Owners: Harnex backend for future multimodal execution; `samples/external-embedded-android` for chat UX only.
 
 ## Product intent and decision
@@ -9,11 +9,11 @@ Owners: Harnex backend for future multimodal execution; `samples/external-embedd
 - **Product depth:** PRODUCT_FEATURE discovery, not product activation.
 - **Consumer/job:** the independent embedded Android chat sample should eventually let a user select one local photo and ask a question about it using the already selected Qwen3.5 2B, with no cloud upload or second LLM runtime.
 - **Desired outcome:** image+text inference works with the exact reviewed 2B model and the pinned native backend without regressing text chat, dictation, streaming or cancellation.
-- **Decision now:** NARROW_SCOPE to a falsifiable Linux-host feasibility probe. Do not ship an attachment picker, add an image to the SDK contract, or change a production model claim before runtime evidence exists.
+- **Initial spike decision:** NARROW_SCOPE to a falsifiable Linux-host feasibility probe before committing to the Android implementation. Subsequent host success, a Maven-only Android build, green UI/SDK gates and a user-reported on-device image-question smoke justify experimental `dev` integration, not a general production model claim.
 - **Non-goals:** OCR pipeline, camera capture, multiple images, video, voice changes, arbitrary model/projector import, Binder multimodal exposure, cloud inference or a new inference engine.
-- **Risks:** VALUE medium (the actual value of photo questions is unmeasured); USABILITY medium (attachment/error behavior not yet designed); FEASIBILITY high (model/projector compatibility, native image encoder, context, memory and cancellation); VIABILITY medium (larger model download and supported-device matrix). The spike cheaply addresses one feasibility uncertainty.
+- **Risks:** VALUE medium (representative task success unmeasured); USABILITY medium (preview and error behavior implemented but not representative-user qualified); FEASIBILITY high (native image encoding, cancellation, peak memory and thermal stability beyond a single phone smoke); VIABILITY medium (additional projector download and supported-device coverage). Automated checks and one physical smoke reduce, but do not eliminate, these risks.
 
-This expands the current `docs/qwen35/target.md` text-only *proposal* only if the follow-on product decision is supported by evidence. That target and the public embedded SDK remain unchanged by this spike.
+The experimental implementation introduces a bounded `GenerationInput.ImageQuestion` and an embedded-only projector capability. It does **not** extend Shared Host/Binder multimedia support or change the curated production model-support envelope in `docs/qwen35/target.md`.
 
 ## Exact inputs and ownership
 
@@ -25,11 +25,11 @@ This expands the current `docs/qwen35/target.md` text-only *proposal* only if th
 
 The 2B model identity is already owned by the curated catalog. The projector digest comes from the exact Hugging Face LFS/Xet pointer at the immutable revision above. Pair compatibility is a **hypothesis**, not certified by shared repository naming or metadata alone. Neither artifact is committed to the repository.
 
-## Current blocking boundaries
+## Architectural boundaries addressed in the experimental implementation
 
-1. `GenerationInput` and `ConsumerGenerationInput` support text/messages, not image data.
-2. `BackendPromptPlan` and `BackendGenerationRequest` pass formatted text, not visual embeddings or image chunks.
-3. The production Android JNI CMake target builds llama.cpp text generation with `LLAMA_BUILD_TOOLS=OFF`; the pinned upstream `tools/mtmd` source exists but is not linked into the Android backend.
+1. `GenerationInput.ImageQuestion` carries bounded image bytes locally; `ConsumerGenerationInput`/Shared Binder deliberately remain text-only and reject multimedia.
+2. Prompt planning and the existing backend pass image bytes through the single native generation pipeline, without a second LLM runtime.
+3. Android JNI links pinned upstream `libmtmd` in the existing `llama.cpp` backend; packaging and host functional tests pass, but physical-device reliability is not established by compilation.
 4. The standalone Maven-only embedded sample owns chat and dictation. It must not build its own duplicate llama.cpp inference runtime, bypass SDK packaging or silently pipe images to cloud.
 5. Image selection, transient staging, encoded image lifetime and logging policy must remain app/UI and runtime responsibilities in their respective layers; private images must not enter diagnostics or normal telemetry.
 
@@ -51,18 +51,18 @@ Steps:
 ## Evidence and follow-on acceptance
 
 - **Linux-host model/projector functional compatibility:** PASS on exact pinned input hashes and reference question fixtures (GitHub Actions run 44811518006). This result establishes this narrow host claim only.
-- **Android arm64 CMake/JNI/ELF packaging:** NOT TESTED. Must compile `libmtmd` via the existing backend owner and verify a single compatible native stack.
-- **Android Qwen+vision real-GGUF inference on representative phone:** NOT TESTED. Required before claiming on-device support.
-- **Memory/lifecycle/thermal:** NOT TESTED. Measure warm/cold model+projector residency, peak RSS/PSS, first-answer time, 10 sequential image questions, cancellation during image encoding/generation, backgrounding and recovery. Fail without leaking transient image buffers.
-- **Supported API and UX:** IMPLEMENTED EXPERIMENTALLY IN BRANCH. Requires Maven-only APK build, UI E2E and physical native qualification before integration; Shared Binder media remains intentionally unsupported. After the above succeeds, shape a small image-aware neutral request at the canonical contract/runtime owner (with compatibility and direct-consumer evidence), then add one-photo selection and preview in the independent chat sample. Keep voice and text-only paths unchanged.
+- **Android arm64 CMake/JNI/ELF packaging:** PASS on the exact candidate through FULL validation and independently assembled Maven-only debug APK (GitHub Actions run `44896111496`, source `a07bb965`).
+- **Android Qwen+vision real-GGUF inference on a phone:** ONE USER-REPORTED SMOKE SUCCESS. A Samsung Android screenshot shows a single photo question completing with local-model output. This is useful real-device evidence, not controlled model correctness, broad device compatibility or repeatability proof.
+- **Memory/lifecycle/thermal:** NOT QUALIFIED. The screenshot reports approximately 1,480 MB process PSS and 22 seconds wall time for one answer; this is neither peak residency nor a benchmark. Still measure warm/cold residency, peak RSS/PSS, sequential image questions, native cancellation, background/recovery and thermals without retaining image buffers.
+- **Supported API and UX:** EXPERIMENTAL DEV INTEGRATION. Bounded image-question request, transient picker/preview, voice and text coexist in the sample. Maven-only packaging, full automated gates and a synthetic UI full-media journey passed. Shared Binder media remains unsupported; physical cancellation/resource/OEM acceptance remains deferred to release/consumer qualification.
 
 **Acceptance**: exact image+text request produces image-grounded answers locally, typed errors/cancellation and no content logs, while existing text chat remains equivalent. **Outcome**: an Android app can ask about a selected picture without implementing a second LLM engine. **Product impact**: representative user image-question task success and perceived latency, measured without content telemetry.
 
-The current experiment is an ITERATION / STRONG-risk native feasibility step. Native Android automated qualification is REMOTE_AUTOMATED when toolchain unavailable locally; true phone memory/thermal and actual-model behavior are REAL_ENVIRONMENT. No merge/release readiness claim follows from the host smoke.
+Integration classification: PRODUCT_FEATURE / INTEGRATION / FULL / REMOTE_AUTOMATED for Android and native gates. These automated gates pass on the cited candidate. Representative phone memory/thermal, sustained multimodal correctness, interruptions and OEM behavior remain REAL_ENVIRONMENT; one smoke report does not make the capability release-ready or prove product impact.
 
-## Android prototype scope (unmerged)
+## Android implementation scope (experimental `dev`)
 
-Experimental branch `agent/qwen35-2b-vision-android-apk` extends the canonical
+The integrated experimental implementation extends the canonical
 backend using `libmtmd` from the same llama.cpp pin, and retains Harnex
 `RuntimeOrchestrator` scheduling, a single backend model/context, text streaming
 and its cancellation registry. The embedded SDK alone owns the fixed
@@ -76,10 +76,13 @@ before decode to reduce simultaneous residency. Image preprocessing can be a
 blocking native operation, so responsiveness and cancellation require real
 ARM64 proof.
 
-**Build and physical acceptance pending:** exact Maven-only APK build, JNI ELF
-packaging and native load, genuine image questions on-device with red/blue and
-real photographs, stream/Stop/background/retry, PSS/RSS/thermal, representative
-a11y and UI full-media journey. Existing chat and Whisper must not regress.
+**Integration evidence:** exact Maven-only ARM64 APK, JNI packaging, FULL Android/native
+validation, direct consumer checks and synthetic UI full-media journey PASS in run
+`44896111496`. One user-reported phone photo question produced an answer.
+**Remaining physical qualification:** controlled image correctness across fixtures,
+real-photo repetition, stream/Stop during encoding, background/retry, sustained
+PSS/RSS/thermal and representative accessibility/OEM tests. Existing chat and
+Whisper must not regress.
 
 ## Screen-lock-safe model distribution in the experimental sample
 

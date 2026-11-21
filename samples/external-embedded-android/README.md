@@ -61,7 +61,7 @@ providers, automatic replay and cross-device synchronization.
 
 ## Interactive local chat demo (physical ARM64 phone)
 
-Install the smoke APK from a successful Embedded SDK Maven staging run. The app
+Install the smoke APK from a successful Validate run with the embedded consumer job. The app
 is a self-contained, independent Android consumer of the staged
 `io.github.daniele21.localllm:embedded-android` AAR: **no Host/Binder**.
 
@@ -167,7 +167,7 @@ gates and representative-device requirements.
 
 ## Experimental single-photo questions (Android ARM64)
 
-This branch adds **Prepare vision**, **Choose photo**, a transient photo preview, and
+The experimental embedded Android sample includes **Prepare vision**, **Choose photo**, a transient photo preview, and
 single-image questions to the independent Maven-only embedded chat sample. These controls
 are *experimental*: native multimodal Android compatibility, memory and cancellation
 are not qualified merely by a green Linux-host spike or APK packaging checks.
@@ -192,7 +192,9 @@ image files, cloud inference, arbitrary projector URLs, multi-image inputs and
 Binder multimedia serialization remain disabled. The projector is stored only
 inside this app's private no-backup directory, not bundled with the APK.
 
-**Qualification status:** Linux host GGUF+projector smoke PASS on exact pinned
-llama.cpp; Android ARM64 build and runtime evidence must come from the exact
-Android CI run and representative device. A built APK alone does not establish
-correct native image inference, peak memory/thermal behavior or image cancellation.
+**Qualification status:** Linux host GGUF+projector functional smoke PASS; the
+Android ARM64 Maven-only APK, FULL candidate validation and synthetic UI journey
+PASS on GitHub Actions run `44896111496`. One user-reported Samsung phone smoke
+completed an image question. This is experimental integration evidence, not broad
+image-answer correctness, peak memory/thermal, OEM download continuity or native
+image-cancellation qualification.
