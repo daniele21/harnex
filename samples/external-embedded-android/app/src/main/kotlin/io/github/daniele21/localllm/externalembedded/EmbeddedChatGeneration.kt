@@ -17,12 +17,14 @@ import java.util.concurrent.atomic.AtomicReference
 
 internal data class ChatGenerationOutcome(val terminal: GenerationEvent, val streamedAnswer: String, val startedAtMs: Long)
 
+internal data class ChatGenerationPayload(val messages: List<ConversationMessage>, val question: String, val imageBytes: ByteArray?)
+
 /** One bounded, synchronous worker-thread request. No chat memory or runtime policy is owned here. */
 internal class EmbeddedChatGeneration {
     fun execute(
         engine: EmbeddedRuntime,
         session: SessionId,
-        messages: List<ConversationMessage>,
+        payload: ChatGenerationPayload,
         cancelled: AtomicBoolean,
         destroying: AtomicBoolean,
         activeGeneration: AtomicReference<GenerationHandle?>,
@@ -33,35 +35,41 @@ internal class EmbeddedChatGeneration {
         val stream = StringBuilder()
         val lastRendered = AtomicLong(0L)
         val started = SystemClock.elapsedRealtime()
-        val handle = engine.generate(
-            session,
-            messages,
-            GenerationListener { event ->
-                when (event) {
-                    is GenerationEvent.TextDelta -> {
-                        val stillActive = !cancelled.get() && !destroying.get()
-                        if (event.contentType == GenerationContentType.ANSWER && stillActive && terminal.get() == null) {
-                            val answer = synchronized(stream) {
-                                stream.append(event.text)
-                                stream.toString()
-                            }
-                            val now = SystemClock.elapsedRealtime()
-                            if (now - lastRendered.get() >= 90L) {
-                                lastRendered.set(now)
-                                onAnswerDelta(answer)
-                            }
+        val listener = GenerationListener { event ->
+            when (event) {
+                is GenerationEvent.TextDelta -> {
+                    val stillActive = !cancelled.get() && !destroying.get()
+                    if (event.contentType == GenerationContentType.ANSWER && stillActive && terminal.get() == null) {
+                        val answer = synchronized(stream) {
+                            stream.append(event.text)
+                            stream.toString()
+                        }
+                        val now = SystemClock.elapsedRealtime()
+                        if (now - lastRendered.get() >= 90L) {
+                            lastRendered.set(now)
+                            onAnswerDelta(answer)
                         }
                     }
-
-                    is GenerationEvent.Completed, is GenerationEvent.Failed -> {
-                        if (terminal.compareAndSet(null, event)) finished.countDown()
-                    }
-
-                    else -> Unit
                 }
-            },
-            overrides = GenerationOverrides(maxOutputTokens = 256),
-        )
+
+                is GenerationEvent.Completed, is GenerationEvent.Failed -> {
+                    if (terminal.compareAndSet(null, event)) finished.countDown()
+                }
+
+                else -> Unit
+            }
+        }
+        val handle = if (payload.imageBytes == null) {
+            engine.generate(session, payload.messages, listener, overrides = GenerationOverrides(maxOutputTokens = 256))
+        } else {
+            engine.vision.generate(
+                session,
+                payload.question,
+                payload.imageBytes,
+                listener,
+                overrides = GenerationOverrides(maxOutputTokens = 256),
+            )
+        }
         activeGeneration.set(handle)
         try {
             awaitTerminal(finished, handle, cancelled, destroying)

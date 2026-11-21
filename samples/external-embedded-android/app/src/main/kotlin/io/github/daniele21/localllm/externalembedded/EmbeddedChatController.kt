@@ -36,6 +36,10 @@ interface ChatObserver {
     fun onAnswerDelta(id: Long, answer: String)
 
     fun onTurnFinished(id: Long, answer: String, saved: Boolean, retryPrompt: String?)
+
+    fun onVisionState(ready: Boolean, preparing: Boolean) {}
+
+    fun onVisionStatus(status: String) {}
 }
 
 /**
@@ -48,6 +52,8 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     private val engineCalls = EmbeddedChatGeneration()
     private val cancelled = AtomicBoolean(false)
     private val destroyed = AtomicBoolean(false)
+    private val visionPreparing = AtomicBoolean(false)
+    private val visionReady = AtomicBoolean(false)
     private val activeGeneration = AtomicReference<GenerationHandle?>(null)
     private val state = ChatSessionState()
     private val ids = AtomicLong(0L)
@@ -65,7 +71,9 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 observer.onStatus("Opening local Harnex runtime…")
                 val runtime = EmbeddedRuntime.open(applicationContext, EmbeddedConfiguration(MODEL_ID))
                 engine = runtime
-                EmbeddedModelPreparation.ensureReady(runtime, cancelled, destroyed, observer::onStatus)
+                check(runtime.modelReadiness() == io.github.daniele21.localllm.embedded.EmbeddedModelReadiness.VERIFIED) {
+                    "Model is not installed · use Prepare local model to download"
+                }
                 check(!cancelled.get() && !destroyed.get()) { "Preparation cancelled" }
                 observer.onStatus("Preparing GGUF…")
                 val prepared = runtime.prepare()
@@ -76,6 +84,8 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 observer.onStatus("Ready · all inference stays on this device")
                 observer.onDiagnostics("Verified model · process PSS ${Debug.getPss() / 1024} MB")
                 observer.onPhase(ChatPhase.READY)
+                visionReady.set(runtime.vision.readiness())
+                observer.onVisionState(visionReady.get(), false)
             } catch (failure: IllegalStateException) {
                 closeRuntime()
                 state.requirePreparation()
@@ -90,31 +100,55 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         }
     }
 
-    fun send(text: String): Boolean {
-        val input = text.trim()
-        val validationError = when {
-            input.isBlank() -> "Write a message before sending"
-
-            input.length > EphemeralChatHistory.MAX_USER_CHARS ->
-                "Message limit: ${EphemeralChatHistory.MAX_USER_CHARS} characters"
-
-            else -> null
+    /** Called only after the Android-managed transfer has completed. */
+    fun prepareVision() {
+        if (destroyed.get() || state.current() != ChatPhase.READY || !visionPreparing.compareAndSet(false, true)) return
+        observer.onVisionState(visionReady.get(), true)
+        worker.execute {
+            try {
+                val sdk = checkNotNull(engine) { "Prepare Qwen first" }
+                visionReady.set(sdk.vision.readiness())
+                observer.onVisionStatus(
+                    if (visionReady.get()) {
+                        "Vision model verified · choose a photo"
+                    } else {
+                        "Vision projector not ready · tap Prepare vision"
+                    },
+                )
+            } finally {
+                visionPreparing.set(false)
+                observer.onVisionState(visionReady.get(), false)
+            }
         }
-        if (validationError != null) {
-            observer.onStatus(validationError)
+    }
+
+    fun send(text: String, imageBytes: ByteArray? = null): Boolean {
+        val input = text.trim()
+        val rejection = ChatInputAdmission.validate(input, imageBytes, visionReady.get())
+        if (rejection != null) {
+            if (rejection.vision) {
+                observer.onVisionStatus(rejection.message)
+            } else {
+                observer.onStatus(rejection.message)
+            }
             return false
         }
-        if (destroyed.get() || state.current() != ChatPhase.READY) return false
+        if (destroyed.get() || visionPreparing.get() || state.current() != ChatPhase.READY) return false
         cancelled.set(false)
         if (!state.beginGeneration()) return false
         val id = ids.incrementAndGet()
-        observer.onTurnStarted(id, input)
+        observer.onTurnStarted(id, if (imageBytes != null) "PHOTO · $input" else input)
         observer.onPhase(ChatPhase.GENERATING)
-        worker.execute { runTurn(id, input) }
+        worker.execute { runTurn(id, input, imageBytes?.copyOf()) }
         return true
     }
 
     fun stop() {
+        if (visionPreparing.get()) {
+            cancelled.set(true)
+            observer.onVisionStatus("Cancelling vision model setup…")
+            return
+        }
         if (!state.requestStop()) return
         cancelled.set(true)
         activeGeneration.get()?.cancel()
@@ -125,7 +159,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
     fun isGenerating(): Boolean = state.current() == ChatPhase.GENERATING && !destroyed.get()
 
     fun clearConversation(): Boolean {
-        if (state.current() != ChatPhase.READY) return false
+        if (state.current() != ChatPhase.READY || visionPreparing.get()) return false
         worker.execute { history.reset() }
         observer.onStatus("New chat · context cleared")
         observer.onDiagnostics("Temporary conversation reset; verified GGUF retained")
@@ -141,24 +175,24 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         worker.shutdown()
     }
 
-    private fun runTurn(id: Long, input: String) {
+    private fun runTurn(id: Long, input: String, imageBytes: ByteArray?) {
         try {
             check(!cancelled.get() && !destroyed.get()) { "Generation cancelled before start" }
             val sdk = checkNotNull(engine) { "Runtime not prepared" }
             val technicalSession = checkNotNull(session) { "Native session not prepared" }
-            val messages = history.messagesFor(input)
-            observer.onStatus("Generating · ${messages.size} explicit messages")
+            val messages = if (imageBytes == null) history.messagesFor(input) else emptyList()
+            observer.onStatus(if (imageBytes == null) "Generating · ${messages.size} explicit messages" else "Analyzing photo locally…")
             val result = engineCalls.execute(
                 sdk,
                 technicalSession,
-                messages,
+                ChatGenerationPayload(messages, input, imageBytes),
                 cancelled,
                 destroyed,
                 activeGeneration,
             ) { text ->
                 if (state.current() == ChatPhase.GENERATING) observer.onAnswerDelta(id, text)
             }
-            completeTurn(id, input, messages.size, result)
+            completeTurn(id, input, messages.size, result, imageBytes != null)
         } catch (failure: GenerationTimeout) {
             closeRuntime()
             state.requirePreparation()
@@ -183,7 +217,7 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         }
     }
 
-    private fun completeTurn(id: Long, input: String, messageCount: Int, result: ChatGenerationOutcome) {
+    private fun completeTurn(id: Long, input: String, messageCount: Int, result: ChatGenerationOutcome, imageQuestion: Boolean) {
         when (val terminal = result.terminal) {
             is GenerationEvent.Completed -> {
                 val answer = terminal.answerOutput.ifBlank { result.streamedAnswer }
@@ -192,11 +226,17 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
                 } else if (answer.isBlank()) {
                     observer.onTurnFinished(id, "The model returned no answer", false, input)
                 } else {
-                    history.complete(input, answer)
+                    if (!imageQuestion) history.complete(input, answer)
                     observer.onTurnFinished(id, answer, true, null)
                     val metrics = terminal.metrics
                     val duration = SystemClock.elapsedRealtime() - result.startedAtMs
-                    observer.onStatus("Answer complete · ${history.completedTurns()} temporary turns")
+                    observer.onStatus(
+                        if (imageQuestion) {
+                            "Image answer complete · photo not saved"
+                        } else {
+                            "Answer complete · ${history.completedTurns()} temporary turns"
+                        },
+                    )
                     observer.onDiagnostics(formatMetrics(metrics, duration, messageCount))
                 }
             }
@@ -218,6 +258,8 @@ internal class EmbeddedChatController(private val applicationContext: Context, p
         val id = session
         session = null
         engine = null
+        visionReady.set(false)
+        observer.onVisionState(false, false)
         if (runtime != null) {
             if (id != null) runCatching { runtime.closeSession(id) }
             runCatching { runtime.close() }

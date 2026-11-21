@@ -9,7 +9,8 @@ value class DownloadOperationId(val value: String)
 @JvmInline
 value class VerifiedDownloadHandle(val value: String)
 
-data class ModelDownloadRequest(val artifact: CatalogGgufArtifact)
+/** A system-preempted Android transfer keeps bounded partial bytes for a later verified resume. */
+data class ModelDownloadRequest @JvmOverloads constructor(val artifact: CatalogGgufArtifact, val preservePartialOnCancel: Boolean = false)
 
 data class DownloadConfiguration(
     val maxArtifactBytes: Long = 8_000_000_000L,

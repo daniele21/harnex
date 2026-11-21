@@ -80,6 +80,7 @@ enum class EmbeddedModelReadiness {
  */
 class EmbeddedRuntime private constructor(context: Context, private val resolved: ResolvedUseCase) : AutoCloseable {
     private val closed = AtomicBoolean(false)
+    private val visionProjector = EmbeddedVisionProjector(context)
     private val modelStore = FileSystemModelStore(File(context.noBackupFilesDir, MODEL_DIRECTORY))
     private val registry =
         object : ModelProfileRegistry {
@@ -94,9 +95,27 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
         RuntimeOrchestrator(
             registry = registry,
             modelStore = modelStore,
-            backend = LlamaCppInferenceBackend(File(context.applicationInfo.nativeLibraryDir)),
+            backend = LlamaCppInferenceBackend(
+                nativeLibraryDir = File(context.applicationInfo.nativeLibraryDir),
+                visionProjectorFile = visionProjector.file,
+            ),
         )
     private val client: LocalLlmClient = InProcessLocalLlmClient(runtime)
+
+    /** Optional multimodal capability keeps projector lifetime out of the text facade. */
+    val vision: EmbeddedVisionCapability by lazy {
+        EmbeddedVisionCapability(
+            projector = visionProjector,
+            client = client,
+            applicationId = applicationId,
+            useCaseId = useCaseId,
+            verifyOwner = {
+                requireWorkerThread()
+                checkOpen()
+            },
+            isClosed = { closed.get() },
+        )
+    }
 
     private val provisioning by lazy {
         val release = CuratedModelCatalog.releases.single { it.id.modelId.value == EmbeddedModelPolicy.INITIAL_MODEL_ID }
@@ -155,7 +174,24 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
     ): ModelDownloadResult {
         requireWorkerThread()
         checkOpen()
-        return provisioning.download(observer, DownloadCancellationToken { closed.get() || cancellationToken.isCancelled() })
+        return provisioning.download(
+            observer,
+            DownloadCancellationToken { closed.get() || cancellationToken.isCancelled() },
+        )
+    }
+
+    /** Long-running Android-owned transfers retain untrusted partial bytes after a system stop. */
+    fun downloadModelResumable(
+        observer: DownloadProgressObserver = DownloadProgressObserver {},
+        cancellationToken: DownloadCancellationToken = NeverCancelled,
+    ): ModelDownloadResult {
+        requireWorkerThread()
+        checkOpen()
+        return provisioning.download(
+            observer,
+            DownloadCancellationToken { closed.get() || cancellationToken.isCancelled() },
+            preservePartialOnCancel = true,
+        )
     }
 
     /** Revalidate GGUF metadata, import atomically, and check SHA-256 before prepare(). */

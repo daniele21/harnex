@@ -334,6 +334,7 @@ internal data class ResolvedRequestConfiguration(
         stopTokenIds = promptPlan.stopTokenIds,
         stopSequences = promptPlan.stopSequences,
         reasoningControl = reasoningControl,
+        imageBytes = promptPlan.imageBytes,
     )
 
     private fun SeedPolicy.toType(): SeedPolicyType = when (this) {

@@ -6,13 +6,20 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 
-data class DownloadTransportRequest(val uri: URI, val connectTimeoutMs: Int, val readTimeoutMs: Int)
+data class DownloadTransportRequest @JvmOverloads constructor(
+    val uri: URI,
+    val connectTimeoutMs: Int,
+    val readTimeoutMs: Int,
+    val rangeStartBytes: Long = 0L,
+)
 
 interface DownloadTransportResponse : Closeable {
     val statusCode: Int
     val contentLengthBytes: Long?
     val contentEncoding: String?
     val redirectLocation: String?
+    val contentRange: String? get() = null
+
     fun openBody(): InputStream
 }
 
@@ -30,6 +37,9 @@ class HttpUrlConnectionDownloadTransport : DownloadTransport {
         connection.readTimeout = request.readTimeoutMs
         connection.useCaches = false
         connection.setRequestProperty(HEADER_ACCEPT_ENCODING, ENCODING_IDENTITY)
+        if (request.rangeStartBytes > 0) {
+            connection.setRequestProperty(HEADER_RANGE, "bytes=${request.rangeStartBytes}-")
+        }
         connection.connect()
         return HttpUrlConnectionResponse(connection)
     }
@@ -48,6 +58,8 @@ class HttpUrlConnectionDownloadTransport : DownloadTransport {
 
         override val redirectLocation: String?
             get() = connection.getHeaderField(HEADER_LOCATION)
+        override val contentRange: String?
+            get() = connection.getHeaderField(HEADER_CONTENT_RANGE)
 
         override fun openBody(): InputStream {
             check(statusCode in 200..299) { "HTTP response does not contain a success body" }
@@ -62,6 +74,8 @@ class HttpUrlConnectionDownloadTransport : DownloadTransport {
 
     private companion object {
         const val METHOD_GET = "GET"
+        const val HEADER_RANGE = "Range"
+        const val HEADER_CONTENT_RANGE = "Content-Range"
         const val HEADER_ACCEPT_ENCODING = "Accept-Encoding"
         const val HEADER_LOCATION = "Location"
         const val ENCODING_IDENTITY = "identity"

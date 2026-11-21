@@ -3,6 +3,7 @@ package io.github.daniele21.localllm.download
 import io.github.daniele21.localllm.catalog.CatalogGgufArtifact
 import io.github.daniele21.localllm.contracts.ModelDigest
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.URI
@@ -26,7 +27,8 @@ class SecureModelDownloader(
 ) {
     private val fileStore = DownloadFileStore(rootDirectory)
     private val journal = DownloadJournal(fileStore.operationsDirectory, fileStore.partialsDirectory)
-    private val activeOperations = ConcurrentHashMap<String, DownloadOperationId>()
+    private val activeOperations = concurrentOperations
+    private val controlledRoot = fileStore.partialsDirectory.canonicalPath
 
     @Suppress("ReturnCount", "SwallowedException")
     fun download(
@@ -59,13 +61,14 @@ class SecureModelDownloader(
             return success(operationId, descriptor, source.normalizedHost, deduplicated = true)
         }
 
-        val existing = activeOperations.putIfAbsent(descriptor.digest.sha256, operationId)
+        val activeKey = "$controlledRoot:${descriptor.digest.sha256}"
+        val existing = activeOperations.putIfAbsent(activeKey, operationId)
         if (existing != null) return ModelDownloadResult.AlreadyRunning(existing, descriptor.digest)
 
         return try {
-            executeDownload(operationId, descriptor, source, observer, cancellationToken)
+            executeDownload(operationId, descriptor, source, observer, cancellationToken, request.preservePartialOnCancel)
         } finally {
-            activeOperations.remove(descriptor.digest.sha256, operationId)
+            activeOperations.remove(activeKey, operationId)
         }
     }
 
@@ -73,12 +76,17 @@ class SecureModelDownloader(
         val interrupted = journal.recoverAndPurge()
         val cutoff = safeSubtract(clock.nowEpochMs(), configuration.orphanRetentionMs)
         val (deleted, failures) = fileStore.cleanupOrphanPartials(cutoff)
-        return DownloadCleanupReport(interrupted, deleted, failures)
+        val resumeCutoff = safeSubtract(clock.nowEpochMs(), RESUME_RETENTION_MS)
+        val (resumesDeleted, resumeFailures) = fileStore.cleanupAbandonedResumes(resumeCutoff)
+        return DownloadCleanupReport(interrupted, deleted + resumesDeleted, failures + resumeFailures)
     }
 
     internal fun resolveVerifiedFile(handle: VerifiedDownloadHandle): File? = fileStore.resolve(handle)
 
     fun discardVerifiedDownload(handle: VerifiedDownloadHandle): Boolean = fileStore.discard(handle)
+
+    /** Explicit user reset; an interrupted system download otherwise keeps resumable bytes. */
+    fun discardIncompleteDownload(digest: ModelDigest): Boolean = fileStore.discardResumable(digest)
 
     @Suppress(
         "CyclomaticComplexMethod",
@@ -94,6 +102,7 @@ class SecureModelDownloader(
         initialSource: SourcePolicyResult.Allowed,
         observer: DownloadProgressObserver,
         cancellationToken: DownloadCancellationToken,
+        preservePartialOnCancel: Boolean,
     ): ModelDownloadResult {
         val reporter = ProgressReporter(operationId, artifact, initialSource.normalizedHost, observer)
         reporter.emit(DownloadStage.PREPARING, 0, 1, force = true)
@@ -107,7 +116,7 @@ class SecureModelDownloader(
             var partial: File? = null
             try {
                 ensureNotCancelled(cancellationToken)
-                partial = createPartial()
+                partial = fileStore.resumablePartial(artifact.digest, artifact.sizeBytes)
                 writeJournal(
                     DownloadJournalRecord(
                         operationId = operationId,
@@ -119,15 +128,16 @@ class SecureModelDownloader(
                         attempt = attempt,
                     ),
                 )
-                reporter.emit(DownloadStage.CONNECTING, 0, attempt, force = true)
-                val opened = openFollowingRedirects(initialSource, cancellationToken)
-                opened.response.use { response ->
-                    validateResponse(response, artifact)
-                    reporter.sourceHost = opened.source.normalizedHost
-                    val transfer = transfer(response, partial, artifact, reporter, cancellationToken, attempt)
-                    reporter.emit(DownloadStage.VERIFYING, transfer.bytes, attempt, force = true)
-                    verifyTransfer(artifact, transfer)
-                }
+                val transfer = downloadVerifiedBody(
+                    partial,
+                    artifact,
+                    initialSource,
+                    reporter,
+                    cancellationToken,
+                    attempt,
+                )
+                reporter.emit(DownloadStage.VERIFYING, transfer.bytes, attempt, force = true)
+                verifyTransfer(artifact, transfer)
                 ensureNotCancelled(cancellationToken)
                 val published = try {
                     fileStore.publish(partial, artifact.digest, artifact.sizeBytes)
@@ -142,21 +152,22 @@ class SecureModelDownloader(
                 reporter.emit(DownloadStage.COMPLETED, artifact.sizeBytes, attempt, force = true)
                 return success(operationId, artifact, reporter.sourceHost, published.deduplicated)
             } catch (error: DownloadException) {
-                partial?.delete()
                 journal.remove(operationId)
                 lastFailure = error.failure
                 if (error.failure.code == DownloadFailureCode.DOWNLOAD_CANCELLED) {
+                    discardOnCancellation(partial, preservePartialOnCancel)
                     reporter.emit(DownloadStage.CANCELLED, reporter.lastBytes, attempt, force = true)
                     return ModelDownloadResult.Cancelled(operationId, error.failure)
                 }
+                if (!error.failure.retryable) partial?.delete()
                 if (!error.failure.retryable || attempt == configuration.retryPolicy.maxAttempts) break
                 reporter.emit(DownloadStage.RETRY_WAIT, reporter.lastBytes, attempt, force = true)
                 retryDelay(attempt, cancellationToken)?.let { cancellation ->
+                    discardOnCancellation(partial, preservePartialOnCancel)
                     reporter.emit(DownloadStage.CANCELLED, reporter.lastBytes, attempt, force = true)
                     return ModelDownloadResult.Cancelled(operationId, cancellation)
                 }
             } catch (error: IOException) {
-                partial?.delete()
                 journal.remove(operationId)
                 lastFailure = DownloadFailure(
                     DownloadFailureCode.NETWORK_FAILURE,
@@ -166,6 +177,7 @@ class SecureModelDownloader(
                 if (attempt == configuration.retryPolicy.maxAttempts) break
                 reporter.emit(DownloadStage.RETRY_WAIT, reporter.lastBytes, attempt, force = true)
                 retryDelay(attempt, cancellationToken)?.let { cancellation ->
+                    discardOnCancellation(partial, preservePartialOnCancel)
                     reporter.emit(DownloadStage.CANCELLED, reporter.lastBytes, attempt, force = true)
                     return ModelDownloadResult.Cancelled(operationId, cancellation)
                 }
@@ -187,6 +199,53 @@ class SecureModelDownloader(
         )
     }
 
+    private fun discardOnCancellation(partial: File?, preservePartialOnCancel: Boolean) {
+        if (!preservePartialOnCancel) partial?.delete()
+    }
+
+    /**
+     * Each request rechecks the server's representation before appending to
+     * untrusted digest-bound bytes. The retry loop owns publication/cancellation.
+     */
+    @Suppress("LongParameterList")
+    private fun downloadVerifiedBody(
+        partial: File,
+        artifact: CatalogGgufArtifact,
+        initialSource: SourcePolicyResult.Allowed,
+        reporter: ProgressReporter,
+        cancellationToken: DownloadCancellationToken,
+        attempt: Int,
+    ): TransferResult {
+        val existingBytes = partial.length()
+        reporter.emit(DownloadStage.CONNECTING, existingBytes, attempt, force = true)
+        if (existingBytes == artifact.sizeBytes) {
+            // A process may die after all bytes were flushed but before verified publication.
+            // Verify those complete bytes locally rather than discarding a valid multi-GB model.
+            val digest = MessageDigest.getInstance(SHA_256_ALGORITHM)
+            rehashExistingPartial(partial, digest, ByteArray(configuration.bufferSizeBytes), cancellationToken)
+            return TransferResult(existingBytes, digest.digest().toHex())
+        }
+        var opened = openFollowingRedirects(initialSource, cancellationToken, existingBytes)
+        val offset = if (existingBytes > 0 && validPartialResponse(opened.response, artifact, existingBytes)) {
+            existingBytes
+        } else {
+            0L
+        }
+        val resetRange = opened.response.statusCode in RANGE_RESET_CODES
+        if (existingBytes > 0 && offset == 0L && resetRange) {
+            // Only an invalid range reply merits dropping the partial. A transient 503/429
+            // must preserve the already downloaded bytes for the next retry.
+            opened.response.close()
+            if (!partial.delete()) throw IOException("Unable to reset unsafe resume")
+            opened = openFollowingRedirects(initialSource, cancellationToken, 0L)
+        }
+        return opened.response.use { response ->
+            validateResponse(response, artifact, offset)
+            reporter.sourceHost = opened.source.normalizedHost
+            transfer(response, partial, artifact, reporter, cancellationToken, attempt, offset)
+        }
+    }
+
     private fun validateDescriptor(artifact: CatalogGgufArtifact): CatalogGgufArtifact? {
         val digest = artifact.digest.sha256.lowercase()
         val valid = digest.matches(SHA_256) &&
@@ -198,7 +257,8 @@ class SecureModelDownloader(
     }
 
     private fun preflightStorage(artifact: CatalogGgufArtifact, operationId: DownloadOperationId): DownloadFailure? {
-        val required = safeAdd(artifact.sizeBytes, configuration.storageHeadroomBytes)
+        val remaining = artifact.sizeBytes - fileStore.resumableLength(artifact.digest, artifact.sizeBytes)
+        val required = safeAdd(remaining, configuration.storageHeadroomBytes)
             ?: return DownloadFailure(DownloadFailureCode.INVALID_DESCRIPTOR, false, "storage-overflow")
         val available = storageProbe.usableBytes(fileStore.partialsDirectory)
         return if (available < required) {
@@ -215,6 +275,7 @@ class SecureModelDownloader(
     private fun openFollowingRedirects(
         initialSource: SourcePolicyResult.Allowed,
         cancellationToken: DownloadCancellationToken,
+        rangeStartBytes: Long = 0L,
     ): OpenedResponse {
         var source = initialSource
         var redirects = 0
@@ -226,6 +287,7 @@ class SecureModelDownloader(
                     uri = source.uri,
                     connectTimeoutMs = configuration.connectTimeoutMs,
                     readTimeoutMs = configuration.readTimeoutMs,
+                    rangeStartBytes = rangeStartBytes,
                 ),
             )
             if (response.statusCode !in REDIRECT_CODES) return OpenedResponse(source, response)
@@ -271,31 +333,41 @@ class SecureModelDownloader(
         }
     }
 
+    private fun validPartialResponse(response: DownloadTransportResponse, artifact: CatalogGgufArtifact, offset: Long): Boolean {
+        if (response.statusCode != HTTP_PARTIAL) return false
+        val match = CONTENT_RANGE.matchEntire(response.contentRange.orEmpty()) ?: return false
+        val start = match.groupValues[1].toLongOrNull()
+        val end = match.groupValues[2].toLongOrNull()
+        val total = match.groupValues[3].toLongOrNull()
+        return start == offset && end != null && total != null && end >= offset && end < total &&
+            total == artifact.sizeBytes &&
+            (response.contentLengthBytes == null || response.contentLengthBytes == end - offset + 1)
+    }
+
     @Suppress("ThrowsCount")
-    private fun validateResponse(response: DownloadTransportResponse, artifact: CatalogGgufArtifact) {
-        if (response.statusCode != HTTP_OK) {
+    private fun validateResponse(response: DownloadTransportResponse, artifact: CatalogGgufArtifact, offset: Long) {
+        if (response.statusCode != if (offset > 0L) HTTP_PARTIAL else HTTP_OK) {
             val retryable = response.statusCode in RETRYABLE_HTTP_CODES
-            throw downloadError(
-                DownloadFailureCode.DOWNLOAD_HTTP_ERROR,
-                retryable,
-                "status=${response.statusCode}",
-            )
+            throw downloadError(DownloadFailureCode.DOWNLOAD_HTTP_ERROR, retryable, "status=${response.statusCode}")
         }
         val encoding = response.contentEncoding?.trim()?.lowercase()
         if (!encoding.isNullOrEmpty() && encoding != IDENTITY_ENCODING) {
             throw downloadError(DownloadFailureCode.CONTENT_ENCODING_UNSUPPORTED, false, encoding)
         }
+        val remaining = artifact.sizeBytes - offset
         response.contentLengthBytes?.let { contentLength ->
-            if (contentLength > configuration.maxArtifactBytes || contentLength > artifact.sizeBytes) {
+            if (contentLength > configuration.maxArtifactBytes || contentLength > remaining) {
                 throw downloadError(DownloadFailureCode.DOWNLOAD_SIZE_EXCEEDED, false, "content-length")
             }
-            if (contentLength != artifact.sizeBytes) {
+            // A 206 response may represent a shorter bounded chunk, which will retry on truncation.
+            if (offset == 0L && contentLength != artifact.sizeBytes) {
                 throw downloadError(DownloadFailureCode.DOWNLOAD_SIZE_MISMATCH, false, "content-length")
             }
         }
     }
 
-    @Suppress("LoopWithTooManyJumpStatements", "NestedBlockDepth", "SwallowedException", "ThrowsCount")
+    // JNI/client-facing error codes must not expose raw filesystem or network exception messages.
+    @Suppress("SwallowedException", "ThrowsCount")
     private fun transfer(
         response: DownloadTransportResponse,
         partial: File,
@@ -303,60 +375,100 @@ class SecureModelDownloader(
         reporter: ProgressReporter,
         cancellationToken: DownloadCancellationToken,
         attempt: Int,
+        offset: Long,
     ): TransferResult {
         val digest = MessageDigest.getInstance(SHA_256_ALGORITHM)
         val buffer = ByteArray(configuration.bufferSizeBytes)
-        var total = 0L
+        if (offset > 0L) rehashExistingPartial(partial, digest, buffer, cancellationToken)
+        reporter.emit(DownloadStage.DOWNLOADING, offset, attempt, force = true)
         val input = try {
             response.openBody()
         } catch (error: IOException) {
             throw downloadError(DownloadFailureCode.NETWORK_FAILURE, true, error.javaClass.simpleName)
         }
-        input.use { source ->
+        val total = input.use { source ->
             val output = try {
-                FileOutputStream(partial, false)
+                FileOutputStream(partial, offset > 0L)
             } catch (error: IOException) {
                 throw downloadError(DownloadFailureCode.TEMP_STORAGE_FAILURE, false, error.javaClass.simpleName)
             }
             output.use { destination ->
-                while (true) {
-                    ensureNotCancelled(cancellationToken)
-                    val count = try {
-                        source.read(buffer)
-                    } catch (error: IOException) {
-                        throw downloadError(DownloadFailureCode.NETWORK_FAILURE, true, error.javaClass.simpleName)
-                    }
-                    if (count == -1) break
-                    if (count == 0) continue
-                    if (total > artifact.sizeBytes - count) {
-                        throw downloadError(DownloadFailureCode.DOWNLOAD_SIZE_EXCEEDED, false, "stream")
-                    }
-                    try {
-                        destination.write(buffer, 0, count)
-                    } catch (error: IOException) {
-                        throw downloadError(
-                            classifyWriteFailure(artifact.sizeBytes - total),
-                            false,
-                            error.javaClass.simpleName,
-                        )
-                    }
-                    digest.update(buffer, 0, count)
-                    total += count
-                    reporter.emit(DownloadStage.DOWNLOADING, total, attempt)
-                }
+                val bytes = copyDownloadedBytes(
+                    source, destination, artifact, reporter, cancellationToken, attempt, offset, buffer, digest,
+                )
                 try {
                     destination.fd.sync()
                 } catch (error: IOException) {
                     throw downloadError(DownloadFailureCode.TEMP_STORAGE_FAILURE, false, error.javaClass.simpleName)
                 }
+                bytes
             }
         }
         return TransferResult(total, digest.digest().toHex())
     }
 
+    private fun rehashExistingPartial(
+        partial: File,
+        digest: MessageDigest,
+        buffer: ByteArray,
+        cancellationToken: DownloadCancellationToken,
+    ) {
+        FileInputStream(partial).use { existing ->
+            while (true) {
+                ensureNotCancelled(cancellationToken)
+                val count = existing.read(buffer)
+                if (count == -1) break
+                digest.update(buffer, 0, count)
+            }
+        }
+    }
+
+    @Suppress("LoopWithTooManyJumpStatements", "SwallowedException", "ThrowsCount")
+    private fun copyDownloadedBytes(
+        source: java.io.InputStream,
+        destination: FileOutputStream,
+        artifact: CatalogGgufArtifact,
+        reporter: ProgressReporter,
+        cancellationToken: DownloadCancellationToken,
+        attempt: Int,
+        offset: Long,
+        buffer: ByteArray,
+        digest: MessageDigest,
+    ): Long {
+        var total = offset
+        while (true) {
+            ensureNotCancelled(cancellationToken)
+            val count = try {
+                source.read(buffer)
+            } catch (error: IOException) {
+                throw downloadError(DownloadFailureCode.NETWORK_FAILURE, true, error.javaClass.simpleName)
+            }
+            if (count == -1) break
+            if (count == 0) continue
+            if (total > artifact.sizeBytes - count) {
+                throw downloadError(DownloadFailureCode.DOWNLOAD_SIZE_EXCEEDED, false, "stream")
+            }
+            try {
+                destination.write(buffer, 0, count)
+            } catch (error: IOException) {
+                throw downloadError(
+                    classifyWriteFailure(artifact.sizeBytes - total),
+                    false,
+                    error.javaClass.simpleName,
+                )
+            }
+            digest.update(buffer, 0, count)
+            total += count
+            reporter.emit(DownloadStage.DOWNLOADING, total, attempt)
+        }
+        return total
+    }
+
     private fun verifyTransfer(artifact: CatalogGgufArtifact, transfer: TransferResult) {
         if (transfer.bytes != artifact.sizeBytes) {
-            throw downloadError(DownloadFailureCode.DOWNLOAD_SIZE_MISMATCH, false, "stream")
+            // An otherwise valid connection can end early without throwing IOException.
+            // Keep the digest-bound bytes and retry with Range, never publish incomplete data.
+            throw downloadError(DownloadFailureCode.DOWNLOAD_SIZE_MISMATCH, true, "stream")
         }
         if (transfer.sha256 != artifact.digest.sha256) {
             throw downloadError(DownloadFailureCode.SHA256_MISMATCH, false, "digest")
@@ -515,6 +627,12 @@ class SecureModelDownloader(
 
     private companion object {
         const val HTTP_OK = 200
+        const val HTTP_PARTIAL = 206
+        const val HTTP_RANGE_NOT_SATISFIABLE = 416
+        val RANGE_RESET_CODES = setOf(HTTP_PARTIAL, HTTP_RANGE_NOT_SATISFIABLE)
+        const val RESUME_RETENTION_MS = 7L * 86_400_000L
+        val CONTENT_RANGE = Regex("^bytes ([0-9]+)-([0-9]+)/([0-9]+)$")
+        val concurrentOperations = ConcurrentHashMap<String, DownloadOperationId>()
         const val IDENTITY_ENCODING = "identity"
         const val SHA_256_ALGORITHM = "SHA-256"
         const val DIGEST_PREFIX_LENGTH = 12

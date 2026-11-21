@@ -5,7 +5,7 @@ Document type: current-state
 Owner: repository
 Canonical scope: state.repository
 Read when: determining the integrated baseline, open blockers or next repository work block
-Last reviewed: 2026-11-20
+Last reviewed: 2026-11-21
 
 This is the operational ledger for integrated state, blockers and immediate work. Capability history belongs in [`roadmap.md`](roadmap.md); milestone detail stays in focused workstreams.
 
@@ -47,7 +47,9 @@ CA-0..4 are integrated; concrete model/runtime/residency authority stays in Harn
 The [embedded Android SDK workstream](workstreams/embedded-android-sdk.md) owns the one-APK in-process mode alongside the existing Shared Host/Binder Consumer SDK. Through [PR #606](https://github.com/daniele21/harnex/pull/606), the development branch integrates `integrations/android-embedded-sdk`: explicit Qwen3.5 2B Q4_K_M selection, app-private verified download/install, runtime preparation, stateless `GenerationInput.Messages`, streaming/cancellation and technical-session cleanup. Harnex reuses `RuntimeOrchestrator`, the secure downloader, verified installer and llama.cpp backend; the consuming app owns conversation state and UI.
 
 PR [#611](https://github.com/daniele21/harnex/pull/611) adds **offline Whisper Small multilingual Q5_1 dictation** to that independent sample only: explicit microphone permission, bounded foreground recording, verified on-demand 190 MB GGML model, private isolated whisper.cpp JNI, cancellable transcription into an editable composer and explicit Send to existing local Qwen. The public embedded SDK, runtime and Binder contracts are unchanged. FULL Android/native validation and independent Maven-only ARM64 APK packaging, symbol checks and simulated UI journey passed against the PR's integration candidate. The user reported that the APK's basic flow works on a real device, but exact-device/model identity, sustained latency, PSS/thermal, interruption and cancellation/permission matrix still lack recorded physical evidence. These are deferred to release/consumer qualification, not blockers for the development integration.
-The Maven staging workflow packages the transitive runtime AARs and the independent `samples/external-embedded-android` fixture assembles from Maven coordinates only, including ARM64 JNI. PR #609 extends this independently packaged test application with interactive, in-memory-only chat, explicit bounded Messages history, streaming/Stop and content-free local latency/PSS diagnostics. A user reported physical generation with the earlier fixed-prompt debug APK; independent full multi-turn/cancel/restart and representative-device qualification remain unverified. This is **development/automated integration evidence**, not a published production SDK or independent physical qualification of the interactive GGUF journey. Public versioned publication, real on-device GGUF inference, cancellation/process lifecycle, memory/thermal and representative physical ARM64 qualification remain open under EMB-40/50 and are blocking for release/commercial-app handoff, not this `dev` integration.
+PR [#613](https://github.com/daniele21/harnex/pull/613) introduces experimental embedded photo questions and resumable model transfers. See [vision evidence and release limits](features/embedded-vision-feasibility.md).
+
+Maven staging assembles the independent `samples/external-embedded-android` consumer from published AAR coordinates, with ARM64 JNI. PR #609 adds in-memory bounded chat, streaming/Stop and latency/PSS diagnostics. An earlier fixed-prompt phone run was reported; multi-turn/cancellation/restart and resources remained unqualified. This is development integration evidence, not a published SDK or general physical qualification. Versioned publication and representative ARM64 lifecycle/resource proof remain release/consumer-handoff blockers (EMB-40/50).
 
 ## Release evidence state
 

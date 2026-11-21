@@ -27,6 +27,7 @@ internal class EmbeddedChatScreen(
     private val onPrepareVoice: () -> Unit,
     private val onVoice: () -> Unit,
     private val onCancelVoice: () -> Unit,
+    visionActions: VisionActions,
 ) {
     lateinit var prompt: EditText
         private set
@@ -39,6 +40,15 @@ internal class EmbeddedChatScreen(
     private lateinit var sendButton: Button
     private lateinit var stopButton: Button
     private lateinit var resetButton: Button
+    private val refreshVisionControls: () -> Unit = {
+        if (::sendButton.isInitialized) {
+            val canAct = vision.updateControls(chatPhase, voicePhase)
+            stopButton.isEnabled = chatPhase == ChatPhase.PREPARING ||
+                chatPhase == ChatPhase.GENERATING || vision.preparing
+            sendButton.isEnabled = canAct && (!vision.hasImage || vision.ready)
+        }
+    }
+    val vision = EmbeddedVisionComposer(activity, visionActions) { refreshVisionControls() }
     private lateinit var voiceStatus: TextView
     private lateinit var voicePrepareButton: Button
     private lateinit var voiceButton: Button
@@ -123,6 +133,7 @@ internal class EmbeddedChatScreen(
                 android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
         }
         composer.addView(prompt, LinearLayout.LayoutParams(-1, -2))
+        composer.addView(vision.build())
         voiceStatus = chatLabel(activity, "Voice model not installed · ~190 MB download", 12f, Color.rgb(91, 103, 121))
         composer.addView(voiceStatus)
         val voiceActions = LinearLayout(activity).apply {
@@ -240,6 +251,7 @@ internal class EmbeddedChatScreen(
         stopButton.isEnabled = preparing || generating
         resetButton.isEnabled = ready && !voiceBusy
         updateVoiceControls()
+        refreshVisionControls()
     }
 
     private fun updateVoiceControls() {
@@ -270,10 +282,11 @@ internal class EmbeddedChatScreen(
         prompt.isEnabled = canEdit
         sendButton.isEnabled = canEdit
         resetButton.isEnabled = canEdit
+        refreshVisionControls()
     }
 }
 
-private fun LinearLayout.addEqualWidthButtons(activity: Activity, buttons: List<Button>, height: Int) {
+internal fun LinearLayout.addEqualWidthButtons(activity: Activity, buttons: List<Button>, height: Int) {
     for (button in buttons) {
         addView(
             button,
@@ -285,16 +298,16 @@ private fun LinearLayout.addEqualWidthButtons(activity: Activity, buttons: List<
     }
 }
 
-private fun dp(activity: Activity, value: Int) = (value * activity.resources.displayMetrics.density).toInt()
+internal fun dp(activity: Activity, value: Int) = (value * activity.resources.displayMetrics.density).toInt()
 
-private fun chatLabel(activity: Activity, value: String, size: Float, color: Int) = TextView(activity).apply {
+internal fun chatLabel(activity: Activity, value: String, size: Float, color: Int) = TextView(activity).apply {
     text = value
     textSize = size
     setTextColor(color)
     setPadding(dp(activity, 2), dp(activity, 4), dp(activity, 2), dp(activity, 4))
 }
 
-private fun chatButton(activity: Activity, text: String, primary: Boolean) = Button(activity).apply {
+internal fun chatButton(activity: Activity, text: String, primary: Boolean) = Button(activity).apply {
     this.text = text
     isAllCaps = false
     textSize = 14f

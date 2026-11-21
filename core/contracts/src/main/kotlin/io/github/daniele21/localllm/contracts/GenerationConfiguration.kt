@@ -89,6 +89,24 @@ sealed interface GenerationInput {
         }
     }
 
+    /**
+     * Experimental embedded-only image question. Image bytes are bounded compressed PNG/JPEG
+     * payloads; Shared Host/Binder serialization deliberately rejects this input type.
+     * Each request carries one photo and one question, with no implicit chat history.
+     */
+    class ImageQuestion(val question: String, imageBytes: ByteArray) : GenerationInput {
+        private val data: ByteArray = imageBytes.copyOf()
+
+        init {
+            validateInput(question)
+            require(data.isNotEmpty() && data.size <= MAX_IMAGE_INPUT_BYTES) {
+                "Image input must be between 1 and $MAX_IMAGE_INPUT_BYTES bytes"
+            }
+        }
+
+        fun copyImageBytes(): ByteArray = data.copyOf()
+    }
+
     data class RawCompletion(val value: String) : GenerationInput {
         init {
             validateInput(value)
@@ -168,6 +186,7 @@ private fun validateInput(value: String) {
     }
 }
 
+private const val MAX_IMAGE_INPUT_BYTES = 2 * 1024 * 1024
 private const val MAX_CONVERSATION_MESSAGES = 128
 private const val MAX_GENERATION_INPUT_CHARACTERS = 32_768
 private const val MAX_JSON_SCHEMA_CHARACTERS = 32_768

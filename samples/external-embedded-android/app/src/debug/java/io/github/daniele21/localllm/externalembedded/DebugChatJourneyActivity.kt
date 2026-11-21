@@ -1,6 +1,8 @@
 package io.github.daniele21.localllm.externalembedded
 
 import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -65,6 +67,19 @@ class DebugChatJourneyActivity : Activity() {
                 screen.updateVoicePhase(fakeVoicePhase)
                 screen.voiceStatusText = "Voice cancelled · UI-only test"
             },
+            visionActions = VisionActions(
+                onPrepare = {
+                    screen.vision.setReady(ready = true, preparing = false)
+                    screen.vision.setStatus("Vision ready · UI-only test")
+                },
+                onChoose = {
+                    val syntheticImage = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
+                    syntheticImage.eraseColor(Color.RED)
+                    screen.vision.setPhoto(syntheticImage)
+                    screen.vision.setStatus("Synthetic photo · UI-only test")
+                },
+                onRemove = { screen.vision.clearPhoto() },
+            ),
             onNewChat = {
                 if (phase == ChatPhase.READY) {
                     screen.resetConversation()
