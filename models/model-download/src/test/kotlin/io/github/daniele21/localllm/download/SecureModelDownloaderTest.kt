@@ -381,7 +381,14 @@ class SecureModelDownloaderTest {
         val bytes = ByteArray(85_000) { (it % 157).toByte() }
         val digest = sha256(bytes)
         val partials = File(root, "partials").apply { mkdirs() }
-        val resumable = File(partials, "resume-$digest.resume").apply { writeBytes(bytes.copyOf().also { it[0] = (it[0].toInt() xor 1).toByte() }) }
+        val resumable = File(partials, "resume-$digest.resume").apply {
+            writeBytes(
+                bytes.copyOf().also {
+                    it[0] =
+                        (it[0].toInt() xor 1).toByte()
+                },
+            )
+        }
         val transport = QueueTransport()
         val result = downloader(root, transport).download(ModelDownloadRequest(artifact(bytes)))
         assertFailure(result, DownloadFailureCode.SHA256_MISMATCH)
