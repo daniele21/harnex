@@ -88,8 +88,12 @@ class LocalMacDispatchContract(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, self.jdk)
         self.assertIn('[[ -n "${JAVA_HOME:-}" && -x "$JAVA_HOME/bin/java" ]]', self.bootstrap)
+        commands = "\n".join(
+            line for line in self.jdk.splitlines()
+            if not line.lstrip().startswith("#")
+        )
         for unsafe in ("sudo ", "brew install", "rm -rf $HOME", "curl | bash"):
-            self.assertNotIn(unsafe, self.jdk)
+            self.assertNotIn(unsafe, commands)
 
 if __name__ == "__main__":
     unittest.main()
