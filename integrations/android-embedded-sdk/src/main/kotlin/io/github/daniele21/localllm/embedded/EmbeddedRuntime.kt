@@ -72,6 +72,11 @@ enum class EmbeddedModelReadiness {
     VERIFIED,
 }
 
+/** Stateless guard shared by all embedded facade entrypoints; never owns runtime state. */
+private fun requireEmbeddedOpen(closed: AtomicBoolean) {
+    check(!closed.get()) { "Embedded runtime is closed" }
+}
+
 /**
  * Bounded in-process lifetime owner over the same production RuntimeOrchestrator used by the Host.
  *
@@ -112,7 +117,7 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
             useCaseId = useCaseId,
             verifyOwner = {
                 requireWorkerThread()
-                checkOpen()
+                requireEmbeddedOpen(closed)
             },
             isClosed = { closed.get() },
         )
@@ -159,7 +164,7 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
 
     fun modelReadiness(): EmbeddedModelReadiness {
         requireWorkerThread()
-        checkOpen()
+        requireEmbeddedOpen(closed)
         val digest = resolved.model.artifact.digest
         if (modelStore.find(digest) == null) return EmbeddedModelReadiness.NOT_INSTALLED
         return if (modelStore.verify(digest).valid) EmbeddedModelReadiness.VERIFIED else EmbeddedModelReadiness.INVALID
@@ -174,7 +179,7 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
         cancellationToken: DownloadCancellationToken = NeverCancelled,
     ): ModelDownloadResult {
         requireWorkerThread()
-        checkOpen()
+        requireEmbeddedOpen(closed)
         return provisioning.download(
             observer,
             DownloadCancellationToken { closed.get() || cancellationToken.isCancelled() },
@@ -187,7 +192,7 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
         cancellationToken: DownloadCancellationToken = NeverCancelled,
     ): ModelDownloadResult {
         requireWorkerThread()
-        checkOpen()
+        requireEmbeddedOpen(closed)
         return provisioning.download(
             observer,
             DownloadCancellationToken { closed.get() || cancellationToken.isCancelled() },
@@ -201,20 +206,20 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
         observer: ModelInstallationObserver = ModelInstallationObserver {},
     ): ModelInstallationResult {
         requireWorkerThread()
-        checkOpen()
+        requireEmbeddedOpen(closed)
         return provisioning.install(handle, observer)
     }
 
     fun prepare(): PrepareResult {
         requireWorkerThread()
-        checkOpen()
+        requireEmbeddedOpen(closed)
         return client.prepare(applicationId, useCaseId)
     }
 
     /** Native context allocation is lazy; do not treat this technical session as chat history. */
     fun openSession(): SessionId {
         requireWorkerThread()
-        checkOpen()
+        requireEmbeddedOpen(closed)
         return client.createSession(applicationId, useCaseId, SessionOptions(kind = SessionKind.STATELESS))
     }
 
@@ -226,7 +231,7 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
         overrides: GenerationOverrides = GenerationOverrides(),
     ): GenerationHandle {
         requireWorkerThread()
-        checkOpen()
+        requireEmbeddedOpen(closed)
         return client.generate(
             GenerationRequest(
                 requestId = RequestId(UUID.randomUUID().toString()),
@@ -247,7 +252,7 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
         overrides: GenerationOverrides = GenerationOverrides(),
     ): PromptPreviewResult {
         requireWorkerThread()
-        checkOpen()
+        requireEmbeddedOpen(closed)
         return runtime.previewGeneration(
             GenerationRequest(
                 requestId = RequestId(UUID.randomUUID().toString()),
@@ -262,17 +267,13 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
 
     fun closeSession(sessionId: SessionId) {
         requireWorkerThread()
-        checkOpen()
+        requireEmbeddedOpen(closed)
         client.closeSession(sessionId)
     }
 
     override fun close() {
         requireWorkerThread()
         if (closed.compareAndSet(false, true)) runtime.close()
-    }
-
-    private fun checkOpen() {
-        check(!closed.get()) { "Embedded runtime is closed" }
     }
 
     companion object {
