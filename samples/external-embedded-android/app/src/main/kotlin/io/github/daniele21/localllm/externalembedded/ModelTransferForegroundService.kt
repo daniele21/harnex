@@ -83,8 +83,10 @@ class ModelTransferForegroundService : Service() {
                         )
                     }
                 }
-            } catch (error: RuntimeException) {
+            } catch (error: IllegalStateException) {
                 ModelTransferOutcome(false, false, "Download failed (${error.javaClass.simpleName}) · retry")
+            } catch (error: SecurityException) {
+                ModelTransferOutcome(false, false, "Download blocked (${error.javaClass.simpleName}) · check app settings")
             }
             if (!ModelTransferState.cancelRequested(this, kind)) {
                 ModelTransferState.update(
