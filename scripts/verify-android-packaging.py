@@ -23,6 +23,8 @@ EXPECTED_RUNTIME_LIBRARIES = {
     "libllama-common.so",
     "libllama.so",
     "liblocal_llm_jni.so",
+    # JNI links the pinned llama.cpp multimodal projector in every embedded runtime package.
+    "libmtmd.so",
 }
 PHONE_TEST_NATIVE_LIBRARIES = EXPECTED_RUNTIME_LIBRARIES | {
     "libandroidx.graphics.path.so",
