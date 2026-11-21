@@ -12,11 +12,8 @@ import io.github.daniele21.localllm.contracts.GenerationRequest
 import io.github.daniele21.localllm.contracts.LocalLlmClient
 import io.github.daniele21.localllm.contracts.LocalLlmError
 import io.github.daniele21.localllm.contracts.ModelLoadKind
-import io.github.daniele21.localllm.contracts.PromptPreviewResult
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 import io.github.daniele21.localllm.contracts.PrepareResult
+import io.github.daniele21.localllm.contracts.PromptPreviewResult
 import io.github.daniele21.localllm.contracts.RequestId
 import io.github.daniele21.localllm.contracts.RuntimeSnapshot
 import io.github.daniele21.localllm.contracts.RuntimeState
@@ -33,8 +30,11 @@ import io.github.daniele21.localllm.observability.TelemetryRepository
 import io.github.daniele21.localllm.store.ModelStore
 import io.github.daniele21.localllm.store.StoredModel
 import java.util.UUID
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -180,7 +180,10 @@ class RuntimeOrchestrator(
                         )
                         val capabilities = backend.modelCapabilities(session.model)
                         generationPlanning.validateOutputConstraint(
-                            request.outputConstraint, resolved, session.resolved, capabilities,
+                            request.outputConstraint,
+                            resolved,
+                            session.resolved,
+                            capabilities,
                         )
                         val context = generationPlanning.planContextSize(
                             resolvedUseCase = session.resolved,
@@ -201,7 +204,9 @@ class RuntimeOrchestrator(
                             when (error) {
                                 is GenerationPlanningException ->
                                     LocalLlmError.Configuration(error.message.orEmpty(), error.reason)
+
                                 is BackendException -> error.toPublicError()
+
                                 else -> LocalLlmError.NativeRuntime("Prompt preview failed")
                             },
                         )
