@@ -231,9 +231,8 @@ class SecureModelDownloader(
         } else {
             0L
         }
-        if (existingBytes > 0 && offset == 0L &&
-            (opened.response.statusCode == HTTP_PARTIAL || opened.response.statusCode == HTTP_RANGE_NOT_SATISFIABLE)
-        ) {
+        val resetRange = opened.response.statusCode in RANGE_RESET_CODES
+        if (existingBytes > 0 && offset == 0L && resetRange) {
             // Only an invalid range reply merits dropping the partial. A transient 503/429
             // must preserve the already downloaded bytes for the next retry.
             opened.response.close()
@@ -630,6 +629,7 @@ class SecureModelDownloader(
         const val HTTP_OK = 200
         const val HTTP_PARTIAL = 206
         const val HTTP_RANGE_NOT_SATISFIABLE = 416
+        val RANGE_RESET_CODES = setOf(HTTP_PARTIAL, HTTP_RANGE_NOT_SATISFIABLE)
         const val RESUME_RETENTION_MS = 7L * 86_400_000L
         val CONTENT_RANGE = Regex("^bytes ([0-9]+)-([0-9]+)/([0-9]+)$")
         val concurrentOperations = ConcurrentHashMap<String, DownloadOperationId>()

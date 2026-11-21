@@ -24,13 +24,23 @@ class ModelTransferForegroundService : Service() {
         val kind = ModelTransferKind.values().firstOrNull {
             it.name == request.getStringExtra(EXTRA_KIND)
         } ?: return START_NOT_STICKY
-        if (request.action == ACTION_CANCEL) {
-            // A stale notification for another model cannot cancel an unrelated download.
-            if (currentKind == kind) cancelled.set(true)
-            if (!running.get()) stopSelf(startId)
-            return START_NOT_STICKY
+        return when (request.action) {
+            ACTION_CANCEL -> {
+                cancelTransfer(kind, startId)
+                START_NOT_STICKY
+            }
+            ACTION_START -> startTransfer(kind, startId)
+            else -> START_NOT_STICKY
         }
-        if (request.action != ACTION_START) return START_NOT_STICKY
+    }
+
+    private fun cancelTransfer(kind: ModelTransferKind, startId: Int) {
+        // A delayed notification for a different model must never cancel the active transfer.
+        if (currentKind == kind) cancelled.set(true)
+        if (!running.get()) stopSelf(startId)
+    }
+
+    private fun startTransfer(kind: ModelTransferKind, startId: Int): Int {
         if (!running.compareAndSet(false, true)) {
             if (currentKind != kind) {
                 ModelTransferState.update(
@@ -56,41 +66,43 @@ class ModelTransferForegroundService : Service() {
             setReferenceCounted(false)
             acquire(WAKE_LOCK_LIMIT_MS)
         }
-        worker.execute {
-            try {
-                val result = try {
-                    ModelTransferTask.execute(this, kind, cancelled) { status, percent ->
-                        if (!cancelled.get()) {
-                            getSystemService(android.app.NotificationManager::class.java).notify(
-                                kind.jobId,
-                                ModelTransferNotifications.notification(this, kind, status, percent),
-                            )
-                        }
-                    }
-                } catch (error: RuntimeException) {
-                    ModelTransferOutcome(false, false, "Download failed (${error.javaClass.simpleName}) · retry")
-                }
-                if (!ModelTransferState.cancelRequested(this, kind)) {
-                    ModelTransferState.update(
-                        this,
-                        kind,
-                        when {
-                            result.success -> ModelTransferPhase.COMPLETED
-                            cancelled.get() -> ModelTransferPhase.PAUSED
-                            else -> ModelTransferPhase.FAILED
-                        },
-                        result.status,
-                    )
-                }
-            } finally {
-                releaseWakeLock()
-                currentKind = null
-                running.set(false)
-                active = false
-                stopSelf(startId)
-            }
-        }
+        worker.execute { runTransfer(kind, startId) }
         return START_REDELIVER_INTENT
+    }
+
+    private fun runTransfer(kind: ModelTransferKind, startId: Int) {
+        try {
+            val result = try {
+                ModelTransferTask.execute(this, kind, cancelled) { status, percent ->
+                    if (!cancelled.get()) {
+                        getSystemService(android.app.NotificationManager::class.java).notify(
+                            kind.jobId,
+                            ModelTransferNotifications.notification(this, kind, status, percent),
+                        )
+                    }
+                }
+            } catch (error: RuntimeException) {
+                ModelTransferOutcome(false, false, "Download failed (${error.javaClass.simpleName}) · retry")
+            }
+            if (!ModelTransferState.cancelRequested(this, kind)) {
+                ModelTransferState.update(
+                    this,
+                    kind,
+                    when {
+                        result.success -> ModelTransferPhase.COMPLETED
+                        cancelled.get() -> ModelTransferPhase.PAUSED
+                        else -> ModelTransferPhase.FAILED
+                    },
+                    result.status,
+                )
+            }
+        } finally {
+            releaseWakeLock()
+            currentKind = null
+            running.set(false)
+            active = false
+            stopSelf(startId)
+        }
     }
 
     override fun onDestroy() {
