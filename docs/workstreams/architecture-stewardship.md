@@ -18,7 +18,7 @@ Non-goals: introducing Hilt/DI frameworks, arbitrary abstraction layers, second 
 
 ## Observed baseline, risks and ownership
 
-Read actual `dev` source and direct consumers before claiming a violation. At this checkpoint Harnex has 37 Gradle modules (including apps), with distinct `core/contracts`, `core/backend-spi`, `core/runtime-core`, `models/*`, `transports/*`, `integrations/*`, backend, evaluation, observability and UI ownership. The architecture verifier guards direct production project dependencies and native `.cpp` includes, with no declared exceptions; it does **not** prove transitive graph hygiene, Kotlin import direction, public ABI stability or lifecycle semantics.
+Read actual `dev` source and direct consumers before claiming a violation. At this checkpoint Harnex has 36 Gradle modules (including apps), with distinct `core/contracts`, `core/backend-spi`, `core/runtime-core`, `models/*`, `transports/*`, `integrations/*`, backend, evaluation, observability and UI ownership. The architecture verifier guards direct production project dependencies and native `.cpp` includes, with no declared exceptions; it does **not** prove transitive graph hygiene, Kotlin import direction, public ABI stability or lifecycle semantics.
 
 Inspection candidates, **not automatically defects**: `RuntimeOrchestrator.kt` (~1,513 lines), `llama_jni.cpp` (~1,542), phone `MainActivity.kt` (~1,325), and `SecureModelDownloader.kt` (~653). The `simplicity-first-runtime` workstream already analyzed the orchestrator and proved selected cleanup improvements; preserve its KEEP/DEFER decisions. No edit is justified by file size alone.
 
