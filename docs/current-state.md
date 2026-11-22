@@ -87,7 +87,7 @@ The active [simplicity-first runtime workstream](workstreams/simplicity-first-ru
 
 ## Architecture stewardship (plan only)
 
-The [architecture stewardship workstream](workstreams/architecture-stewardship.md) coordinates narrow module-boundary fitness checks and review discipline. Two Harnex-local skills guide ownership review and evidence-backed refactors. It does **not** introduce a new runtime owner or override the existing [SIMP](workstreams/simplicity-first-runtime.md), embedded SDK, UI or LocalMaind workstreams. This plan/skills candidate is not implementation or CI pass evidence.
+[ARC](workstreams/architecture-stewardship.md) tracks module fitness and two local review skills; runtime, embedded SDK, UI and LocalMaind implementation remain with existing owners.
 
 ## Immediate next block
 
