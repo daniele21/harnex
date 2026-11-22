@@ -26,6 +26,8 @@ internal class GenerationEventForwarder(
         get() = deliveryFailed.get()
 
     fun onEvent(event: GenerationEvent) {
+        // Embedded-only image stages have no Binder wire representation.
+        if (event is GenerationEvent.VisionProgress) return
         if (deliveryFailed.get() || terminalQueued.get()) return
         val events =
             if (event is GenerationEvent.TextDelta) {

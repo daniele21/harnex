@@ -1,9 +1,13 @@
 package io.github.daniele21.localllm.llamacpp
 
+import io.github.daniele21.localllm.contracts.VisionStage
 import java.util.Base64
 
 interface NativeStreamingCallback {
     fun onChunk(base64Text: String, generatedTokens: Int): Boolean
+
+    /** Only typed milestones and monotonic times; never transmit image or prompt. */
+    fun onVisionStage(stage: String, elapsedMs: Long): Boolean = true
 }
 
 interface NativeLlamaStreamingApi {
@@ -118,6 +122,16 @@ class JniLlamaStreamingApi : NativeLlamaStreamingApi {
     external override fun cancel(requestId: String): Array<String>
 }
 
+/**
+ * A single native image payload and its content-free stage observer.
+ * Keeping image-only details together preserves the small common text streaming API.
+ */
+class NativeVisionRequest(
+    val imageBytes: ByteArray,
+    val projectorPath: String?,
+    val onProgress: (VisionStage, Long) -> Boolean = { _, _ -> true },
+)
+
 class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = JniLlamaStreamingApi()) {
     fun generate(
         context: LoadedNativeContext,
@@ -125,8 +139,7 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
         prompt: String,
         config: NativeGenerationConfig,
         listener: NativeStreamingListener,
-        imageBytes: ByteArray? = null,
-        projectorPath: String? = null,
+        vision: NativeVisionRequest? = null,
     ): NativeStreamingResult {
         val validationError = validate(requestId, prompt, config)
         if (validationError != null) {
@@ -134,6 +147,12 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
         }
 
         val callback = object : NativeStreamingCallback {
+            override fun onVisionStage(stage: String, elapsedMs: Long): Boolean {
+                val parsed = VisionStage.entries.firstOrNull { it.name == stage } ?: return false
+                if (elapsedMs < 0) return false
+                return vision?.onProgress?.invoke(parsed, elapsedMs) ?: true
+            }
+
             override fun onChunk(base64Text: String, generatedTokens: Int): Boolean = try {
                 val text = String(Base64.getDecoder().decode(base64Text), Charsets.UTF_8)
                 listener.onChunk(NativeTextChunk(text = text, generatedTokens = generatedTokens))
@@ -143,7 +162,8 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
         }
 
         return decodeTerminal(
-            if (imageBytes != null) {
+            if (vision != null) {
+                val projectorPath = vision.projectorPath
                 if (projectorPath.isNullOrBlank()) {
                     return NativeStreamingResult.Failure(
                         StreamingNativeError(StreamingNativeErrorCode.UNSUPPORTED_MODEL, "Verified vision projector is not available"),
@@ -170,7 +190,7 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
                     reasoningCloseMarker = config.reasoningCloseMarker,
                     reasoningForcedCloseText = config.reasoningForcedCloseText,
                     callback = callback,
-                    imageBytes = imageBytes,
+                    imageBytes = vision.imageBytes,
                     projectorPath = projectorPath,
                 )
             } else {

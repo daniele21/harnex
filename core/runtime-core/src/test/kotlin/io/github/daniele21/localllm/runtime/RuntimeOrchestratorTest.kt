@@ -4,6 +4,7 @@ import io.github.daniele21.localllm.contracts.ApplicationId
 import io.github.daniele21.localllm.contracts.ConfigurationErrorCode
 import io.github.daniele21.localllm.contracts.ContextPolicy
 import io.github.daniele21.localllm.contracts.GenerationEvent
+import io.github.daniele21.localllm.contracts.GenerationInput
 import io.github.daniele21.localllm.contracts.GenerationListener
 import io.github.daniele21.localllm.contracts.GenerationOverrides
 import io.github.daniele21.localllm.contracts.GenerationRequest
@@ -17,6 +18,7 @@ import io.github.daniele21.localllm.contracts.SessionOptions
 import io.github.daniele21.localllm.contracts.StopReason
 import io.github.daniele21.localllm.contracts.ThinkingMode
 import io.github.daniele21.localllm.contracts.UseCaseId
+import io.github.daniele21.localllm.contracts.VisionStage
 import io.github.daniele21.localllm.models.AppModelBinding
 import io.github.daniele21.localllm.models.ArtifactSource
 import io.github.daniele21.localllm.models.GenerationDefaults
@@ -43,6 +45,54 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class RuntimeOrchestratorTest {
+    @Test
+    fun `embedded image stage events follow Started before first token`() {
+        val fixture = RuntimeFixture()
+        val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)
+        val events = Collections.synchronizedList(mutableListOf<GenerationEvent>())
+        val terminal = CountDownLatch(1)
+        val request = fixture.request("image-stages", session).copy(
+            input = GenerationInput.ImageQuestion("Describe the picture", byteArrayOf(1, 2, 3)),
+        )
+        fixture.runtime.generate(
+            request,
+            GenerationListener { event ->
+                events += event
+                if (event is GenerationEvent.Completed || event is GenerationEvent.Failed) {
+                    terminal.countDown()
+                }
+            },
+        )
+        assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        assertTrue(events.last() is GenerationEvent.Completed)
+        val stages = events.filterIsInstance<GenerationEvent.VisionProgress>()
+        assertEquals(listOf(VisionStage.PROJECTOR_LOADING, VisionStage.PREFILL_COMPLETE), stages.map { it.stage })
+        assertEquals(listOf(0L, 500L), stages.map { it.elapsedMs })
+        assertTrue(events.indexOfFirst { it is GenerationEvent.Started } < events.indexOf(stages.first()))
+        assertTrue(events.indexOf(stages.last()) < events.indexOfFirst { it is GenerationEvent.TextDelta })
+        fixture.close()
+    }
+
+    @Test
+    fun `text-only generation does not emit embedded vision progress`() {
+        val fixture = RuntimeFixture()
+        val session = fixture.runtime.createSession(fixture.applicationId, fixture.useCaseId)
+        val events = Collections.synchronizedList(mutableListOf<GenerationEvent>())
+        val terminal = CountDownLatch(1)
+        fixture.runtime.generate(
+            fixture.request("text-only-no-stages", session),
+            GenerationListener { event ->
+                events += event
+                if (event is GenerationEvent.Completed || event is GenerationEvent.Failed) {
+                    terminal.countDown()
+                }
+            },
+        )
+        assertTrue(terminal.await(2, TimeUnit.SECONDS))
+        assertTrue(events.none { it is GenerationEvent.VisionProgress })
+        fixture.close()
+    }
+
     @Test
     fun `prepare verifies once and reuses loaded model`() {
         val fixture = RuntimeFixture()
@@ -669,7 +719,9 @@ private data class FakeBackendModel(
 
 private data class FakeBackendContext(override val model: BackendModelHandle, override val contextSize: Int) : BackendContextHandle
 
-private class FakeInferenceBackend : InferenceBackend {
+private class FakeInferenceBackend :
+    InferenceBackend,
+    VisionProgressInferenceBackend {
     override val id: String = "fake"
     var initializeCalls: Int = 0
     var loadCalls: Int = 0
@@ -757,6 +809,20 @@ private class FakeInferenceBackend : InferenceBackend {
                 generationDurationMs = 10,
             ),
         )
+    }
+
+    override fun generateWithVisionProgress(
+        context: BackendContextHandle,
+        request: BackendGenerationRequest,
+        onChunk: (text: String, generatedTokens: Int) -> Boolean,
+        onVisionProgress: (VisionStage, Long) -> Boolean,
+    ): BackendGenerationOutcome {
+        if (!onVisionProgress(VisionStage.PROJECTOR_LOADING, 0L) ||
+            !onVisionProgress(VisionStage.PREFILL_COMPLETE, 500L)
+        ) {
+            return BackendGenerationOutcome.Cancelled(BackendGenerationMetrics(0, 0, 0, 0))
+        }
+        return generate(context, request, onChunk)
     }
 
     override fun cancel(requestId: String): Boolean {

@@ -2,6 +2,7 @@ package io.github.daniele21.localllm.runtime
 
 import io.github.daniele21.localllm.contracts.OutputConstraint
 import io.github.daniele21.localllm.contracts.StopReason
+import io.github.daniele21.localllm.contracts.VisionStage
 import io.github.daniele21.localllm.llamacpp.ContextCreationResult
 import io.github.daniele21.localllm.llamacpp.EvaluationBatchCancelResult
 import io.github.daniele21.localllm.llamacpp.EvaluationContextCreationResult
@@ -25,6 +26,7 @@ import io.github.daniele21.localllm.llamacpp.NativeOperationResult
 import io.github.daniele21.localllm.llamacpp.NativePromptPlanningResult
 import io.github.daniele21.localllm.llamacpp.NativeStreamingListener
 import io.github.daniele21.localllm.llamacpp.NativeStreamingResult
+import io.github.daniele21.localllm.llamacpp.NativeVisionRequest
 import io.github.daniele21.localllm.llamacpp.RuntimeInitializationResult
 import io.github.daniele21.localllm.llamacpp.StreamingCancelResult
 import io.github.daniele21.localllm.llamacpp.materializedLoadMode
@@ -42,6 +44,7 @@ class LlamaCppInferenceBackend(
     private val streamingBridge: LlamaCppStreamingBridge = LlamaCppStreamingBridge(),
     private val visionProjectorFile: File? = null,
 ) : InferenceBackend,
+    VisionProgressInferenceBackend,
     EvaluationBatchInferenceBackend {
     override val id: String = "llama.cpp"
     override val revision: String = "aedb2a5e9ca3d4064148bbb919e0ddc0c1b70ab3"
@@ -262,6 +265,13 @@ class LlamaCppInferenceBackend(
         context: BackendContextHandle,
         request: BackendGenerationRequest,
         onChunk: (text: String, generatedTokens: Int) -> Boolean,
+    ): BackendGenerationOutcome = generateWithVisionProgress(context, request, onChunk) { _, _ -> true }
+
+    override fun generateWithVisionProgress(
+        context: BackendContextHandle,
+        request: BackendGenerationRequest,
+        onChunk: (text: String, generatedTokens: Int) -> Boolean,
+        onVisionProgress: (VisionStage, Long) -> Boolean,
     ): BackendGenerationOutcome {
         val nativeContext = context.requireLlamaContext()
         val config = request.toNativeGenerationConfig()
@@ -274,8 +284,13 @@ class LlamaCppInferenceBackend(
                 listener = NativeStreamingListener { chunk ->
                     onChunk(chunk.text, chunk.generatedTokens)
                 },
-                imageBytes = request.imageBytes,
-                projectorPath = visionProjectorFile?.absolutePath,
+                vision = request.imageBytes?.let { image ->
+                    NativeVisionRequest(
+                        imageBytes = image,
+                        projectorPath = visionProjectorFile?.absolutePath,
+                        onProgress = onVisionProgress,
+                    )
+                },
             )
         ) {
             is NativeStreamingResult.Completed -> BackendGenerationOutcome.Completed(result.metrics.toBackendMetrics())

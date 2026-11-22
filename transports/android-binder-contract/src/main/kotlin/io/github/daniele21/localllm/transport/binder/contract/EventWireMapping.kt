@@ -142,6 +142,9 @@ private fun GenerationEvent.toWireUnchecked(externalRequestId: String, sequence:
             modelDigestSha256 = modelDigest.sha256,
         )
 
+    is GenerationEvent.VisionProgress ->
+        error("Embedded vision progress is not supported by the text-only Binder protocol")
+
     is GenerationEvent.TextDelta -> {
         require(text.length <= BinderProtocolV1.MAX_DELTA_CHARACTERS) {
             "Delta must be chunked before Binder mapping"

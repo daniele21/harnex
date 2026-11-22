@@ -264,6 +264,9 @@ class ConsumerLocalLlmFacade(
 
                 is GenerationEvent.TextDelta -> projectDelta(event)?.let(listener::onEvent)
 
+                // Consumer Binder remains text-only; embedded-only image stages never cross it.
+                is GenerationEvent.VisionProgress -> Unit
+
                 is GenerationEvent.Completed -> {
                     terminal = true
                     listener.onEvent(
