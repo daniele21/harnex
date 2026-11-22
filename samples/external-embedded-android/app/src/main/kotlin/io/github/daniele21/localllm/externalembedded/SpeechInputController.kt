@@ -7,10 +7,10 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.SystemClock
-import java.io.IOException
-import java.util.concurrent.Executors
 import io.github.daniele21.localllm.embedded.whisper.EmbeddedWhisper
 import io.github.daniele21.localllm.embedded.whisper.WhisperCancellation
+import java.io.IOException
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.sqrt
@@ -31,6 +31,7 @@ internal class SpeechInputController(private val context: Context, private val o
     private val worker = Executors.newSingleThreadExecutor()
     private val state = VoiceInputState()
     private val model = EmbeddedWhisper(context)
+
     @Volatile private var cancelled = WhisperCancellation()
     private val destroyed = AtomicBoolean(false)
     private val recording = AtomicBoolean(false)

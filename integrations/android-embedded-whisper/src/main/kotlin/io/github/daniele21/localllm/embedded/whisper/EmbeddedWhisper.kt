@@ -8,7 +8,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** One token per operation. Cancellation is cooperative, including native decoding. */
 class WhisperCancellation {
     internal val signal = AtomicBoolean(false)
-    fun cancel() { signal.set(true) }
+    fun cancel() {
+        signal.set(true)
+    }
 
     val isCancelled: Boolean get() = signal.get()
 
@@ -39,10 +41,7 @@ class EmbeddedWhisper(context: Context) {
     }
 
     /** Signed mono PCM16 at 16 kHz, 0.25–30 seconds, transcribed in Italian. */
-    fun transcribeItalian(
-        audio: ShortArray,
-        cancellation: WhisperCancellation = WhisperCancellation(),
-    ): String = operate(cancellation) {
+    fun transcribeItalian(audio: ShortArray, cancellation: WhisperCancellation = WhisperCancellation()): String = operate(cancellation) {
         require(audio.size in 4_000..480_000) { "Expected 0.25–30 seconds of mono PCM16 at 16 kHz" }
         val model = checkNotNull(models.verifiedModel()) { "Prepare Whisper before transcribing" }
         cancellation.check()
