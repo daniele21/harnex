@@ -14,6 +14,11 @@ Core set:
 - `finalize-workstream` — transfer durable knowledge and delete completed plans by default;
 - `review-reference-quality` — perform an L0/L1/L2 gap review before important milestones.
 
+Project-local, non-template extensions (do not duplicate the core skills):
+
+- `review-module-boundaries` — inspect the actual owner, direct and same-family edges, API exposure and external consumers before structural changes;
+- `refactor-without-churn` — choose KEEP/EXTRACT/MOVE/DEFER using observed problems, lifecycle invariants and focused regression tests.
+
 Harnex may specialize local copies. Record customization in `.engineering/baseline.json` so future migrations merge rather than overwrite local procedure.
 
 `shape-product-change` runs only when product impact justifies it. `PRODUCT_NONE/LOCAL` must stay cheap. `design-product-experience` remains the UX/UI handoff when material user-interface semantics are affected.
