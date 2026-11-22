@@ -1,7 +1,7 @@
 package io.github.daniele21.localllm.llamacpp
 
-import java.util.Base64
 import io.github.daniele21.localllm.contracts.VisionStage
+import java.util.Base64
 
 interface NativeStreamingCallback {
     fun onChunk(base64Text: String, generatedTokens: Int): Boolean

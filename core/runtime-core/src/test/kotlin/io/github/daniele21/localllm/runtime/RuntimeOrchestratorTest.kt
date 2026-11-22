@@ -5,7 +5,6 @@ import io.github.daniele21.localllm.contracts.ConfigurationErrorCode
 import io.github.daniele21.localllm.contracts.ContextPolicy
 import io.github.daniele21.localllm.contracts.GenerationEvent
 import io.github.daniele21.localllm.contracts.GenerationInput
-import io.github.daniele21.localllm.contracts.VisionStage
 import io.github.daniele21.localllm.contracts.GenerationListener
 import io.github.daniele21.localllm.contracts.GenerationOverrides
 import io.github.daniele21.localllm.contracts.GenerationRequest
@@ -19,6 +18,7 @@ import io.github.daniele21.localllm.contracts.SessionOptions
 import io.github.daniele21.localllm.contracts.StopReason
 import io.github.daniele21.localllm.contracts.ThinkingMode
 import io.github.daniele21.localllm.contracts.UseCaseId
+import io.github.daniele21.localllm.contracts.VisionStage
 import io.github.daniele21.localllm.models.AppModelBinding
 import io.github.daniele21.localllm.models.ArtifactSource
 import io.github.daniele21.localllm.models.GenerationDefaults
@@ -719,7 +719,9 @@ private data class FakeBackendModel(
 
 private data class FakeBackendContext(override val model: BackendModelHandle, override val contextSize: Int) : BackendContextHandle
 
-private class FakeInferenceBackend : InferenceBackend, VisionProgressInferenceBackend {
+private class FakeInferenceBackend :
+    InferenceBackend,
+    VisionProgressInferenceBackend {
     override val id: String = "fake"
     var initializeCalls: Int = 0
     var loadCalls: Int = 0

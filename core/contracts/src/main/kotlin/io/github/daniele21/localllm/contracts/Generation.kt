@@ -94,9 +94,10 @@ sealed interface GenerationEvent {
     data class Prepared(override val requestId: RequestId, val modelDigest: ModelDigest, val configuration: EffectiveGenerationMetadata) :
         GenerationEvent
 
-    data class VisionProgress(override val requestId: RequestId, val stage: VisionStage, val elapsedMs: Long) :
-        GenerationEvent {
-        init { require(elapsedMs >= 0) { "Native vision stage time must be nonnegative" } }
+    data class VisionProgress(override val requestId: RequestId, val stage: VisionStage, val elapsedMs: Long) : GenerationEvent {
+        init {
+            require(elapsedMs >= 0) { "Native vision stage time must be nonnegative" }
+        }
     }
 
     data class TextDelta(

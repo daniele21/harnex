@@ -215,6 +215,8 @@ private object EmulatorE2eAnalysisResponder {
         is GenerationInput.Text -> input.value
         is GenerationInput.RawCompletion -> input.value
         is GenerationInput.Messages -> input.values.joinToString("\n") { it.content }
+        // Emulator fakes only the deterministic text response, never native image inference.
+        is GenerationInput.ImageQuestion -> input.question
     }
 
     fun output(prompt: String): String {
