@@ -69,7 +69,7 @@ class EmbeddedVisionCapability internal constructor(
             listener = listener,
             overrides = GenerationOverrides(
                 maxOutputTokens = 1_200,
-                temperature = 0.0f,
+                temperature = 0.1f,
                 thinkingMode = ThinkingMode.DISABLED,
             ),
         )
