@@ -36,7 +36,7 @@ Follow applicable scoped `AGENTS.md`; extend the canonical owner before adding p
 | Integration/release | `skills/preflight-change/SKILL.md`, `.engineering/commands.json`, `.engineering/e2e.json` |
 | Missing deterministic remote gate | `skills/remote-preflight/SKILL.md` |
 | Persistent work | `skills/plan-workstream/SKILL.md` + active plan; repository state in `docs/current-state.md`; finalize via `skills/finalize-workstream/SKILL.md` |
-| Module/API dependency changes or evidenced refactors | `skills/review-module-boundaries/SKILL.md`, `skills/refactor-without-churn/SKILL.md` as applicable; then existing structured-change/validation |
+| Module boundaries and evidenced refactors | `skills/review-module-boundaries/SKILL.md`, `skills/refactor-without-churn/SKILL.md` |
 
 ## Delivery boundaries
 
