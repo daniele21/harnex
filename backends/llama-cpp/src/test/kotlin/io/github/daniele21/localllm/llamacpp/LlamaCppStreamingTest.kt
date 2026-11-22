@@ -166,6 +166,10 @@ class LlamaCppStreamingTest {
                 "IMAGE_TOKENIZING" to 421L,
                 "IMAGE_TOKENIZED" to 850L,
                 "PREFILL_STARTED" to 851L,
+                "VISION_TEXT_PREFILL_STARTED" to 852L,
+                "VISION_ENCODING_STARTED" to 900L,
+                "VISION_EMBEDDING_PREFILL_STARTED" to 1_700L,
+                "VISION_TEXT_PREFILL_STARTED" to 2_050L,
                 "PREFILL_COMPLETE" to 2_100L,
                 "FIRST_TOKEN" to 2_240L,
             ),
@@ -187,7 +191,24 @@ class LlamaCppStreamingTest {
             ),
         )
         assertTrue(result is NativeStreamingResult.Completed)
-        assertEquals(VisionStage.entries, observed.map { it.first })
+        assertEquals(
+            listOf(
+                VisionStage.PROJECTOR_LOADING,
+                VisionStage.PROJECTOR_READY,
+                VisionStage.IMAGE_DECODING,
+                VisionStage.IMAGE_DECODED,
+                VisionStage.IMAGE_TOKENIZING,
+                VisionStage.IMAGE_TOKENIZED,
+                VisionStage.PREFILL_STARTED,
+                VisionStage.VISION_TEXT_PREFILL_STARTED,
+                VisionStage.VISION_ENCODING_STARTED,
+                VisionStage.VISION_EMBEDDING_PREFILL_STARTED,
+                VisionStage.VISION_TEXT_PREFILL_STARTED,
+                VisionStage.PREFILL_COMPLETE,
+                VisionStage.FIRST_TOKEN,
+            ),
+            observed.map { it.first },
+        )
         assertEquals(2_240L, observed.last().second)
         assertTrue(api.lastCallbackAccepted)
     }

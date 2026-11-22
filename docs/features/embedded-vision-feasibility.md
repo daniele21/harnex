@@ -118,7 +118,10 @@ The fix/vision-native-stage-progress implementation candidate exposes content-fr
 | IMAGE_DECODED | after image decode |
 | IMAGE_TOKENIZING | before mtmd_tokenize |
 | IMAGE_TOKENIZED | after tokenization |
-| PREFILL_STARTED | before mtmd_helper_eval_chunks |
+| PREFILL_STARTED | before evaluating the ordered multimodal chunks |
+| VISION_TEXT_PREFILL_STARTED | before evaluating a text chunk, including text after the image |
+| VISION_ENCODING_STARTED | before encoding an image chunk with mtmd_encode_chunk |
+| VISION_EMBEDDING_PREFILL_STARTED | after visual encoding and before feeding the embeddings into Qwen |
 | PREFILL_COMPLETE | after prefill and projector release |
 | FIRST_TOKEN | after sampling first native generation token, before buffered TextDelta |
 
