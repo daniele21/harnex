@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# The standalone application, NOT Harnex's runtime, owns this pinned ASR engine.
+# The opt-in Whisper AAR owns this pinned ASR engine.
 # Never share ggml native objects with the transitive Harnex llama.cpp AAR.
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)

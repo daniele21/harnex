@@ -9,6 +9,8 @@ import android.media.MediaRecorder
 import android.os.SystemClock
 import java.io.IOException
 import java.util.concurrent.Executors
+import io.github.daniele21.localllm.embedded.whisper.EmbeddedWhisper
+import io.github.daniele21.localllm.embedded.whisper.WhisperCancellation
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.sqrt
@@ -28,15 +30,15 @@ internal interface VoiceObserver {
 internal class SpeechInputController(private val context: Context, private val observer: VoiceObserver) {
     private val worker = Executors.newSingleThreadExecutor()
     private val state = VoiceInputState()
-    private val model = WhisperModelStore(context)
-    private val cancelled = AtomicBoolean(false)
+    private val model = EmbeddedWhisper(context)
+    @Volatile private var cancelled = WhisperCancellation()
     private val destroyed = AtomicBoolean(false)
     private val recording = AtomicBoolean(false)
     private val recorder = AtomicReference<AudioRecord?>(null)
 
     init {
         worker.execute {
-            if (model.verifiedModel() != null && state.modelAlreadyReady()) {
+            if (model.isReady() && state.modelAlreadyReady()) {
                 observer.onVoiceStatus("Whisper Small Q5 ready · offline")
                 observer.onVoicePhase(VoicePhase.READY)
             } else {
@@ -50,13 +52,15 @@ internal class SpeechInputController(private val context: Context, private val o
 
     fun prepare() {
         if (!state.beginPreparation() || destroyed.get()) return
-        cancelled.set(false)
+        cancelled = WhisperCancellation()
         observer.onVoicePhase(VoicePhase.PREPARING)
         worker.execute {
             var completed = false
             try {
-                model.ensureReady(cancelled, observer::onVoiceStatus)
-                if (cancelled.get() || destroyed.get()) return@execute
+                model.prepare(cancelled) { bytes, total ->
+                    observer.onVoiceStatus("Downloading Whisper · ${bytes / 1_000_000} / ${total / 1_000_000} MB")
+                }
+                if (cancelled.isCancelled || destroyed.get()) return@execute
                 if (state.completePreparation()) {
                     completed = true
                     observer.onVoiceStatus("Whisper Small Q5 ready · offline")
@@ -80,7 +84,7 @@ internal class SpeechInputController(private val context: Context, private val o
             return false
         }
         if (destroyed.get() || !state.beginRecording()) return false
-        cancelled.set(false)
+        cancelled = WhisperCancellation()
         recording.set(true)
         observer.onVoicePhase(VoicePhase.RECORDING)
         observer.onVoiceStatus("Recording · tap Finish when done")
@@ -98,7 +102,7 @@ internal class SpeechInputController(private val context: Context, private val o
 
     fun cancel() {
         if (!state.cancel()) return
-        cancelled.set(true)
+        cancelled.cancel()
         recording.set(false)
         runCatching { recorder.get()?.stop() }
         observer.onVoicePhase(VoicePhase.CANCELLING)
@@ -107,7 +111,7 @@ internal class SpeechInputController(private val context: Context, private val o
 
     fun close() {
         if (!destroyed.compareAndSet(false, true)) return
-        cancelled.set(true)
+        cancelled.cancel()
         recording.set(false)
         runCatching { recorder.get()?.stop() }
         worker.shutdown()
@@ -117,10 +121,10 @@ internal class SpeechInputController(private val context: Context, private val o
         var completed = false
         try {
             val audio = capturePcm()
-            if (cancelled.get() || destroyed.get() || state.current() != VoicePhase.TRANSCRIBING) return
+            if (cancelled.isCancelled || destroyed.get() || state.current() != VoicePhase.TRANSCRIBING) return
             val started = SystemClock.elapsedRealtime()
             val transcript = transcribeAudio(audio)
-            if (cancelled.get() || destroyed.get()) return
+            if (cancelled.isCancelled || destroyed.get()) return
             if (state.completeTranscription()) {
                 completed = true
                 val status =
@@ -150,12 +154,11 @@ internal class SpeechInputController(private val context: Context, private val o
         check(audio.size >= MIN_SAMPLES) { "Recording too short · speak for at least 0.25 seconds" }
         val samples = FloatArray(audio.size) { index -> audio[index] / 32768f }
         check(hasSpeech(samples)) { "No audible speech detected · try again" }
-        val verified = checkNotNull(model.verifiedModel()) { "Voice model is not verified" }
-        return WhisperNative.transcribe(verified.absolutePath, samples, cancelled).trim()
+        return model.transcribeItalian(audio, cancelled)
     }
 
     private fun reportFailure(prefix: String, failure: Throwable) {
-        if (!cancelled.get() && !destroyed.get()) {
+        if (!cancelled.isCancelled && !destroyed.get()) {
             observer.onVoiceStatus("$prefix · ${failure.message ?: "retry"}")
         }
     }
@@ -164,7 +167,7 @@ internal class SpeechInputController(private val context: Context, private val o
         if (destroyed.get()) return
         state.settleIfUnfinished(completed, modelReady = true)?.let { phase ->
             observer.onVoicePhase(phase)
-            if (cancelled.get()) observer.onVoiceStatus("Voice input cancelled")
+            if (cancelled.isCancelled) observer.onVoiceStatus("Voice input cancelled")
         }
     }
 
@@ -192,10 +195,10 @@ internal class SpeechInputController(private val context: Context, private val o
             // Even an uninitialized AudioRecord must be released.
             check(source.state == AudioRecord.STATE_INITIALIZED) { "Microphone unavailable" }
             recorder.set(source)
-            if (cancelled.get() || !recording.get()) return ShortArray(0)
+            if (cancelled.isCancelled || !recording.get()) return ShortArray(0)
             source.startRecording()
             check(source.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Microphone could not start" }
-            while (recording.get() && !cancelled.get() && written < MAX_SAMPLES) {
+            while (recording.get() && !cancelled.isCancelled && written < MAX_SAMPLES) {
                 val count = source.read(
                     chunk,
                     0,
@@ -205,7 +208,7 @@ internal class SpeechInputController(private val context: Context, private val o
                 if (count > 0) {
                     System.arraycopy(chunk, 0, collected, written, count)
                     written += count
-                } else if (count < 0 && recording.get() && !cancelled.get()) {
+                } else if (count < 0 && recording.get() && !cancelled.isCancelled) {
                     error("Microphone read failed ($count)")
                 }
             }

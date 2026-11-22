@@ -22,13 +22,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
-
     // Harnex's pinned llama.cpp requires extracted JNI libraries.
     packaging {
         jniLibs {
@@ -39,5 +32,6 @@ android {
 
 dependencies {
     implementation("io.github.daniele21.localllm:embedded-android:${embeddedSdkVersion.get()}")
+    implementation("io.github.daniele21.localllm:embedded-whisper-android:${embeddedSdkVersion.get()}")
     testImplementation("junit:junit:4.13.2")
 }

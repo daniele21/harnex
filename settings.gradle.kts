@@ -45,6 +45,7 @@ include(
     ":observability:benchmark-engine",
     ":transports:in-process",
     ":integrations:android-embedded-sdk",
+    ":integrations:android-embedded-whisper",
     ":transports:android-binder-contract",
     ":transports:android-binder-client",
     ":integrations:android-service-host",

@@ -1,0 +1,5 @@
+HARNEX_WHISPER_STT {
+    global:
+        Java_io_github_daniele21_localllm_embedded_whisper_WhisperNative_transcribe;
+    local: *;
+};

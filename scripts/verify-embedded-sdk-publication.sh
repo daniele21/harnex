@@ -21,7 +21,7 @@ modules=(
   transports:in-process
 )
 if grep -Fq '":integrations:android-embedded-sdk"' settings.gradle.kts; then
-  modules+=(integrations:android-embedded-sdk)
+  modules+=(integrations:android-embedded-sdk integrations:android-embedded-whisper)
 fi
 
 tasks=(":core:contracts:publishReleasePublicationToEmbeddedSdkRepository")
@@ -39,6 +39,7 @@ for module in core:contracts "${modules[@]}"; do
     core:contracts) artifact="core-contracts" ;;
     observability:contracts) artifact="observability-contracts" ;;
     integrations:android-embedded-sdk) artifact="embedded-android" ;;
+    integrations:android-embedded-whisper) artifact="embedded-whisper-android" ;;
   esac
   group_path="io/github/daniele21/localllm"
   if [[ "$module" == "observability:contracts" ]]; then group_path="$group_path/observability"; fi
