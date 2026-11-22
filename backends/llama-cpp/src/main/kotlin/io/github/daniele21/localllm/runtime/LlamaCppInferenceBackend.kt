@@ -24,6 +24,7 @@ import io.github.daniele21.localllm.llamacpp.NativeGenerationConfig
 import io.github.daniele21.localllm.llamacpp.NativeModelCapabilitiesResult
 import io.github.daniele21.localllm.llamacpp.NativeOperationResult
 import io.github.daniele21.localllm.llamacpp.NativePromptPlanningResult
+import io.github.daniele21.localllm.llamacpp.NativeVisionRequest
 import io.github.daniele21.localllm.llamacpp.NativeStreamingListener
 import io.github.daniele21.localllm.llamacpp.NativeStreamingResult
 import io.github.daniele21.localllm.llamacpp.RuntimeInitializationResult
@@ -283,9 +284,13 @@ class LlamaCppInferenceBackend(
                 listener = NativeStreamingListener { chunk ->
                     onChunk(chunk.text, chunk.generatedTokens)
                 },
-                imageBytes = request.imageBytes,
-                projectorPath = visionProjectorFile?.absolutePath,
-                onVisionProgress = onVisionProgress,
+                vision = request.imageBytes?.let { image ->
+                    NativeVisionRequest(
+                        imageBytes = image,
+                        projectorPath = visionProjectorFile?.absolutePath,
+                        onProgress = onVisionProgress,
+                    )
+                },
             )
         ) {
             is NativeStreamingResult.Completed -> BackendGenerationOutcome.Completed(result.metrics.toBackendMetrics())

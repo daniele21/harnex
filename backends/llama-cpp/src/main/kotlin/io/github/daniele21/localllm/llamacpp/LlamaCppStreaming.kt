@@ -122,6 +122,16 @@ class JniLlamaStreamingApi : NativeLlamaStreamingApi {
     external override fun cancel(requestId: String): Array<String>
 }
 
+/**
+ * A single native image payload and its content-free stage observer.
+ * Keeping image-only details together preserves the small common text streaming API.
+ */
+class NativeVisionRequest(
+    val imageBytes: ByteArray,
+    val projectorPath: String?,
+    val onProgress: (VisionStage, Long) -> Boolean = { _, _ -> true },
+)
+
 class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = JniLlamaStreamingApi()) {
     fun generate(
         context: LoadedNativeContext,
@@ -129,9 +139,7 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
         prompt: String,
         config: NativeGenerationConfig,
         listener: NativeStreamingListener,
-        imageBytes: ByteArray? = null,
-        projectorPath: String? = null,
-        onVisionProgress: (VisionStage, Long) -> Boolean = { _, _ -> true },
+        vision: NativeVisionRequest? = null,
     ): NativeStreamingResult {
         val validationError = validate(requestId, prompt, config)
         if (validationError != null) {
@@ -142,7 +150,7 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
             override fun onVisionStage(stage: String, elapsedMs: Long): Boolean {
                 val parsed = VisionStage.entries.firstOrNull { it.name == stage } ?: return false
                 if (elapsedMs < 0) return false
-                return onVisionProgress(parsed, elapsedMs)
+                return vision?.onProgress?.invoke(parsed, elapsedMs) ?: true
             }
 
             override fun onChunk(base64Text: String, generatedTokens: Int): Boolean = try {
@@ -154,7 +162,8 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
         }
 
         return decodeTerminal(
-            if (imageBytes != null) {
+            if (vision != null) {
+                val projectorPath = vision.projectorPath
                 if (projectorPath.isNullOrBlank()) {
                     return NativeStreamingResult.Failure(
                         StreamingNativeError(StreamingNativeErrorCode.UNSUPPORTED_MODEL, "Verified vision projector is not available"),
@@ -181,7 +190,7 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
                     reasoningCloseMarker = config.reasoningCloseMarker,
                     reasoningForcedCloseText = config.reasoningForcedCloseText,
                     callback = callback,
-                    imageBytes = imageBytes,
+                    imageBytes = vision.imageBytes,
                     projectorPath = projectorPath,
                 )
             } else {

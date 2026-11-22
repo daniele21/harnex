@@ -177,12 +177,14 @@ class LlamaCppStreamingTest {
             prompt = "Image question",
             config = testConfig(),
             listener = NativeStreamingListener { true },
-            imageBytes = byteArrayOf(1, 2, 3),
-            projectorPath = "projector-f16",
-            onVisionProgress = { stage, elapsed ->
-                observed += stage to elapsed
-                true
-            },
+            vision = NativeVisionRequest(
+                imageBytes = byteArrayOf(1, 2, 3),
+                projectorPath = "projector-f16",
+                onProgress = { stage, elapsed ->
+                    observed += stage to elapsed
+                    true
+                },
+            ),
         )
         assertTrue(result is NativeStreamingResult.Completed)
         assertEquals(VisionStage.entries, observed.map { it.first })
@@ -200,12 +202,14 @@ class LlamaCppStreamingTest {
             prompt = "Image question",
             config = testConfig(),
             listener = NativeStreamingListener { true },
-            imageBytes = byteArrayOf(1),
-            projectorPath = "projector-f16",
-            onVisionProgress = { stage, _ ->
-                observed += stage
-                true
-            },
+            vision = NativeVisionRequest(
+                imageBytes = byteArrayOf(1),
+                projectorPath = "projector-f16",
+                onProgress = { stage, _ ->
+                    observed += stage
+                    true
+                },
+            ),
         )
         assertFalse(api.lastCallbackAccepted)
         assertTrue(observed.isEmpty())
@@ -220,9 +224,11 @@ class LlamaCppStreamingTest {
             prompt = "Image question",
             config = testConfig(),
             listener = NativeStreamingListener { true },
-            imageBytes = byteArrayOf(1),
-            projectorPath = "projector-f16",
-            onVisionProgress = { _, _ -> false },
+            vision = NativeVisionRequest(
+                imageBytes = byteArrayOf(1),
+                projectorPath = "projector-f16",
+                onProgress = { _, _ -> false },
+            ),
         )
         assertFalse(api.lastCallbackAccepted)
     }
