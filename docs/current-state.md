@@ -85,9 +85,7 @@ The active [consumer integration resilience workstream](workstreams/consumer-int
 
 The active [simplicity-first runtime workstream](workstreams/simplicity-first-runtime.md) tracks observed complexity, bounded runtime-core/JNI cleanup and the order of outcomes. It **does not** duplicate the already-owned Consumer onboarding ([CIH](workstreams/consumer-integration-resilience.md)), memory/Q35 device qualification or llama.cpp [LLUP](workstreams/llama-cpp-v0-3-residency-qualification.md) migration. CIH-10, SIMP-00, SIMP-10 and SIMP-20 are complete, including the bounded terminal-path refactor in PR #584. CIH-20, representative mobile memory evidence and upstream pin qualification remain separately owned.
 
-## Architecture stewardship (plan only)
-
-[ARC](workstreams/architecture-stewardship.md) tracks module fitness and two local review skills; runtime, embedded SDK, UI and LocalMaind implementation remain with existing owners.
+See [ARC](workstreams/architecture-stewardship.md) for architecture review; owners remain unchanged.
 
 ## Immediate next block
 
