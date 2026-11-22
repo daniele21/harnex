@@ -818,7 +818,8 @@ private class FakeInferenceBackend :
         onVisionProgress: (VisionStage, Long) -> Boolean,
     ): BackendGenerationOutcome {
         if (!onVisionProgress(VisionStage.PROJECTOR_LOADING, 0L) ||
-            !onVisionProgress(VisionStage.PREFILL_COMPLETE, 500L)) {
+            !onVisionProgress(VisionStage.PREFILL_COMPLETE, 500L)
+        ) {
             return BackendGenerationOutcome.Cancelled(BackendGenerationMetrics(0, 0, 0, 0))
         }
         return generate(context, request, onChunk)
