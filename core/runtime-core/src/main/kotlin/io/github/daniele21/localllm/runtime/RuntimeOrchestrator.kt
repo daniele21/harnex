@@ -6,6 +6,7 @@ import io.github.daniele21.localllm.contracts.ContextPolicy
 import io.github.daniele21.localllm.contracts.GenerationContentType
 import io.github.daniele21.localllm.contracts.GenerationEvent
 import io.github.daniele21.localllm.contracts.GenerationHandle
+import io.github.daniele21.localllm.contracts.GenerationInput
 import io.github.daniele21.localllm.contracts.GenerationListener
 import io.github.daniele21.localllm.contracts.GenerationMetrics
 import io.github.daniele21.localllm.contracts.GenerationRequest
@@ -591,7 +592,7 @@ class RuntimeOrchestrator(
         }
         val backendRequest = resolved.backendRequest(request, promptPlan, reasoningControl)
         lifecycle.ensureNotCancelled()
-        val outcome = backend.generate(contextResult.context, backendRequest) { text, generatedTokens ->
+        val emitRawChunk: (String, Int) -> Boolean = { text, generatedTokens ->
             if (lifecycle.isCancellationRequested()) {
                 false
             } else {
@@ -603,6 +604,23 @@ class RuntimeOrchestrator(
                 if (guardReason != null) guardStopReason.compareAndSet(null, guardReason)
                 guardReason == null && !lifecycle.isCancellationRequested()
             }
+        }
+        val outcome = if (request.input is GenerationInput.ImageQuestion && backend is VisionProgressInferenceBackend) {
+            backend.generateWithVisionProgress(
+                context = contextResult.context,
+                request = backendRequest,
+                onChunk = emitRawChunk,
+                onVisionProgress = { stage, elapsedMs ->
+                    if (lifecycle.isCancellationRequested()) {
+                        false
+                    } else {
+                        lifecycle.emit(GenerationEvent.VisionProgress(request.requestId, stage, elapsedMs))
+                        !lifecycle.isCancellationRequested()
+                    }
+                },
+            )
+        } else {
+            backend.generate(contextResult.context, backendRequest, emitRawChunk)
         }
         if (!lifecycle.isCancellationRequested()) {
             streamParser.finish().forEach { emitParsedChunk(it, lastGeneratedTokens) }

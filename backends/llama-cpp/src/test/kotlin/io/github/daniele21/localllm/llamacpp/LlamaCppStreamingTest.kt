@@ -1,6 +1,7 @@
 package io.github.daniele21.localllm.llamacpp
 
 import io.github.daniele21.localllm.contracts.ModelDigest
+import io.github.daniele21.localllm.contracts.VisionStage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -155,6 +156,78 @@ class LlamaCppStreamingTest {
     }
 
     @Test
+    fun `image native stages are typed ordered and contain only elapsed millis`() {
+        val api = FakeNativeStreamingApi(
+            visionStages = listOf(
+                "PROJECTOR_LOADING" to 0L,
+                "PROJECTOR_READY" to 410L,
+                "IMAGE_DECODING" to 411L,
+                "IMAGE_DECODED" to 420L,
+                "IMAGE_TOKENIZING" to 421L,
+                "IMAGE_TOKENIZED" to 850L,
+                "PREFILL_STARTED" to 851L,
+                "PREFILL_COMPLETE" to 2_100L,
+                "FIRST_TOKEN" to 2_240L,
+            ),
+        )
+        val observed = mutableListOf<Pair<VisionStage, Long>>()
+        val result = LlamaCppStreamingBridge(api).generate(
+            context = testContext(),
+            requestId = "vision-request",
+            prompt = "Image question",
+            config = testConfig(),
+            listener = NativeStreamingListener { true },
+            imageBytes = byteArrayOf(1, 2, 3),
+            projectorPath = "projector-f16",
+            onVisionProgress = { stage, elapsed ->
+                observed += stage to elapsed
+                true
+            },
+        )
+        assertTrue(result is NativeStreamingResult.Completed)
+        assertEquals(VisionStage.entries, observed.map { it.first })
+        assertEquals(2_240L, observed.last().second)
+        assertTrue(api.lastCallbackAccepted)
+    }
+
+    @Test
+    fun `unknown native stages fail closed and do not enter public lifecycle`() {
+        val api = FakeNativeStreamingApi(visionStages = listOf("HALLUCINATED_PHASE" to 4L))
+        val observed = mutableListOf<VisionStage>()
+        LlamaCppStreamingBridge(api).generate(
+            context = testContext(),
+            requestId = "invalid-native-phase",
+            prompt = "Image question",
+            config = testConfig(),
+            listener = NativeStreamingListener { true },
+            imageBytes = byteArrayOf(1),
+            projectorPath = "projector-f16",
+            onVisionProgress = { stage, _ ->
+                observed += stage
+                true
+            },
+        )
+        assertFalse(api.lastCallbackAccepted)
+        assertTrue(observed.isEmpty())
+    }
+
+    @Test
+    fun `native-stage consumer can request cancellation without leaking text`() {
+        val api = FakeNativeStreamingApi(visionStages = listOf("PROJECTOR_LOADING" to 0L))
+        LlamaCppStreamingBridge(api).generate(
+            context = testContext(),
+            requestId = "cancel-native-phase",
+            prompt = "Image question",
+            config = testConfig(),
+            listener = NativeStreamingListener { true },
+            imageBytes = byteArrayOf(1),
+            projectorPath = "projector-f16",
+            onVisionProgress = { _, _ -> false },
+        )
+        assertFalse(api.lastCallbackAccepted)
+    }
+
+    @Test
     fun `explicit cancellation reports whether request was running`() {
         val nativeApi = FakeNativeStreamingApi(cancel = arrayOf("ok", "true"))
 
@@ -261,6 +334,7 @@ class LlamaCppStreamingTest {
 
 private class FakeNativeStreamingApi(
     private val chunks: List<Pair<String, Int>> = emptyList(),
+    private val visionStages: List<Pair<String, Long>> = emptyList(),
     private val terminal: Array<String> = arrayOf("ok", "0", "0", "0", "0", "UNKNOWN", "-1", "-1"),
     private val cancel: Array<String> = arrayOf("ok", "false"),
 ) : NativeLlamaStreamingApi {
@@ -313,6 +387,41 @@ private class FakeNativeStreamingApi(
         for ((text, generatedTokens) in chunks) {
             lastCallbackAccepted = callback.onChunk(text, generatedTokens)
             if (!lastCallbackAccepted) break
+        }
+        return terminal
+    }
+
+    @Suppress("LongParameterList")
+    override fun generateImageStreaming(
+        contextHandle: Long,
+        requestId: String,
+        prompt: String,
+        maxOutputTokens: Int,
+        temperature: Float,
+        topP: Float,
+        topK: Int,
+        minP: Float,
+        presencePenalty: Float,
+        repeatPenalty: Float,
+        repeatLastN: Int,
+        seed: Long,
+        outputConstraintType: String,
+        outputSchema: String?,
+        stopTokenIds: IntArray,
+        stopSequences: Array<String>,
+        reasoningMaxTokens: Int,
+        reasoningCloseMarker: String?,
+        reasoningForcedCloseText: String?,
+        callback: NativeStreamingCallback,
+        imageBytes: ByteArray,
+        projectorPath: String,
+    ): Array<String> {
+        generateCalled = true
+        for ((stage, elapsedMs) in visionStages) {
+            lastCallbackAccepted = callback.onVisionStage(stage, elapsedMs)
+            if (!lastCallbackAccepted) {
+                return arrayOf("cancelled", "0", "0", "0", "0", "UNKNOWN", "-1", "-1")
+            }
         }
         return terminal
     }

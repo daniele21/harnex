@@ -813,11 +813,36 @@ public:
             return;
         }
         method_ = env_->GetMethodID(callback_class, "onChunk", "(Ljava/lang/String;I)Z");
+        if (method_ != nullptr) {
+            vision_stage_method_ = env_->GetMethodID(
+                callback_class, "onVisionStage", "(Ljava/lang/String;J)Z"
+            );
+        }
         env_->DeleteLocalRef(callback_class);
     }
 
     bool valid() const {
-        return callback_ != nullptr && method_ != nullptr;
+        return callback_ != nullptr && method_ != nullptr && vision_stage_method_ != nullptr;
+    }
+
+    // Fixed stage name + elapsed millis only. Never pass image/text/paths into diagnostics.
+    bool emit_vision_stage(const char* stage, std::int64_t elapsed_ms) {
+        if (vision_stage_method_ == nullptr) {
+            return false;
+        }
+        jstring stage_name = env_->NewStringUTF(stage);
+        if (stage_name == nullptr) {
+            return false;
+        }
+        const jboolean accepted = env_->CallBooleanMethod(
+            callback_, vision_stage_method_, stage_name, static_cast<jlong>(elapsed_ms)
+        );
+        env_->DeleteLocalRef(stage_name);
+        if (env_->ExceptionCheck()) {
+            env_->ExceptionClear();
+            return false;
+        }
+        return accepted == JNI_TRUE;
     }
 
     bool emit(const std::string& text, std::int32_t generated_tokens) {
@@ -844,6 +869,7 @@ private:
     JNIEnv* env_;
     jobject callback_;
     jmethodID method_ = nullptr;
+    jmethodID vision_stage_method_ = nullptr;
 };
 
 std::vector<std::string> terminal_response(
@@ -994,7 +1020,7 @@ std::vector<std::string> stream_text(
     std::lock_guard<std::mutex> generation_lock(record.generation_mutex);
 
     if (!callback.valid()) {
-        return error_response("CALLBACK_FAILED", "Streaming callback does not expose onChunk(String, Int)");
+        return error_response("CALLBACK_FAILED", "Streaming callback requires onChunk and onVisionStage methods");
     }
     if (max_output_tokens <= 0) {
         return error_response("INVALID_ARGUMENT", "Maximum output tokens must be positive");
@@ -1066,10 +1092,21 @@ std::vector<std::string> stream_text(
     }
     std::size_t prompt_token_count = prompt_tokens.size();
 
+    const auto vision_started_at = std::chrono::steady_clock::now();
+    const auto notify_vision = [&](const char* stage) -> bool {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - vision_started_at
+        ).count();
+        return !cancellation->load(std::memory_order_acquire) &&
+            callback.emit_vision_stage(stage, elapsed);
+    };
     std::unique_ptr<mtmd_context, decltype(&mtmd_free)> vision_context(nullptr, mtmd_free);
     std::unique_ptr<mtmd_input_chunks, decltype(&mtmd_input_chunks_free)> vision_chunks(nullptr, mtmd_input_chunks_free);
     if (with_image) {
         if (cancellation->load(std::memory_order_acquire)) {
+            return cancelled_response(0, 0, 0, 0);
+        }
+        if (!notify_vision("PROJECTOR_LOADING")) {
             return cancelled_response(0, 0, 0, 0);
         }
         mtmd_context_params params = mtmd_context_params_default();
@@ -1080,6 +1117,9 @@ std::vector<std::string> stream_text(
         if (!vision_context || !mtmd_support_vision(vision_context.get())) {
             return error_response("UNSUPPORTED_MODEL", "The verified projector cannot be initialized for the model");
         }
+        if (!notify_vision("PROJECTOR_READY") || !notify_vision("IMAGE_DECODING")) {
+            return cancelled_response(0, 0, 0, 0);
+        }
         auto bitmap_wrapper = mtmd_helper_bitmap_init_from_buf(
             vision_context.get(), image_data, image_length, false
         );
@@ -1088,6 +1128,9 @@ std::vector<std::string> stream_text(
         );
         if (!bitmap) {
             return error_response("INVALID_ARGUMENT", "The selected image could not be decoded");
+        }
+        if (!notify_vision("IMAGE_DECODED") || !notify_vision("IMAGE_TOKENIZING")) {
+            return cancelled_response(0, 0, 0, 0);
         }
         vision_chunks.reset(mtmd_input_chunks_init());
         if (!vision_chunks) {
@@ -1099,6 +1142,9 @@ std::vector<std::string> stream_text(
         if (mtmd_tokenize(vision_context.get(), vision_chunks.get(), &text, images, 1) != 0) {
             return error_response("TOKENIZATION_FAILED", "Multimodal input tokenization failed");
         }
+        if (!notify_vision("IMAGE_TOKENIZED")) {
+            return cancelled_response(0, 0, 0, 0);
+        }
         prompt_token_count = mtmd_helper_get_n_tokens(vision_chunks.get());
     }
     if (prompt_token_count == 0 || prompt_token_count + static_cast<std::size_t>(max_output_tokens) > llama_n_ctx(record.context)) {
@@ -1109,7 +1155,7 @@ std::vector<std::string> stream_text(
     llama_memory_clear(llama_get_memory(record.context), true);
     const auto prompt_started = std::chrono::steady_clock::now();
     if (with_image) {
-        if (cancellation->load(std::memory_order_acquire)) {
+        if (!notify_vision("PREFILL_STARTED")) {
             return cancelled_response(prompt_token_count, 0, 0, 0);
         }
         llama_pos new_n_past = 0;
@@ -1121,6 +1167,9 @@ std::vector<std::string> stream_text(
         }
         vision_chunks.reset();
         vision_context.reset(); // Release the projector before token decoding.
+        if (!notify_vision("PREFILL_COMPLETE")) {
+            return cancelled_response(prompt_token_count, 0, 0, 0);
+        }
     } else {
         for (std::size_t offset = 0; offset < prompt_tokens.size();) {
             if (cancellation->load(std::memory_order_acquire)) {
@@ -1197,6 +1246,12 @@ std::vector<std::string> stream_text(
         pending.append(piece);
         ++pending_tokens;
         ++generated_tokens;
+        // First native token may precede user-visible TextDelta buffering by 8 tokens.
+        if (with_image && generated_tokens == 1 && !notify_vision("FIRST_TOKEN")) {
+            cancelled = true;
+            pending.clear();
+            break;
+        }
         llama_sampler_accept(sampler.get(), token);
         record_reasoning_piece(piece);
 

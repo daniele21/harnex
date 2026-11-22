@@ -222,6 +222,10 @@ internal class PhonePlaygroundController(private val runtimeGraph: HarnessRuntim
 
                 is GenerationEvent.TextDelta -> appendOutput(event.text, event.generatedTokens, event.contentType)
 
+                is GenerationEvent.VisionProgress -> state.copy(
+                    detail = "Vision: ${event.stage.name.lowercase().replace('_', ' ')} · ${event.elapsedMs} ms",
+                )
+
                 is GenerationEvent.Completed -> completedState(event)
 
                 is GenerationEvent.Failed -> failedState(event.error)

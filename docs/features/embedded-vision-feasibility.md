@@ -103,3 +103,27 @@ and Whisper UI evidence, and Android lint/static gates. Screen locking on an
 actual OEM phone, process kill, battery policies, network transitions and
 notification behavior remain REAL_ENVIRONMENT evidence. Neither emulator UI
 nor build success demonstrates download survival on a locked physical phone.
+
+## Android zero-token diagnosis — stage tracing candidate (2026-11-22)
+
+[Issue #623](https://github.com/daniele21/harnex/issues/623) tracks the reported Property Workspace Qwen3.5 2B screenshot at 63 seconds since request, Started, zero answer tokens, and 62 seconds without another event. This does not prove a permanent hang or identify the slow native function: the exact device native stage trace is not yet available.
+
+The fix/vision-native-stage-progress implementation candidate exposes content-free GenerationEvent.VisionProgress(requestId, stage, elapsedMs) from the single existing llama.cpp/libmtmd execution path. Elapsed milliseconds are measured since entry into native vision setup using a monotonic clock; no percentages, image bytes, prompts, filesystem paths, or OCR text are included.
+
+| Native stage | Emitted when |
+| --- | --- |
+| PROJECTOR_LOADING | before mtmd_init_from_file |
+| PROJECTOR_READY | after projector initialization |
+| IMAGE_DECODING | before mtmd_helper_bitmap_init_from_buf |
+| IMAGE_DECODED | after image decode |
+| IMAGE_TOKENIZING | before mtmd_tokenize |
+| IMAGE_TOKENIZED | after tokenization |
+| PREFILL_STARTED | before mtmd_helper_eval_chunks |
+| PREFILL_COMPLETE | after prefill and projector release |
+| FIRST_TOKEN | after sampling first native generation token, before buffered TextDelta |
+
+The prior GenerationEvent.Started remains request execution-start, not an emitted answer token. Stages traverse the optional VisionProgressInferenceBackend and canonical RuntimeOrchestrator; the Shared Host/Consumer Binder remains text-only and does not transmit multimedia stages.
+
+Cancellation: stage callbacks inspect the cancellation flag after each blocking libmtmd call. Any native projector-load, image decode/tokenization or prefill call may remain non-interruptible until it returns. This change does not promise a hard native timeout or instant cancellation. The consumer must not start a second session before cleanup.
+
+Required before claiming #623 resolved: exact-source Kotlin and ARM64 JNI build, native host suite, text-only regression tests, a real physical-device monotonic stage trace using the exact GGUF/projector, and repeated low-RAM/thermal/cancel/timeout tests. Only then choose projector reuse, image-size or CPU-thread optimizations. A passing model-free build does not demonstrate faster OCR.

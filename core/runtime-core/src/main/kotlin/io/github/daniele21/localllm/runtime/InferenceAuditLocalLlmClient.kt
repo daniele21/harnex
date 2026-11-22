@@ -227,6 +227,7 @@ private class AuditGenerationListener(
             is GenerationEvent.Prepared -> onPrepared(event)
             is GenerationEvent.Started -> onStarted(event)
             is GenerationEvent.TextDelta -> delegate.onEvent(event)
+            is GenerationEvent.VisionProgress -> delegate.onEvent(event)
             is GenerationEvent.Completed -> onCompleted(event)
             is GenerationEvent.Failed -> onFailed(event)
         }

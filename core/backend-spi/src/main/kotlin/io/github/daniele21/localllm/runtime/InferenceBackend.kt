@@ -6,6 +6,7 @@ import io.github.daniele21.localllm.contracts.ModelDigest
 import io.github.daniele21.localllm.contracts.OutputConstraint
 import io.github.daniele21.localllm.contracts.StopReason
 import io.github.daniele21.localllm.contracts.ThinkingMode
+import io.github.daniele21.localllm.contracts.VisionStage
 import io.github.daniele21.localllm.models.ChatTemplatePolicy
 import io.github.daniele21.localllm.models.GgufModelProfile
 import java.io.File
@@ -157,4 +158,17 @@ interface InferenceBackend {
     ): BackendGenerationOutcome
 
     fun cancel(requestId: String): Boolean
+}
+
+/**
+ * Optional extension of the SAME backend/runtime path for content-free native
+ * image stage progress. Non-vision backends retain the original generate contract.
+ */
+interface VisionProgressInferenceBackend {
+    fun generateWithVisionProgress(
+        context: BackendContextHandle,
+        request: BackendGenerationRequest,
+        onChunk: (text: String, generatedTokens: Int) -> Boolean,
+        onVisionProgress: (VisionStage, Long) -> Boolean,
+    ): BackendGenerationOutcome
 }

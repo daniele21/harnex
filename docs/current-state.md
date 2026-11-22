@@ -42,6 +42,10 @@ That Play run observed the **same Play App Signing SHA-256 digest for Harnex and
 
 CA-0..4 are integrated; concrete model/runtime/residency authority stays in Harnex. OMB-6B identity approval, OMB-8 measured quality execution and physical evidence remain open. Model-evaluation work is integrated through EVAL-D-09. Local inference Activity/audit is integrated under ADR 0017 with bounded encrypted app-private history and verified Binder caller attribution; normal telemetry stays content-free.
 
+## Vision prefill stall — unqualified diagnosis candidate
+
+The user-reported [Harnex #623](https://github.com/daniele21/harnex/issues/623) concerns Qwen3.5 2B vision Started with no answer tokens at 63 seconds in a Property consumer; no real-device native trace exists. The fix/vision-native-stage-progress unmerged candidate adds typed content-free projector/decode/tokenize/prefill/first-token milestones to the embedded runtime. No measured performance improvement, native cancellation guarantee or product readiness is claimed; see [vision feasibility](features/embedded-vision-feasibility.md). Shared Binder remains text-only.
+
 ## Embedded Android SDK (development integration)
 
 The [LocalMaind context admission workstream](workstreams/embedded-context-admission.md) tracks the narrow external-app token-budget handoff; the existing embedded runtime and app ownership boundaries remain unchanged.

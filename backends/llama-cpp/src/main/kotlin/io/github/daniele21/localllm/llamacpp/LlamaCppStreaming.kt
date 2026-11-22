@@ -1,9 +1,13 @@
 package io.github.daniele21.localllm.llamacpp
 
 import java.util.Base64
+import io.github.daniele21.localllm.contracts.VisionStage
 
 interface NativeStreamingCallback {
     fun onChunk(base64Text: String, generatedTokens: Int): Boolean
+
+    /** Only typed milestones and monotonic times; never transmit image or prompt. */
+    fun onVisionStage(stage: String, elapsedMs: Long): Boolean = true
 }
 
 interface NativeLlamaStreamingApi {
@@ -127,6 +131,7 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
         listener: NativeStreamingListener,
         imageBytes: ByteArray? = null,
         projectorPath: String? = null,
+        onVisionProgress: (VisionStage, Long) -> Boolean = { _, _ -> true },
     ): NativeStreamingResult {
         val validationError = validate(requestId, prompt, config)
         if (validationError != null) {
@@ -134,6 +139,12 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
         }
 
         val callback = object : NativeStreamingCallback {
+            override fun onVisionStage(stage: String, elapsedMs: Long): Boolean {
+                val parsed = VisionStage.entries.firstOrNull { it.name == stage } ?: return false
+                if (elapsedMs < 0) return false
+                return onVisionProgress(parsed, elapsedMs)
+            }
+
             override fun onChunk(base64Text: String, generatedTokens: Int): Boolean = try {
                 val text = String(Base64.getDecoder().decode(base64Text), Charsets.UTF_8)
                 listener.onChunk(NativeTextChunk(text = text, generatedTokens = generatedTokens))

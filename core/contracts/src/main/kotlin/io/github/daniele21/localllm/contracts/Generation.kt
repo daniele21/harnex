@@ -67,6 +67,23 @@ enum class GenerationContentType {
     ANSWER,
 }
 
+/**
+ * Content-free native image preparation milestones. Times are monotonic elapsed
+ * milliseconds since native vision setup began, not estimates of completion.
+ * Started means backend execution started, NOT that a text token was emitted.
+ */
+enum class VisionStage {
+    PROJECTOR_LOADING,
+    PROJECTOR_READY,
+    IMAGE_DECODING,
+    IMAGE_DECODED,
+    IMAGE_TOKENIZING,
+    IMAGE_TOKENIZED,
+    PREFILL_STARTED,
+    PREFILL_COMPLETE,
+    FIRST_TOKEN,
+}
+
 sealed interface GenerationEvent {
     val requestId: RequestId
 
@@ -76,6 +93,11 @@ sealed interface GenerationEvent {
 
     data class Prepared(override val requestId: RequestId, val modelDigest: ModelDigest, val configuration: EffectiveGenerationMetadata) :
         GenerationEvent
+
+    data class VisionProgress(override val requestId: RequestId, val stage: VisionStage, val elapsedMs: Long) :
+        GenerationEvent {
+        init { require(elapsedMs >= 0) { "Native vision stage time must be nonnegative" } }
+    }
 
     data class TextDelta(
         override val requestId: RequestId,
