@@ -20,6 +20,7 @@ A workstream belongs here only while it is active. It is not a second project-st
 - [`background-process-lifecycle-hardening.md`](background-process-lifecycle-hardening.md) — coordinates detached logical inference jobs, Binder reconnect/reconciliation, started/background host execution and process-recovery evidence without coupling UI/transport lifetime to runtime/model lifetime.
 - [`consumer-integration-resilience.md`](consumer-integration-resilience.md) — reduces and hardens external Android app integration using existing SDK/Host ownership, typed failure guidance, golden-path proof and independent-consumer tests.
 - [`embedded-android-sdk.md`](embedded-android-sdk.md) — prepares an independently distributed embedded Android inference SDK, verified model provisioning and clean-room external-app integration without a separate Host.
+- [`architecture-stewardship.md`](architecture-stewardship.md) — coordinates architecture fitness checks, small-module ownership decisions and review skills without duplicating runtime/SDK/UI plans.
 
 ## Lifecycle
 
