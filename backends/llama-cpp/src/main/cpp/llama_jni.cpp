@@ -1,4 +1,5 @@
 #include <jni.h>
+#include <android/log.h>
 
 #include "flash_attention_params.h"
 #include "ggml-backend.h"
@@ -1010,7 +1011,8 @@ std::vector<std::string> stream_text(
     JavaStreamingCallback& callback,
     const unsigned char* image_data = nullptr,
     std::size_t image_length = 0,
-    const std::string& projector_path = {}
+    const std::string& projector_path = {},
+    int max_visual_tokens = 0
 ) {
     const auto cancellation = cancellations.begin(request_id);
     if (!cancellation) {
@@ -1100,6 +1102,9 @@ std::vector<std::string> stream_text(
         return !cancellation->load(std::memory_order_acquire) &&
             callback.emit_vision_stage(stage, elapsed);
     };
+    // libmtmd invokes the scheduler's ask callback before graph execution.
+    // Returning false for every ask leaves the scheduler's graph untouched.
+    bool vision_graph_announced = false;
     std::unique_ptr<mtmd_context, decltype(&mtmd_free)> vision_context(nullptr, mtmd_free);
     std::unique_ptr<mtmd_input_chunks, decltype(&mtmd_input_chunks_free)> vision_chunks(nullptr, mtmd_input_chunks_free);
     if (with_image) {
@@ -1113,6 +1118,16 @@ std::vector<std::string> stream_text(
         params.use_gpu = false;
         params.warmup = false;
         params.n_threads = 4;
+        if (max_visual_tokens > 0) params.image_max_tokens = max_visual_tokens;
+        params.cb_eval_user_data = &vision_graph_announced;
+        params.cb_eval = [](ggml_tensor*, bool ask, void* user_data) -> bool {
+            auto& announced = *static_cast<bool*>(user_data);
+            if (ask && !announced) {
+                announced = true;
+                __android_log_write(ANDROID_LOG_INFO, "HarnexVision", "encoder graph reached scheduler");
+            }
+            return !ask;
+        };
         vision_context.reset(mtmd_init_from_file(projector_path.c_str(), record.model->model, params));
         if (!vision_context || !mtmd_support_vision(vision_context.get())) {
             return error_response("UNSUPPORTED_MODEL", "The verified projector cannot be initialized for the model");
@@ -1167,7 +1182,16 @@ std::vector<std::string> stream_text(
                 if (!notify_vision("VISION_ENCODING_STARTED")) {
                     return cancelled_response(prompt_token_count, 0, 0, 0);
                 }
-                if (mtmd_encode_chunk(vision_context.get(), chunk) != 0) {
+                __android_log_print(ANDROID_LOG_INFO, "HarnexVision", "encoder start: visual_tokens=%zu",
+                    mtmd_input_chunk_get_n_tokens(chunk));
+                const auto encoding_started_at = std::chrono::steady_clock::now();
+                const int encode_result = mtmd_encode_chunk(vision_context.get(), chunk);
+                const auto encoding_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - encoding_started_at
+                ).count();
+                __android_log_print(ANDROID_LOG_INFO, "HarnexVision", "encoder end: elapsed_ms=%lld result=%d",
+                    static_cast<long long>(encoding_ms), encode_result);
+                if (encode_result != 0) {
                     return error_response("DECODE_FAILED", "Visual embedding encoding failed");
                 }
                 if (!notify_vision("VISION_EMBEDDING_PREFILL_STARTED")) {
@@ -1504,7 +1528,8 @@ Java_io_github_daniele21_localllm_llamacpp_JniLlamaStreamingApi_generateImageStr
     jstring reasoning_forced_close_text_value,
     jobject callback_value,
     jbyteArray image_value,
-    jstring projector_path_value
+    jstring projector_path_value,
+    jint max_visual_tokens
 ) {
     const auto context = contexts.get(static_cast<std::int64_t>(context_handle));
     if (!context) {
@@ -1595,7 +1620,8 @@ Java_io_github_daniele21_localllm_llamacpp_JniLlamaStreamingApi_generateImageStr
             callback,
             image_bytes.data(),
             image_bytes.size(),
-            projector_path.get()
+            projector_path.get(),
+            max_visual_tokens
         )
     );
 }

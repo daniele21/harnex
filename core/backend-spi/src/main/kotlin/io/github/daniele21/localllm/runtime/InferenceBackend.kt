@@ -75,6 +75,7 @@ data class BackendPromptPlan(
     val stopTokenIds: Set<Int> = emptySet(),
     val stopSequences: List<String> = emptyList(),
     val imageBytes: ByteArray? = null,
+    val maxVisualTokens: Int = 0,
 )
 
 data class BackendContextConfiguration(val contextSize: Int) {
@@ -109,6 +110,7 @@ data class BackendGenerationRequest(
     val stopSequences: List<String> = emptyList(),
     val reasoningControl: BackendReasoningControl? = null,
     val imageBytes: ByteArray? = null,
+    val maxVisualTokens: Int = 0,
 )
 
 data class BackendGenerationMetrics(

@@ -94,11 +94,16 @@ sealed interface GenerationInput {
      * payloads; Shared Host/Binder serialization deliberately rejects this input type.
      * Each request carries one photo and one question, with no implicit chat history.
      */
-    class ImageQuestion(val question: String, imageBytes: ByteArray) : GenerationInput {
+    class ImageQuestion(
+        val question: String,
+        imageBytes: ByteArray,
+        val maxVisualTokens: Int = 0,
+    ) : GenerationInput {
         private val data: ByteArray = imageBytes.copyOf()
 
         init {
             validateInput(question)
+            require(maxVisualTokens == 0 || maxVisualTokens in 64..2_048)
             require(data.isNotEmpty() && data.size <= MAX_IMAGE_INPUT_BYTES) {
                 "Image input must be between 1 and $MAX_IMAGE_INPUT_BYTES bytes"
             }

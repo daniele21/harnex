@@ -442,6 +442,7 @@ private class FakeNativeStreamingApi(
         callback: NativeStreamingCallback,
         imageBytes: ByteArray,
         projectorPath: String,
+        maxVisualTokens: Int,
     ): Array<String> {
         generateCalled = true
         for ((stage, elapsedMs) in visionStages) {
