@@ -1,4 +1,4 @@
-package io.github.daniele21.localllm.externalembedded
+package io.github.daniele21.localllm.embedded.whisper
 
 import android.content.Context
 import java.io.File
@@ -7,24 +7,22 @@ import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Exact-artifact, app-private model ownership. No Harnex GGUF model catalog changes.
- * All methods are blocking: invoke on the SpeechInputController worker only.
+ * All methods are blocking: invoke on the SDK worker only.
  */
 internal class WhisperModelStore(context: Context) {
-    private val directory = File(context.filesDir, "voice-models")
+    private val directory = File(context.noBackupFilesDir, "harnex-whisper")
     private val target = File(directory, MODEL_FILE)
 
     fun verifiedModel(): File? = target.takeIf { verified(it) }
 
-    fun ensureReady(cancelled: AtomicBoolean, progress: (String) -> Unit): File {
+    fun ensureReady(cancelled: WhisperCancellation, progress: (Long, Long) -> Unit): File {
         verifiedModel()?.let { return it }
-        check(!cancelled.get()) { "Voice preparation cancelled" }
+        cancelled.check()
         check(directory.isDirectory || directory.mkdirs()) { "Cannot create voice model directory" }
-        val temp = File(directory, "$MODEL_FILE.partial")
-        temp.delete()
+        val temp = File.createTempFile("whisper-", ".partial", directory)
         val connection = URL(MODEL_URL).openConnection() as HttpURLConnection
         connection.connectTimeout = 15_000
         connection.readTimeout = 30_000
@@ -33,15 +31,17 @@ internal class WhisperModelStore(context: Context) {
             check(connection.responseCode == HttpURLConnection.HTTP_OK) {
                 "Voice download failed: HTTP ${connection.responseCode}"
             }
-            progress("Downloading Whisper Small Q5 · 0 MB")
+            progress(0, MODEL_BYTES)
             connection.inputStream.use { input ->
                 FileOutputStream(temp).use { output ->
                     copyModelBytes(input, output, cancelled, progress)
                     output.fd.sync()
                 }
             }
-            progress("Verifying Whisper Small Q5…")
             check(verified(temp)) { "Whisper model SHA-256 verification failed" }
+            cancelled.check()
+            progress(MODEL_BYTES, MODEL_BYTES)
+            cancelled.check()
             // The verified target is published only after transfer + checksum success.
             check(temp.renameTo(target)) { "Cannot install verified voice model" }
             return target
@@ -51,18 +51,23 @@ internal class WhisperModelStore(context: Context) {
         }
     }
 
-    private fun copyModelBytes(input: InputStream, output: FileOutputStream, cancelled: AtomicBoolean, progress: (String) -> Unit) {
+    private fun copyModelBytes(
+        input: InputStream,
+        output: FileOutputStream,
+        cancelled: WhisperCancellation,
+        progress: (Long, Long) -> Unit,
+    ) {
         var total = 0L
         val buffer = ByteArray(64 * 1024)
         while (true) {
-            check(!cancelled.get()) { "Voice download cancelled" }
+            cancelled.check()
             val length = input.read(buffer)
             if (length < 0) return
             total += length
             check(total <= MODEL_BYTES) { "Voice model exceeds expected size" }
             output.write(buffer, 0, length)
             if (total % (4L * 1024 * 1024) < buffer.size) {
-                progress("Downloading Whisper Small Q5 · ${total / (1024 * 1024)} / 190 MB")
+                progress(total, MODEL_BYTES)
             }
         }
     }

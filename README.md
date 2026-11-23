@@ -257,3 +257,5 @@ The repository uses `dev` as the integration branch and `main` as the stable/rel
 MIT. See [`LICENSE`](LICENSE).
 
 Harnex is built by [Daniele Moltisanti](https://daniele21.github.io/) as part of a broader effort to determine the Local / Hybrid / Cloud boundary with evidence rather than ideology.
+
+The optional Android speech-to-text module is [`:integrations:android-embedded-whisper`](integrations/android-embedded-whisper/README.md).

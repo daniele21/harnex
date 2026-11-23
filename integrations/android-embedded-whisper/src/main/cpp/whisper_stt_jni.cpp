@@ -1,5 +1,5 @@
 #include <jni.h>
-#include <android/log.h>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -34,8 +34,8 @@ bool is_cancelled(void * data) {
 }
 }
 
-extern "C" JNIEXPORT jstring JNICALL
-Java_io_github_daniele21_localllm_externalembedded_WhisperNative_transcribe(
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_io_github_daniele21_localllm_embedded_whisper_WhisperNative_transcribe(
         JNIEnv * env, jobject, jstring model_path, jfloatArray audio, jobject cancel_flag) {
     if (!model_path || !audio || !cancel_flag) {
         fail(env, "Invalid STT input");
@@ -52,6 +52,7 @@ Java_io_github_daniele21_localllm_externalembedded_WhisperNative_transcribe(
 
     const char * path = env->GetStringUTFChars(model_path, nullptr);
     if (!path) return nullptr;
+    whisper_log_set([](ggml_log_level, const char *, void *) {}, nullptr);
     auto options = whisper_context_default_params();
     options.use_gpu = false;
     whisper_context * raw = whisper_init_from_file_with_params(path, options);
@@ -101,5 +102,14 @@ Java_io_github_daniele21_localllm_externalembedded_WhisperNative_transcribe(
         const char * segment = whisper_full_get_segment_text(ctx.get(), index);
         if (segment) text.append(segment);
     }
-    return env->NewStringUTF(text.c_str());
+    if (text.size() > static_cast<size_t>(std::numeric_limits<jsize>::max())) {
+        fail(env, "Whisper output exceeds JNI limits");
+        return nullptr;
+    }
+    const auto size = static_cast<jsize>(text.size());
+    jbyteArray utf8 = env->NewByteArray(size);
+    if (utf8 && size > 0) {
+        env->SetByteArrayRegion(utf8, 0, size, reinterpret_cast<const jbyte *>(text.data()));
+    }
+    return utf8;
 }
