@@ -1158,12 +1158,38 @@ std::vector<std::string> stream_text(
         if (!notify_vision("PREFILL_STARTED")) {
             return cancelled_response(prompt_token_count, 0, 0, 0);
         }
-        llama_pos new_n_past = 0;
-        if (mtmd_helper_eval_chunks(
-            vision_context.get(), record.context, vision_chunks.get(), 0, 0,
-            record.batch_size, true, &new_n_past
-        ) != 0) {
-            return error_response("DECODE_FAILED", "Multimodal prompt evaluation failed");
+        // Preserve libmtmd's chunk order, accumulated position and final-chunk logits.
+        llama_pos n_past = 0;
+        const std::size_t chunk_count = mtmd_input_chunks_size(vision_chunks.get());
+        for (std::size_t i = 0; i < chunk_count; ++i) {
+            const auto* chunk = mtmd_input_chunks_get(vision_chunks.get(), i);
+            if (mtmd_input_chunk_get_type(chunk) == MTMD_INPUT_CHUNK_TYPE_IMAGE) {
+                if (!notify_vision("VISION_ENCODING_STARTED")) {
+                    return cancelled_response(prompt_token_count, 0, 0, 0);
+                }
+                if (mtmd_encode_chunk(vision_context.get(), chunk) != 0) {
+                    return error_response("DECODE_FAILED", "Visual embedding encoding failed");
+                }
+                if (!notify_vision("VISION_EMBEDDING_PREFILL_STARTED")) {
+                    return cancelled_response(prompt_token_count, 0, 0, 0);
+                }
+                if (mtmd_helper_decode_image_chunk(
+                    vision_context.get(), record.context, chunk, mtmd_get_output_embd(vision_context.get()),
+                    n_past, 0, record.batch_size, &n_past
+                ) != 0) {
+                    return error_response("DECODE_FAILED", "Visual embedding evaluation failed");
+                }
+            } else {
+                if (!notify_vision("VISION_TEXT_PREFILL_STARTED")) {
+                    return cancelled_response(prompt_token_count, 0, 0, 0);
+                }
+                if (mtmd_helper_eval_chunk_single(
+                    vision_context.get(), record.context, chunk, n_past, 0,
+                    record.batch_size, i + 1 == chunk_count, &n_past
+                ) != 0) {
+                    return error_response("DECODE_FAILED", "Multimodal text evaluation failed");
+                }
+            }
         }
         vision_chunks.reset();
         vision_context.reset(); // Release the projector before token decoding.
