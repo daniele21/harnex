@@ -82,6 +82,9 @@ enum class VisionStage {
     PREFILL_STARTED,
     PREFILL_COMPLETE,
     FIRST_TOKEN,
+    VISION_ENCODING_STARTED,
+    VISION_EMBEDDING_PREFILL_STARTED,
+    VISION_TEXT_PREFILL_STARTED,
 }
 
 sealed interface GenerationEvent {
