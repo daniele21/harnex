@@ -127,12 +127,15 @@ class LlamaCppInferenceBackend(
                 // The byte image expands into visual tokens at the libmtmd boundary.
                 // Reserve a conservative capacity here; native evaluation verifies the actual limit.
                 tokenCount = result.plan.tokenCount +
-                    if (request.input is io.github.daniele21.localllm.contracts.GenerationInput.ImageQuestion) 2_048 else 0,
+                    ((request.input as? io.github.daniele21.localllm.contracts.GenerationInput.ImageQuestion)
+                        ?.let { it.maxVisualTokens.takeIf { limit -> limit > 0 } ?: 2_048 } ?: 0),
                 chatTemplateId = result.plan.chatTemplateId,
                 chatTemplateSource = result.plan.chatTemplateSource,
                 stopTokenIds = result.plan.stopTokenIds,
                 stopSequences = request.chatTemplatePolicy.stopSequences,
                 imageBytes = (request.input as? io.github.daniele21.localllm.contracts.GenerationInput.ImageQuestion)?.copyImageBytes(),
+                maxVisualTokens = (request.input as? io.github.daniele21.localllm.contracts.GenerationInput.ImageQuestion)
+                    ?.maxVisualTokens ?: 0,
             )
 
             is NativePromptPlanningResult.Failure -> throw result.error.asBackendException()
@@ -287,6 +290,7 @@ class LlamaCppInferenceBackend(
                 vision = request.imageBytes?.let { image ->
                     NativeVisionRequest(
                         imageBytes = image,
+                        maxVisualTokens = request.maxVisualTokens,
                         projectorPath = visionProjectorFile?.absolutePath,
                         onProgress = onVisionProgress,
                     )

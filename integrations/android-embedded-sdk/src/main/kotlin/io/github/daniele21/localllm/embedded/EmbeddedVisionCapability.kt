@@ -58,6 +58,7 @@ class EmbeddedVisionCapability internal constructor(
         imageBytes: ByteArray,
         listener: GenerationListener,
         instructionOverride: String? = null,
+        maxVisualTokens: Int = 0,
     ): GenerationHandle {
         require(instructionOverride == null || instructionOverride.isNotBlank()) {
             "Transcription instruction override must not be blank"
@@ -66,6 +67,7 @@ class EmbeddedVisionCapability internal constructor(
             sessionId = sessionId,
             question = instructionOverride ?: DEFAULT_TRANSCRIPTION_INSTRUCTION,
             imageBytes = imageBytes,
+            maxVisualTokens = maxVisualTokens,
             listener = listener,
             overrides = GenerationOverrides(
                 maxOutputTokens = 1_200,
@@ -81,6 +83,7 @@ class EmbeddedVisionCapability internal constructor(
         imageBytes: ByteArray,
         listener: GenerationListener,
         overrides: GenerationOverrides = GenerationOverrides(),
+        maxVisualTokens: Int = 0,
     ): GenerationHandle {
         verifyOwner()
         check(projectorVerified) { "Prepare the verified projector before sending an image" }
@@ -90,7 +93,7 @@ class EmbeddedVisionCapability internal constructor(
                 sessionId = sessionId,
                 applicationId = applicationId,
                 useCaseId = useCaseId,
-                input = GenerationInput.ImageQuestion(question, imageBytes),
+                input = GenerationInput.ImageQuestion(question, imageBytes, maxVisualTokens),
                 overrides = overrides,
             ),
             listener,

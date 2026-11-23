@@ -1011,7 +1011,8 @@ std::vector<std::string> stream_text(
     JavaStreamingCallback& callback,
     const unsigned char* image_data = nullptr,
     std::size_t image_length = 0,
-    const std::string& projector_path = {}
+    const std::string& projector_path = {},
+    int max_visual_tokens = 0
 ) {
     const auto cancellation = cancellations.begin(request_id);
     if (!cancellation) {
@@ -1117,6 +1118,7 @@ std::vector<std::string> stream_text(
         params.use_gpu = false;
         params.warmup = false;
         params.n_threads = 4;
+        if (max_visual_tokens > 0) params.image_max_tokens = max_visual_tokens;
         params.cb_eval_user_data = &vision_graph_announced;
         params.cb_eval = [](ggml_tensor*, bool ask, void* user_data) -> bool {
             auto& announced = *static_cast<bool*>(user_data);
@@ -1526,7 +1528,8 @@ Java_io_github_daniele21_localllm_llamacpp_JniLlamaStreamingApi_generateImageStr
     jstring reasoning_forced_close_text_value,
     jobject callback_value,
     jbyteArray image_value,
-    jstring projector_path_value
+    jstring projector_path_value,
+    jint max_visual_tokens
 ) {
     const auto context = contexts.get(static_cast<std::int64_t>(context_handle));
     if (!context) {
@@ -1617,7 +1620,8 @@ Java_io_github_daniele21_localllm_llamacpp_JniLlamaStreamingApi_generateImageStr
             callback,
             image_bytes.data(),
             image_bytes.size(),
-            projector_path.get()
+            projector_path.get(),
+            max_visual_tokens
         )
     );
 }

@@ -59,6 +59,7 @@ interface NativeLlamaStreamingApi {
         callback: NativeStreamingCallback,
         imageBytes: ByteArray,
         projectorPath: String,
+        maxVisualTokens: Int,
     ): Array<String> = arrayOf("error", "UNSUPPORTED_MODEL", "Image generation is not implemented by this native adapter")
 
     fun cancel(requestId: String): Array<String>
@@ -117,6 +118,7 @@ class JniLlamaStreamingApi : NativeLlamaStreamingApi {
         callback: NativeStreamingCallback,
         imageBytes: ByteArray,
         projectorPath: String,
+        maxVisualTokens: Int,
     ): Array<String>
 
     external override fun cancel(requestId: String): Array<String>
@@ -129,6 +131,7 @@ class JniLlamaStreamingApi : NativeLlamaStreamingApi {
 class NativeVisionRequest(
     val imageBytes: ByteArray,
     val projectorPath: String?,
+    val maxVisualTokens: Int = 0,
     val onProgress: (VisionStage, Long) -> Boolean = { _, _ -> true },
 )
 
@@ -192,6 +195,7 @@ class LlamaCppStreamingBridge(private val nativeApi: NativeLlamaStreamingApi = J
                     callback = callback,
                     imageBytes = vision.imageBytes,
                     projectorPath = projectorPath,
+                    maxVisualTokens = vision.maxVisualTokens,
                 )
             } else {
                 nativeApi.generateStreaming(
