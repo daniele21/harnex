@@ -46,14 +46,14 @@ internal object EmbeddedModelPolicy {
             GgufModelProfile(
                 id = "embedded-" + release.profileKey.value + "-tuning-v" + tuning.profileVersion,
                 artifact =
-                    GgufArtifact(
-                        digest = release.artifact.digest,
-                        fileName = release.artifact.fileName,
-                        sizeBytes = release.artifact.sizeBytes,
-                        architecture = release.artifact.architecture,
-                        quantization = release.artifact.quantization,
-                        source = ArtifactSource.Download(release.artifact.downloadUri.toString()),
-                    ),
+                GgufArtifact(
+                    digest = release.artifact.digest,
+                    fileName = release.artifact.fileName,
+                    sizeBytes = release.artifact.sizeBytes,
+                    architecture = release.artifact.architecture,
+                    quantization = release.artifact.quantization,
+                    source = ArtifactSource.Download(release.artifact.downloadUri.toString()),
+                ),
                 contextSize = tuning.contextTokens,
                 batchSize = tuning.batchSize,
                 microBatchSize = tuning.microBatchSize,
@@ -76,25 +76,25 @@ internal object EmbeddedModelPolicy {
                 // The ordinary chat default remains TEXT. Only explicit structured calls
                 // opt into the schema preset; the common runtime still validates grammar support.
                 presets =
-                    listOf(
-                        InferencePreset(
-                            ref = structuredPreset,
-                            generation = Qwen35GenerationProfiles.defaultForTier(Qwen35ModelTier.B2).copy(
-                                temperature = 0f,
-                                presencePenalty = 0f,
-                            ),
-                            systemPromptVersion = "embedded-structured-v1",
-                            systemPrompt = configuration.systemInstructions ?: "Follow the supplied JSON schema.",
-                            allowedOutputModes = setOf(OutputMode.JSON_SCHEMA),
+                listOf(
+                    InferencePreset(
+                        ref = structuredPreset,
+                        generation = Qwen35GenerationProfiles.defaultForTier(Qwen35ModelTier.B2).copy(
+                            temperature = 0f,
+                            presencePenalty = 0f,
                         ),
+                        systemPromptVersion = "embedded-structured-v1",
+                        systemPrompt = configuration.systemInstructions ?: "Follow the supplied JSON schema.",
+                        allowedOutputModes = setOf(OutputMode.JSON_SCHEMA),
                     ),
+                ),
                 cachePolicy =
-                    UseCaseCachePolicy(
-                        retainModelWarmMs = 0,
-                        reuseStatelessContext = false,
-                        enablePrefixSnapshot = false,
-                        enableDeterministicResultCache = false,
-                    ),
+                UseCaseCachePolicy(
+                    retainModelWarmMs = 0,
+                    reuseStatelessContext = false,
+                    enablePrefixSnapshot = false,
+                    enableDeterministicResultCache = false,
+                ),
                 healthSuiteId = "embedded-local-text-health-v1",
             )
         return ResolvedUseCase(
