@@ -46,14 +46,14 @@ internal object EmbeddedModelPolicy {
             GgufModelProfile(
                 id = "embedded-" + release.profileKey.value + "-tuning-v" + tuning.profileVersion,
                 artifact =
-                GgufArtifact(
-                    digest = release.artifact.digest,
-                    fileName = release.artifact.fileName,
-                    sizeBytes = release.artifact.sizeBytes,
-                    architecture = release.artifact.architecture,
-                    quantization = release.artifact.quantization,
-                    source = ArtifactSource.Download(release.artifact.downloadUri.toString()),
-                ),
+                    GgufArtifact(
+                        digest = release.artifact.digest,
+                        fileName = release.artifact.fileName,
+                        sizeBytes = release.artifact.sizeBytes,
+                        architecture = release.artifact.architecture,
+                        quantization = release.artifact.quantization,
+                        source = ArtifactSource.Download(release.artifact.downloadUri.toString()),
+                    ),
                 contextSize = tuning.contextTokens,
                 batchSize = tuning.batchSize,
                 microBatchSize = tuning.microBatchSize,
@@ -89,12 +89,12 @@ internal object EmbeddedModelPolicy {
                         ),
                     ),
                 cachePolicy =
-                UseCaseCachePolicy(
-                    retainModelWarmMs = 0,
-                    reuseStatelessContext = false,
-                    enablePrefixSnapshot = false,
-                    enableDeterministicResultCache = false,
-                ),
+                    UseCaseCachePolicy(
+                        retainModelWarmMs = 0,
+                        reuseStatelessContext = false,
+                        enablePrefixSnapshot = false,
+                        enableDeterministicResultCache = false,
+                    ),
                 healthSuiteId = "embedded-local-text-health-v1",
             )
         return ResolvedUseCase(
