@@ -85,6 +85,10 @@ private fun requireEmbeddedOpen(closed: AtomicBoolean) {
  * thread. Callbacks can arrive from runtime threads; the application dispatches them to its UI.
  * The application owns its conversation/history and sends an explicit message list for every turn.
  */
+// Public embedded facade keeps stable lifecycle, chat, vision and structured API entrypoints.
+// Extracting only two functions into an artificial module would break consumers without
+// separating ownership or reducing runtime coupling.
+@Suppress("TooManyFunctions")
 class EmbeddedRuntime private constructor(context: Context, private val resolved: ResolvedUseCase) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val visionProjector = EmbeddedVisionProjector(context)
