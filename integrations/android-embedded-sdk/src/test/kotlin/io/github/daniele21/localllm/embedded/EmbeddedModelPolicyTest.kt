@@ -34,6 +34,20 @@ class EmbeddedModelPolicyTest {
     }
 
     @Test
+    fun schemaPresetDoesNotChangeOrdinaryChatDefaults() {
+        val resolved = EmbeddedModelPolicy.resolve(
+            EmbeddedConfiguration(EmbeddedModelPolicy.INITIAL_MODEL_ID, "Consumer instructions"),
+            8,
+        )
+        assertEquals(OutputMode.TEXT, resolved.useCase.outputMode)
+        assertEquals(null, resolved.useCase.defaultPreset)
+        val preset = resolved.useCase.presets.single { it.ref == EmbeddedModelPolicy.structuredPreset }
+        assertEquals(setOf(OutputMode.JSON_SCHEMA), preset.allowedOutputModes)
+        assertEquals("Consumer instructions", preset.systemPrompt)
+        assertEquals(0f, preset.generation.temperature)
+    }
+
+    @Test
     fun rejectsUnsupportedModelsAndUnboundedInstructionsWithoutFallback() {
         assertThrows(IllegalArgumentException::class.java) {
             EmbeddedModelPolicy.resolve(EmbeddedConfiguration("qwen35-4b-q4-k-m"), 4)
