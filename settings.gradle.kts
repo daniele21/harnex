@@ -46,6 +46,7 @@ include(
     ":transports:in-process",
     ":integrations:android-embedded-sdk",
     ":integrations:android-embedded-whisper",
+    ":integrations:android-embedded-ocr",
     ":transports:android-binder-contract",
     ":transports:android-binder-client",
     ":integrations:android-service-host",

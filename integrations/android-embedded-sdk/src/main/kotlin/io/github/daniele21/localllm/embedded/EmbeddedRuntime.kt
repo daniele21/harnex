@@ -12,6 +12,7 @@ import io.github.daniele21.localllm.contracts.GenerationListener
 import io.github.daniele21.localllm.contracts.GenerationOverrides
 import io.github.daniele21.localllm.contracts.GenerationRequest
 import io.github.daniele21.localllm.contracts.LocalLlmClient
+import io.github.daniele21.localllm.contracts.OutputConstraint
 import io.github.daniele21.localllm.contracts.PrepareResult
 import io.github.daniele21.localllm.contracts.PromptPreviewResult
 import io.github.daniele21.localllm.contracts.RequestId
@@ -84,6 +85,10 @@ private fun requireEmbeddedOpen(closed: AtomicBoolean) {
  * thread. Callbacks can arrive from runtime threads; the application dispatches them to its UI.
  * The application owns its conversation/history and sends an explicit message list for every turn.
  */
+// Public embedded facade keeps stable lifecycle, chat, vision and structured API entrypoints.
+// Extracting only two functions into an artificial module would break consumers without
+// separating ownership or reducing runtime coupling.
+@Suppress("TooManyFunctions")
 class EmbeddedRuntime private constructor(context: Context, private val resolved: ResolvedUseCase) : AutoCloseable {
     private val closed = AtomicBoolean(false)
     private val visionProjector = EmbeddedVisionProjector(context)
@@ -262,6 +267,64 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
                 input = GenerationInput.Messages(messages),
                 overrides = overrides,
             ),
+        )
+    }
+
+    /** Additive text-only structured generation; uses the same technical session and runtime.
+     * The caller supplies the schema and validates the completed result against its business contract.
+     */
+    fun generateStructured(
+        sessionId: SessionId,
+        messages: List<ConversationMessage>,
+        schema: String,
+        listener: GenerationListener,
+        overrides: GenerationOverrides = GenerationOverrides(),
+    ): GenerationHandle {
+        requireWorkerThread()
+        requireEmbeddedOpen(closed)
+        return client.generate(
+            GenerationRequest(
+                requestId = RequestId(UUID.randomUUID().toString()),
+                sessionId = sessionId,
+                applicationId = applicationId,
+                useCaseId = useCaseId,
+                input = GenerationInput.Messages(messages),
+                overrides = structuredOverrides(overrides),
+                outputConstraint = OutputConstraint.JsonSchema(schema),
+            ),
+            listener,
+        )
+    }
+
+    /** Same JSON grammar, prompt and overrides as generateStructured; no model decode. */
+    fun previewStructured(
+        sessionId: SessionId,
+        messages: List<ConversationMessage>,
+        schema: String,
+        overrides: GenerationOverrides = GenerationOverrides(),
+    ): PromptPreviewResult {
+        requireWorkerThread()
+        requireEmbeddedOpen(closed)
+        return runtime.previewGeneration(
+            GenerationRequest(
+                requestId = RequestId(UUID.randomUUID().toString()),
+                sessionId = sessionId,
+                applicationId = applicationId,
+                useCaseId = useCaseId,
+                input = GenerationInput.Messages(messages),
+                overrides = structuredOverrides(overrides),
+                outputConstraint = OutputConstraint.JsonSchema(schema),
+            ),
+        )
+    }
+
+    private fun structuredOverrides(overrides: GenerationOverrides): GenerationOverrides {
+        require(overrides.preset == null || overrides.preset == EmbeddedModelPolicy.structuredPreset) {
+            "Structured generation uses the embedded schema preset"
+        }
+        return overrides.copy(
+            preset = EmbeddedModelPolicy.structuredPreset,
+            thinkingMode = io.github.daniele21.localllm.contracts.ThinkingMode.DISABLED,
         )
     }
 

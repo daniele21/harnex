@@ -4,11 +4,14 @@ import io.github.daniele21.localllm.catalog.CatalogAvailability
 import io.github.daniele21.localllm.catalog.CuratedModelCatalog
 import io.github.daniele21.localllm.catalog.EmbeddedCatalogTargets
 import io.github.daniele21.localllm.contracts.ApplicationId
+import io.github.daniele21.localllm.contracts.InferencePresetId
+import io.github.daniele21.localllm.contracts.InferencePresetRef
 import io.github.daniele21.localllm.contracts.UseCaseId
 import io.github.daniele21.localllm.models.AppModelBinding
 import io.github.daniele21.localllm.models.ArtifactSource
 import io.github.daniele21.localllm.models.GgufArtifact
 import io.github.daniele21.localllm.models.GgufModelProfile
+import io.github.daniele21.localllm.models.InferencePreset
 import io.github.daniele21.localllm.models.OutputMode
 import io.github.daniele21.localllm.models.Qwen35GenerationProfiles
 import io.github.daniele21.localllm.models.Qwen35ModelTier
@@ -25,6 +28,7 @@ internal object EmbeddedModelPolicy {
     const val INITIAL_MODEL_ID = "qwen35-2b-q4-k-m"
     val applicationId = ApplicationId("harnex-embedded")
     val useCaseId = UseCaseId("local-text-generation")
+    val structuredPreset = InferencePresetRef(InferencePresetId("embedded-structured-json"), 1)
 
     fun resolve(configuration: EmbeddedConfiguration, availableProcessors: Int): ResolvedUseCase {
         require(configuration.modelId == INITIAL_MODEL_ID) { "Unsupported embedded model selection" }
@@ -69,6 +73,21 @@ internal object EmbeddedModelPolicy {
                 systemPrompt = configuration.systemInstructions,
                 generationDefaults = Qwen35GenerationProfiles.defaultForTier(Qwen35ModelTier.B2),
                 outputMode = OutputMode.TEXT,
+                // The ordinary chat default remains TEXT. Only explicit structured calls
+                // opt into the schema preset; the common runtime still validates grammar support.
+                presets =
+                listOf(
+                    InferencePreset(
+                        ref = structuredPreset,
+                        generation = Qwen35GenerationProfiles.defaultForTier(Qwen35ModelTier.B2).copy(
+                            temperature = 0f,
+                            presencePenalty = 0f,
+                        ),
+                        systemPromptVersion = "embedded-structured-v1",
+                        systemPrompt = configuration.systemInstructions ?: "Follow the supplied JSON schema.",
+                        allowedOutputModes = setOf(OutputMode.JSON_SCHEMA),
+                    ),
+                ),
                 cachePolicy =
                 UseCaseCachePolicy(
                     retainModelWarmMs = 0,

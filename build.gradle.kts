@@ -42,6 +42,7 @@ val embeddedPublishingModules =
         ":transports:in-process",
         ":integrations:android-embedded-sdk",
         ":integrations:android-embedded-whisper",
+        ":integrations:android-embedded-ocr",
     )
 val embeddedSdkVersion =
     providers.gradleProperty("embeddedSdkVersion")
@@ -84,6 +85,7 @@ subprojects {
                             when (project.path) {
                                 ":integrations:android-embedded-sdk" -> "embedded-android"
                                 ":integrations:android-embedded-whisper" -> "embedded-whisper-android"
+                                ":integrations:android-embedded-ocr" -> "embedded-ocr-android"
                                 ":observability:contracts" -> "observability-contracts"
                                 else -> project.name
                             }
