@@ -1,7 +1,9 @@
 package io.github.daniele21.localllm.ocr
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
@@ -32,77 +34,86 @@ class EmbeddedDocumentOcr {
     suspend fun recognize(jpeg: ByteArray): OcrPage = withContext(Dispatchers.Default) {
         require(jpeg.size in 1..2 * 1024 * 1024)
         check(running.compareAndSet(false, true)) { "OCR already active" }
-        suspendCancellableCoroutine { continuation ->
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
-            if (bounds.outWidth !in 1..2048 || bounds.outHeight !in 1..2048) {
+        val bitmap =
+            try {
+                decodeOcrBitmap(jpeg)
+            } catch (error: Exception) {
                 running.set(false)
-                continuation.resumeWithException(IllegalArgumentException("Unsupported OCR page dimensions"))
+                throw error
+            }
+        recognizeBitmap(bitmap)
+    }
+
+    /** Keep the gate held after cancellation until ML Kit's task actually finishes. */
+    private suspend fun recognizeBitmap(bitmap: Bitmap): OcrPage = suspendCancellableCoroutine { continuation ->
+        val client =
+            try {
+                TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            } catch (error: Exception) {
+                bitmap.recycle()
+                running.set(false)
+                continuation.resumeWithException(error)
                 return@suspendCancellableCoroutine
             }
-            val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
-            if (bitmap == null) {
-                running.set(false)
-                continuation.resumeWithException(IllegalArgumentException("Invalid OCR page"))
-                return@suspendCancellableCoroutine
-            }
-            val client =
+        val released = AtomicBoolean(false)
+        fun release() {
+            if (released.compareAndSet(false, true)) {
                 try {
-                    TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                } catch (error: Exception) {
+                    client.close()
+                } finally {
                     bitmap.recycle()
                     running.set(false)
-                    continuation.resumeWithException(error)
-                    return@suspendCancellableCoroutine
                 }
-            val released = AtomicBoolean(false)
-            fun release() {
-                if (released.compareAndSet(false, true)) {
-                    try {
-                        client.close()
-                    } finally {
-                        bitmap.recycle()
-                        running.set(false)
-                    }
-                }
-            }
-            try {
-                val width = bitmap.width.toDouble()
-                val height = bitmap.height.toDouble()
-                client.process(InputImage.fromBitmap(bitmap, 0))
-                    .addOnCompleteListener { task ->
-                        try {
-                            if (continuation.isActive) {
-                                val result = task.result
-                                val text = result.text.trim()
-                                require(text.isNotBlank() && text.length <= 12_000 && '\u0000' !in text) {
-                                    "OCR text unavailable or outside bounds"
-                                }
-                                val regions =
-                                    result.textBlocks.flatMap { it.lines }.mapIndexedNotNull { index, line ->
-                                        val rect = line.boundingBox ?: return@mapIndexedNotNull null
-                                        val left = (rect.left / width).coerceIn(0.0, 1.0)
-                                        val top = (rect.top / height).coerceIn(0.0, 1.0)
-                                        val right = (rect.right / width).coerceIn(0.0, 1.0)
-                                        val bottom = (rect.bottom / height).coerceIn(0.0, 1.0)
-                                        if (left >= right || top >= bottom || line.text.isBlank()) {
-                                            null
-                                        } else {
-                                            OcrRegion("line-${index + 1}", line.text, left, top, right, bottom)
-                                        }
-                                    }
-                                continuation.resume(OcrPage(text, regions))
-                            }
-                        } catch (error: Exception) {
-                            if (continuation.isActive) continuation.resumeWithException(error)
-                        } finally {
-                            release()
-                        }
-                    }
-            } catch (error: Exception) {
-                release()
-                if (continuation.isActive) continuation.resumeWithException(error)
             }
         }
+        try {
+            client.process(InputImage.fromBitmap(bitmap, 0)).addOnCompleteListener { task ->
+                try {
+                    if (continuation.isActive) {
+                        continuation.resume(normalizeOcrResult(task.result, bitmap))
+                    }
+                } catch (error: Exception) {
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                } finally {
+                    release()
+                }
+            }
+        } catch (error: Exception) {
+            release()
+            if (continuation.isActive) continuation.resumeWithException(error)
+        }
     }
+}
+
+/** Source pixels are limited before allocation and never interpreted as a model image. */
+private fun decodeOcrBitmap(jpeg: ByteArray): Bitmap {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+    require(bounds.outWidth in 1..2048 && bounds.outHeight in 1..2048) {
+        "Unsupported OCR page dimensions"
+    }
+    return requireNotNull(BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)) { "Invalid OCR page" }
+}
+
+/** Bounding boxes use the exact decoded bitmap's dimensions, after EXIF normalization upstream. */
+private fun normalizeOcrResult(result: Text, bitmap: Bitmap): OcrPage {
+    val text = result.text.trim()
+    require(text.isNotBlank() && text.length <= 12_000 && '\u0000' !in text) {
+        "OCR text unavailable or outside bounds"
+    }
+    val width = bitmap.width.toDouble()
+    val height = bitmap.height.toDouble()
+    val regions = result.textBlocks.flatMap { it.lines }.mapIndexedNotNull { index, line ->
+        val rect = line.boundingBox ?: return@mapIndexedNotNull null
+        val left = (rect.left / width).coerceIn(0.0, 1.0)
+        val top = (rect.top / height).coerceIn(0.0, 1.0)
+        val right = (rect.right / width).coerceIn(0.0, 1.0)
+        val bottom = (rect.bottom / height).coerceIn(0.0, 1.0)
+        if (left >= right || top >= bottom || line.text.isBlank()) {
+            null
+        } else {
+            OcrRegion("line-" + (index + 1), line.text, left, top, right, bottom)
+        }
+    }
+    return OcrPage(text, regions)
 }
