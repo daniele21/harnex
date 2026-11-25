@@ -34,27 +34,18 @@ class EmbeddedDocumentOcr {
     suspend fun recognize(jpeg: ByteArray): OcrPage = withContext(Dispatchers.Default) {
         require(jpeg.size in 1..2 * 1024 * 1024)
         check(running.compareAndSet(false, true)) { "OCR already active" }
-        val bitmap =
-            try {
-                decodeOcrBitmap(jpeg)
-            } catch (error: Exception) {
-                running.set(false)
-                throw error
-            }
+        val bitmap = runCatching { decodeOcrBitmap(jpeg) }.onFailure { running.set(false) }.getOrThrow()
         recognizeBitmap(bitmap)
     }
 
     /** Keep the gate held after cancellation until ML Kit's task actually finishes. */
     private suspend fun recognizeBitmap(bitmap: Bitmap): OcrPage = suspendCancellableCoroutine { continuation ->
-        val client =
-            try {
-                TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-            } catch (error: Exception) {
-                bitmap.recycle()
-                running.set(false)
-                continuation.resumeWithException(error)
-                return@suspendCancellableCoroutine
-            }
+        val client = runCatching { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }.getOrElse { error ->
+            bitmap.recycle()
+            running.set(false)
+            continuation.resumeWithException(error)
+            return@suspendCancellableCoroutine
+        }
         val released = AtomicBoolean(false)
         fun release() {
             if (released.compareAndSet(false, true)) {
@@ -66,19 +57,20 @@ class EmbeddedDocumentOcr {
                 }
             }
         }
-        try {
+        runCatching {
             client.process(InputImage.fromBitmap(bitmap, 0)).addOnCompleteListener { task ->
                 try {
                     if (continuation.isActive) {
-                        continuation.resume(normalizeOcrResult(task.result, bitmap))
+                        runCatching { continuation.resume(normalizeOcrResult(task.result, bitmap)) }
+                            .onFailure { error ->
+                                if (continuation.isActive) continuation.resumeWithException(error)
+                            }
                     }
-                } catch (error: Exception) {
-                    if (continuation.isActive) continuation.resumeWithException(error)
                 } finally {
                     release()
                 }
             }
-        } catch (error: Exception) {
+        }.onFailure { error ->
             release()
             if (continuation.isActive) continuation.resumeWithException(error)
         }
