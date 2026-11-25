@@ -285,7 +285,7 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
                 applicationId = applicationId,
                 useCaseId = useCaseId,
                 input = GenerationInput.Messages(messages),
-                overrides = overrides,
+                overrides = structuredOverrides(overrides),
                 outputConstraint = OutputConstraint.JsonSchema(schema),
             ),
             listener,
@@ -308,9 +308,19 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
                 applicationId = applicationId,
                 useCaseId = useCaseId,
                 input = GenerationInput.Messages(messages),
-                overrides = overrides,
+                overrides = structuredOverrides(overrides),
                 outputConstraint = OutputConstraint.JsonSchema(schema),
             ),
+        )
+    }
+
+    private fun structuredOverrides(overrides: GenerationOverrides): GenerationOverrides {
+        require(overrides.preset == null || overrides.preset == EmbeddedModelPolicy.structuredPreset) {
+            "Structured generation uses the embedded schema preset"
+        }
+        return overrides.copy(
+            preset = EmbeddedModelPolicy.structuredPreset,
+            thinkingMode = io.github.daniele21.localllm.contracts.ThinkingMode.DISABLED,
         )
     }
 
