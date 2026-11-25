@@ -12,6 +12,7 @@ import io.github.daniele21.localllm.contracts.GenerationListener
 import io.github.daniele21.localllm.contracts.GenerationOverrides
 import io.github.daniele21.localllm.contracts.GenerationRequest
 import io.github.daniele21.localllm.contracts.LocalLlmClient
+import io.github.daniele21.localllm.contracts.OutputConstraint
 import io.github.daniele21.localllm.contracts.PrepareResult
 import io.github.daniele21.localllm.contracts.PromptPreviewResult
 import io.github.daniele21.localllm.contracts.RequestId
@@ -261,6 +262,54 @@ class EmbeddedRuntime private constructor(context: Context, private val resolved
                 useCaseId = useCaseId,
                 input = GenerationInput.Messages(messages),
                 overrides = overrides,
+            ),
+        )
+    }
+
+    /** Additive text-only structured generation; uses the same technical session and runtime.
+     * The caller supplies the schema and validates the completed result against its business contract.
+     */
+    fun generateStructured(
+        sessionId: SessionId,
+        messages: List<ConversationMessage>,
+        schema: String,
+        listener: GenerationListener,
+        overrides: GenerationOverrides = GenerationOverrides(),
+    ): GenerationHandle {
+        requireWorkerThread()
+        requireEmbeddedOpen(closed)
+        return client.generate(
+            GenerationRequest(
+                requestId = RequestId(UUID.randomUUID().toString()),
+                sessionId = sessionId,
+                applicationId = applicationId,
+                useCaseId = useCaseId,
+                input = GenerationInput.Messages(messages),
+                overrides = overrides,
+                outputConstraint = OutputConstraint.JsonSchema(schema),
+            ),
+            listener,
+        )
+    }
+
+    /** Same JSON grammar, prompt and overrides as generateStructured; no model decode. */
+    fun previewStructured(
+        sessionId: SessionId,
+        messages: List<ConversationMessage>,
+        schema: String,
+        overrides: GenerationOverrides = GenerationOverrides(),
+    ): PromptPreviewResult {
+        requireWorkerThread()
+        requireEmbeddedOpen(closed)
+        return runtime.previewGeneration(
+            GenerationRequest(
+                requestId = RequestId(UUID.randomUUID().toString()),
+                sessionId = sessionId,
+                applicationId = applicationId,
+                useCaseId = useCaseId,
+                input = GenerationInput.Messages(messages),
+                overrides = overrides,
+                outputConstraint = OutputConstraint.JsonSchema(schema),
             ),
         )
     }
